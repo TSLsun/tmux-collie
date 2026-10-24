@@ -46,6 +46,9 @@ agents:
                       called by agent hooks; no-op outside a collie window
   status              agent counts for the status bar (#{collie_status})
 
+admin:
+  doctor              dependencies, agents, and task/git/tmux consistency
+
 discovery:
   repos               repos found under @collie-repo-roots / $COLLIE_REPO_ROOTS
   workspaces          named repo sets from ~/.config/collie/workspaces
@@ -585,7 +588,7 @@ cmd_run() {
   else
     AGENT_ARGV=("$agent")
   fi
-  command -v "${AGENT_ARGV[0]}" >/dev/null || die "agent command '${AGENT_ARGV[0]}' not found"
+  command -v "$agent" >/dev/null || die "agent command '$agent' not found"
 
   # an agent with hooks and no prompt sits at its input box
   local st=working run wid o
@@ -594,8 +597,9 @@ cmd_run() {
   ensure_session "$id"
   wid=$(tmux new-window -d -P -F '#{window_id}' -t "=$id:" -n "$agent" -c "$path" \
     "$BASH" "$PLUGIN_DIR/bin/collie" _exec "$id" "$run" "${AGENT_ARGV[@]}" ${extra[@]+"${extra[@]}"} </dev/null)
-  for o in "@collie_task=$id" "@collie_path=$path" "@collie_run=$run" "@collie_agent=$agent" \
-    "@collie_hooks=$AGENT_HOOKS" "@collie_state=$st"; do
+  # @collie_run last: the wrapper starts the agent once it is set
+  for o in "@collie_task=$id" "@collie_path=$path" "@collie_agent=$agent" \
+    "@collie_hooks=$AGENT_HOOKS" "@collie_state=$st" "@collie_run=$run"; do
     tmux set-option -w -t "$wid" "${o%%=*}" "${o#*=}"
   done
   # an instant agent exit may log run_exited first; task_runs is order-free
@@ -608,8 +612,13 @@ cmd_run() {
 
 # Window command of a run: runs the agent, records its exit, leaves a shell.
 cmd__exec() { # id run argv...
-  local id=$1 run=$2 code=0
+  local id=$1 run=$2 code=0 i
   shift 2
+  # wait until `collie run` has tagged the window, so early hooks land
+  for i in $(seq 1 40); do
+    [ -z "$(tmux display-message -p -t "${TMUX_PANE:-}" '#{@collie_run}' 2>/dev/null)" ] || break
+    sleep 0.05
+  done
   trap : INT
   "$@" || code=$?
   trap - INT
@@ -623,7 +632,22 @@ cmd_state() {
     working | waiting | idle | exited) ;;
     *) die "usage: collie state <working|waiting|idle|exited>" ;;
   esac
-  [ -z "${TMUX_PANE:-}" ] || set_state "$TMUX_PANE" "$1"
+  local pane=${TMUX_PANE:-$(ancestor_pane)}
+  [ -z "$pane" ] || set_state "$pane" "$1"
+}
+
+# Pane whose process is an ancestor of this one, for agents that strip
+# $TMUX_PANE from their hooks' environment.
+ancestor_pane() {
+  local panes pid=$PPID i
+  panes=$(tmux list-panes -a -F '#{pane_pid} #{pane_id}' 2>/dev/null) || return 0
+  for i in 1 2 3 4 5 6 7 8 9 10; do
+    case $pid in "" | 0 | 1) return 0 ;; esac
+    if printf '%s\n' "$panes" | awk -v p="$pid" '$1 == p { print $2; f = 1; exit } END { exit !f }'; then
+      return 0
+    fi
+    pid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')
+  done
 }
 
 cmd_status() {
@@ -747,6 +771,62 @@ cmd__preview() {
   fi
 }
 
+cmd_doctor() {
+  local fail=0 v a d id name c b p
+  echo "dependencies:"
+  doc_line ok "bash $BASH_VERSION"
+  if v=$(git --version 2>/dev/null); then doc_line ok "$v"; else doc_line FAIL "git not found"; fail=1; fi
+  if v=$(tmux -V 2>/dev/null); then
+    if printf '%s\n' "$v" | awk '{ split($2, n, /[^0-9]+/); exit !(n[1] > 3 || (n[1] == 3 && n[2] >= 2)) }'; then
+      doc_line ok "$v"
+    else
+      doc_line FAIL "$v (need 3.2+ for popups and new-session -e)"
+      fail=1
+    fi
+  else
+    doc_line FAIL "tmux not found"
+    fail=1
+  fi
+  if command -v fzf >/dev/null; then doc_line ok "fzf $(fzf --version | cut -d' ' -f1)"; else doc_line warn "fzf not found (dash, go without an id)"; fi
+  if command -v lazygit >/dev/null; then doc_line ok "lazygit"; else doc_line warn "lazygit not found (menu: lazygit)"; fi
+
+  echo "agents:"
+  for a in "$PLUGIN_DIR"/agents/*.sh; do
+    a=$(basename "$a" .sh)
+    if command -v "$a" >/dev/null; then
+      doc_line ok "$a $("$a" --version 2>/dev/null | head -n 1)"
+      [ "$a" != codex ] || doc_line note "codex: trust collie's hooks once via /hooks"
+    else
+      doc_line - "$a not installed"
+    fi
+  done
+  a=${COLLIE_AGENT:-$(tmux_opt @collie-agent)}
+  a=${a:-claude}
+  if command -v "$a" >/dev/null; then doc_line ok "default agent: $a"; else doc_line FAIL "default agent '$a' not found"; fail=1; fi
+
+  echo "tasks:"
+  for d in "$TASKS_DIR"/*; do
+    [ -f "$d/TASK.md" ] || continue
+    case $(fm_get "$d/TASK.md" status) in done | archived) continue ;; esac
+    id=$(basename "$d")
+    while IFS=$TAB read -r name c b p; do
+      if [ ! -d "$p" ]; then
+        doc_line FAIL "$id: $name worktree missing: $p"
+        fail=1
+      elif ! git --git-dir="$c" worktree list --porcelain | grep -qxF "worktree $p"; then
+        doc_line FAIL "$id: $name worktree not registered with git: $p"
+        fail=1
+      elif [ ! -L "$p/.collie" ]; then
+        doc_line warn "$id: $name has no .collie link"
+      fi
+    done <"$d/repos.tsv"
+    task_runs "$id" | awk -F'\t' -v id="$id" '$3 == "unknown" { print "  warn  " id ": run " $1 " (" $2 ") state unknown (session gone)" }'
+  done
+  return "$fail"
+}
+
+doc_line() { printf '  %-4s  %s\n' "$1" "$2"; }
+
 cmd_repos() { discover; }
 
 cmd_workspaces() {
@@ -756,7 +836,7 @@ cmd_workspaces() {
 }
 
 case "${1:-help}" in
-  new | add | ls | show | go | run | state | status | set | notes | dash | _exec | _target | _preview | repos | workspaces)
+  new | add | ls | show | go | run | state | status | set | notes | dash | doctor | _exec | _target | _preview | repos | workspaces)
     cmd=$1
     shift
     "cmd_$cmd" "$@"

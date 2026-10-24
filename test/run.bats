@@ -80,7 +80,9 @@ teardown() { teardown_env; }
 @test "exited: agent exit keeps the window; killed window is exited; kill-server is unknown" {
   collie new x --no-window
   collie run x -- 300
-  pkill -P "$(tmux display -p -t "$(run_pane x)" '#{pane_pid}')" sleep
+  pid=$(tmux display -p -t "$(run_pane x)" '#{pane_pid}')
+  wait_for 'pgrep -P "$pid" -f "sleep 300" >/dev/null'
+  pkill -P "$pid" -f "sleep 300"
   wait_for '[ "$(agent_of x)" = exited ]'
   grep -q "run_exited	run=1" "$(task_dir x)/events.log"
   [ -n "$(run_pane x)" ]

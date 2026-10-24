@@ -172,7 +172,7 @@ created: 2026-01-01
 | `collie show [<id>]` | Full task info + recent events |
 | `collie state <working\|waiting\|idle\|exited>` | Endpoint called by agent hooks; no-op outside a collie window |
 | `collie status` | Agent counts for the status bar (`#{collie_status}`) |
-| `collie doctor` | Dependencies, installed agents, hook snippets, task/git/tmux reconciliation (P4) |
+| `collie doctor` | Dependencies, installed agents, task/git/tmux reconciliation; exits 1 on failures |
 | `collie repos` / `collie workspaces` | What collie can see |
 
 An omitted `<id>` falls back to `$COLLIE_TASK`.
@@ -230,10 +230,15 @@ fire in sessions collie started and the user's settings stay untouched:
 | Agent | State source | Confidence |
 |---|---|---|
 | claude | hooks via `--settings` (above) | working/idle/exited verified; waiting unverified |
-| omp | to be researched | P4 |
-| codex | `notify` (turn complete → idle) + silence detection | unverified |
-| gemini | hooks, if available | unverified |
+| omp | not researched (not installed on the dev machine); runs as generic | — |
+| codex | hooks via `-c hooks.<Event>=[...]`: `UserPromptSubmit`/`PostToolUse` → working, `PermissionRequest` → waiting, `Stop` → idle, `SessionEnd` → exited; trust once in `/hooks` | fake agent only |
+| gemini | hooks in a generated settings file passed as `GEMINI_CLI_SYSTEM_SETTINGS_PATH`: `BeforeAgent`/`AfterTool` → working, `Notification` (`ToolPermission`) → waiting, `AfterAgent` → idle, `SessionEnd` → exited; hooks print `{}` | fake agent only |
 | generic | wrapper exit + `window_activity`: working → idle after `@collie-silence` s (30) without output | always works, coarse; no `waiting` |
+
+Agents that strip the hook environment (gemini) lose `$TMUX_PANE`;
+`collie state` then walks parent processes until it reaches a pane's process.
+The `collie _exec` wrapper waits until `collie run` has tagged the window before
+starting the agent, so the first hook never races the tagging.
 
 `exited` / `unknown` are also derived: a run whose window is gone (no
 `run_exited` logged) is `exited` while the session exists and `unknown` once the
@@ -243,8 +248,9 @@ Notifications fire on → `waiting` and on `working` → `idle`, skipped for the
 active window of an attached session. `@collie-notify`: `on` (osascript /
 notify-send), `off`, or a command receiving title and body.
 
-Known gap: Claude's folder-trust dialog (every new worktree) is not reported by
-any hook, so the run shows `working` until it is answered.
+Known gap: folder-trust dialogs on a new worktree (Claude; Gemini asks twice,
+once for the folder and once for `--include-directories`) are not reported by
+any hook, so the run shows `working` until they are answered.
 
 ---
 
@@ -294,9 +300,11 @@ unless marked *manual*.
 - Docs: terminal key mapping examples.
 - **Acceptance:** dashboard ordering tests; *manual* day-to-day check.
 
-### P4 — More agents & doctor
+### P4 — More agents & doctor ✅ (omp pending)
 - omp, codex, gemini adapters.
-- `doctor`: dependency versions, hook snippets, task/git/tmux reconciliation.
+- `doctor`: dependency versions, installed agents, task/git/tmux
+  reconciliation (hooks are injected per run, so there are no snippets to
+  install).
 - **Acceptance:** each adapter passes working → idle with a fake agent;
   *manual* check per real agent.
 

@@ -42,7 +42,9 @@ collie archive deploy-v2               # abandon: same cleanup
 ```sh
 collie run deploy-v2                   # claude in a new window of the task session
 collie run deploy-v2 -r B -p 'fix CI'  # in repo B's worktree, custom first prompt
+collie run deploy-v2 --agent codex      # also: gemini; state hooks injected per run
 collie run --agent aider -- --model x  # any command works (no state hooks)
+collie doctor                          # deps, agents, task/worktree consistency
 collie ls                              # agent column: waiting/idle/working/exited/unknown
 ```
 
@@ -74,9 +76,11 @@ zsh completion: `fpath+=(~/.tmux/plugins/tmux-collie/completions)` before
 ### Agent details
 
 `collie run` points the agent at `.collie/TASK.md` (`-p ''` for no prompt).
-Claude Code reports its state through hooks that collie passes with
-`--settings`; nothing to install. Other agents count as idle after 30s
-without output (`@collie-silence`).
+Claude Code, Codex and Gemini CLI report their state through hooks that
+collie passes per run (`--settings`, `-c hooks...`, a generated system
+settings file); nothing to install. Codex asks you to trust the hooks once
+in `/hooks`. Other agents count as idle after 30s without output
+(`@collie-silence`).
 
 ```tmux
 set -g status-right '#{collie_status} %H:%M'   # ●waiting ●idle ●working counts

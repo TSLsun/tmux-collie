@@ -42,3 +42,20 @@ delete an item only when it is covered by a test.
 - [ ] Menu actions on a session that is not a task (should show collie's error).
 - [ ] zsh completion in an interactive shell (only `zsh -n` is checked).
 - [ ] Alacritty `chars = "\u0002hh"` example in README.
+
+## P4 — More agents & doctor
+- [ ] omp adapter: not researched (omp not installed here); runs as a generic
+      agent. Research its hook/extension mechanism on the work machine.
+- [ ] Codex for real: `-c hooks.<Event>=[{hooks=[...]}]` inline TOML accepted,
+      hooks listed in `/hooks`, trusted once and then firing; `PermissionRequest`
+      → waiting. Only a fake `codex` that runs the hook strings is tested.
+- [ ] Gemini for real: system settings layer picked up and merged with user
+      hooks; hooks enabled without extra flags; `ToolPermission` matcher;
+      ancestor-pane lookup under its sanitized env. Tried 2026-10-25: two trust
+      dialogs (folder, then `--include-directories`) appeared before any hook ran;
+      run not completed.
+- [ ] `GEMINI_CLI_SYSTEM_SETTINGS_PATH` hides an existing
+      `/etc/gemini-cli/settings.json` for collie runs.
+- [ ] `ancestor_pane` on Linux (`ps -o ppid=`), and with deep process trees
+      (gives up after 10 levels).
+- [ ] `collie doctor` version parsing for tmux builds like `next-3.6` / `3.3a`.

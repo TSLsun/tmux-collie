@@ -70,11 +70,11 @@ hook() { TMUX_PANE=$(run_pane "$1" "${3:-1}") collie state "$2"; }
 # aggregated agent column of `collie ls -a`
 agent_of() { collie ls -a | awk -F'\t' -v id="$1" '$1 == id { print $5 }'; }
 
-# retry a condition for up to 5s
+# retry a condition for up to 5s (`if` keeps bats' ERR trap out of the eval)
 wait_for() {
   local i
   for i in $(seq 1 50); do
-    eval "$1" && return 0
+    if eval "$1"; then return 0; fi
     sleep 0.1
   done
   return 1
