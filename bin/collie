@@ -4,213 +4,468 @@
 set -euo pipefail
 
 VERSION=0.1.0-dev
+PLUGIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+STATE_DIR=${COLLIE_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/collie}
+TASKS_DIR="$STATE_DIR/tasks"
+CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/collie"
+TAB=$'\t'
 
 die() {
   printf 'collie: %s\n' "$*" >&2
   exit 1
 }
 
+warn() { printf 'collie: %s\n' "$*" >&2; }
+
 usage() {
   cat <<'EOF'
 usage: collie <command> [args]
 
-commands:
-  new <branch> [--from <ref>] [--no-window] [--go]
-                      create a worktree (and tmux window) for <branch>
-  ls                  list worktrees: slug, branch, path, window (*|-)
-  go [<branch|slug>]  switch to the worktree's window (fzf picker if omitted);
-                      outside tmux, print its path instead
-  rm <branch|slug> [--force] [--delete-branch]
-                      remove a worktree and its tmux window
-  help                show this help
+tasks:
+  new <id> [-r repo[:branch]]... [-w workspace] [-t type] [--title text]
+           [--from ref] [--todo] [--edit] [--no-window]
+                      create a task: worktree per repo + tmux session
+  add [<id>] -r repo[:branch]... [--from ref] [--no-window]
+                      attach more repos to an existing task
+  ls [-a]             list tasks: id, status, priority, session (*|-), repos, next
+  show [<id>]         task fields, repos and recent events
+  go [<id>]           switch to the task session (fzf picker if omitted);
+                      outside tmux and not a tty, print the primary worktree path
+  done [<id>] [--force]     accept: remove worktrees + session, keep branches
+  archive [<id>] [--force]  abandon: same cleanup, status archived
 
-layouts:
-  bare    <root>/.bare + <root>/.git  ->  worktrees at <root>/<slug>
-  normal  <repo>/.git                 ->  worktrees at <repo>.worktrees/<slug>
+discovery:
+  repos               repos found under @collie-repo-roots / $COLLIE_REPO_ROOTS
+  workspaces          named repo sets from ~/.config/collie/workspaces
+
+<id> is a slug ([a-z0-9-], max 40). Omitted <id> falls back to $COLLIE_TASK.
+<repo> is a discovered repo name or a path. Default branch: <type>/<id>, type=feat.
 EOF
 }
 
-# --- repo layout ------------------------------------------------------------
+# --- repos ------------------------------------------------------------------
 
-# Sets COMMON (git common dir), ROOT (worktree parent dir), NAME (repo name).
-load_repo() {
-  COMMON=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) ||
-    die "not inside a git repository"
-  if [ "$(git config --file "$COMMON/config" --bool core.bare 2>/dev/null)" = true ]; then
-    ROOT=$(dirname "$COMMON")
-    NAME=$(basename "$ROOT")
+# Sets R_COMMON (git common dir), R_ROOT (worktree parent), R_NAME for a dir.
+repo_at() {
+  R_COMMON=$(git -C "$1" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 1
+  if [ "$(git config --file "$R_COMMON/config" --bool core.bare 2>/dev/null)" = true ]; then
+    R_ROOT=$(dirname "$R_COMMON")
+    R_NAME=$(basename "$R_ROOT")
   else
     local main
-    main=$(dirname "$COMMON")
-    NAME=$(basename "$main")
-    ROOT="$(dirname "$main")/$NAME.worktrees"
+    main=$(dirname "$R_COMMON")
+    R_NAME=$(basename "$main")
+    R_ROOT="$(dirname "$main")/$R_NAME.worktrees"
   fi
 }
 
-g() { git --git-dir="$COMMON" "$@"; }
+repo_roots() {
+  if [ -n "${COLLIE_REPO_ROOTS+x}" ]; then
+    printf '%s' "$COLLIE_REPO_ROOTS"
+  else
+    tmux show-options -gqv @collie-repo-roots 2>/dev/null || true
+  fi
+}
+
+# Prints "name<TAB>dir" for every repo matching the root globs (':'-separated).
+discover() {
+  local IFS=: pat d roots
+  roots=$(repo_roots)
+  for pat in $roots; do
+    pat=${pat/#\~/$HOME}
+    for d in $pat; do
+      [ -d "$d/.bare" ] || [ -d "$d/.git" ] || continue
+      printf '%s\t%s\n' "$(basename "$d")" "$d"
+    done
+  done
+}
+
+# Resolves "repo[:branch]" into R_* plus SPEC_BRANCH.
+resolve_spec() {
+  local ref=${1%%:*} dir
+  SPEC_BRANCH=""
+  [ "$ref" = "$1" ] || SPEC_BRANCH=${1#*:}
+  case $ref in
+    */* | .* | "~"*) dir=${ref/#\~/$HOME} ;;
+    *)
+      dir=$(discover | awk -F'\t' -v n="$ref" '$1 == n { print $2; exit }')
+      [ -n "$dir" ] || die "unknown repo '$ref' (check @collie-repo-roots)"
+      ;;
+  esac
+  repo_at "$dir" || die "not a git repository: $dir"
+}
+
+workspace_repos() {
+  local file="$CONFIG_DIR/workspaces" hit
+  [ -f "$file" ] || die "unknown workspace '$1' (no $file)"
+  hit=$(awk -v w="$1" '/^[[:space:]]*#/ { next } { n = index($0, ":") } n && substr($0, 1, n - 1) == w { print substr($0, n + 1); exit }' "$file")
+  [ -n "$hit" ] || die "unknown workspace '$1'"
+  printf '%s\n' "$hit"
+}
+
+default_base() {
+  if git --git-dir="$1" rev-parse -q --verify refs/remotes/origin/HEAD >/dev/null; then
+    echo origin/HEAD
+  else
+    git --git-dir="$1" symbolic-ref -q HEAD
+  fi
+}
 
 slug() { printf '%s' "${1//\//-}"; }
 
-session_name() { printf '%s' "$NAME" | tr '.:' '__'; }
+# --- task files -------------------------------------------------------------
 
-default_base() {
-  if g rev-parse -q --verify refs/remotes/origin/HEAD >/dev/null; then
-    echo origin/HEAD
+task_dir() { printf '%s/%s' "$TASKS_DIR" "$1"; }
+
+valid_id() {
+  local re='^[a-z0-9][a-z0-9-]{0,39}$'
+  [[ $1 =~ $re ]]
+}
+
+# Task id from argument, else $COLLIE_TASK; must exist.
+task_id() {
+  local id=${1:-${COLLIE_TASK:-}}
+  [ -n "$id" ] || die "no task given (and \$COLLIE_TASK unset)"
+  [ -f "$(task_dir "$id")/TASK.md" ] || die "no task '$id'"
+  printf '%s' "$id"
+}
+
+fm_get() {
+  awk -v k="$2" '
+    NR == 1 && $0 == "---" { f = 1; next }
+    f && $0 == "---" { exit }
+    f && index($0, k ":") == 1 { v = substr($0, length(k) + 2); sub(/^ /, "", v); print v; exit }' "$1"
+}
+
+fm_set() {
+  VAL=$3 awk -v k="$2" '
+    BEGIN { v = ENVIRON["VAL"] }
+    NR == 1 { print; next }
+    !end && $0 == "---" { if (!found) print k ": " v; end = 1; print; next }
+    !end && index($0, k ":") == 1 { print k ": " v; found = 1; next }
+    { print }' "$1" >"$1.tmp"
+  mv "$1.tmp" "$1"
+}
+
+log_event() {
+  printf '%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$2" "${3:-}" >>"$(task_dir "$1")/events.log"
+}
+
+write_task_md() { # dir id title status
+  local tmpl="$CONFIG_DIR/TASK.md"
+  [ -f "$tmpl" ] || tmpl="$PLUGIN_DIR/templates/TASK.md"
+  {
+    printf -- '---\nid: %s\ntitle: %s\nstatus: %s\npriority: P2\nnext:\ncreated: %s\n---\n' \
+      "$2" "$3" "$4" "$(date +%Y-%m-%d)"
+    cat "$tmpl"
+  } >"$1/TASK.md"
+}
+
+# Which task (if any) owns a worktree path.
+task_owning() {
+  local f
+  for f in "$TASKS_DIR"/*/repos.tsv; do
+    [ -f "$f" ] || continue
+    if awk -F'\t' -v p="$1" '$4 == p { found = 1 } END { exit !found }' "$f"; then
+      basename "$(dirname "$f")"
+      return
+    fi
+  done
+}
+
+# --- worktree creation (shared by new/add) ----------------------------------
+
+# Creates one worktree; sets CREATED_BRANCH=1 if the branch is new.
+add_worktree() { # common path branch from
+  local c=$1 p=$2 b=$3 from=$4 base
+  CREATED_BRANCH=0
+  mkdir -p "$(dirname "$p")" || return 1
+  if git --git-dir="$c" show-ref -q --verify "refs/heads/$b"; then
+    [ -z "$from" ] || { warn "branch '$b' already exists; --from not applicable"; return 1; }
+    git --git-dir="$c" worktree add -q "$p" "$b" </dev/null || return 1
+  elif [ -z "$from" ] && git --git-dir="$c" show-ref -q --verify "refs/remotes/origin/$b"; then
+    git --git-dir="$c" worktree add -q --track -b "$b" "$p" "origin/$b" </dev/null || return 1
+    CREATED_BRANCH=1
   else
-    g symbolic-ref -q HEAD || die "cannot determine default branch; use --from"
+    base=${from:-$(default_base "$c")} || { warn "cannot determine default branch; use --from"; return 1; }
+    git --git-dir="$c" worktree add -q --no-track -b "$b" "$p" "$base" </dev/null || return 1
+    CREATED_BRANCH=1
   fi
 }
 
-# Prints "path<TAB>branch" per worktree (bare entry skipped).
-worktrees() {
-  g worktree list --porcelain | awk '
-    /^worktree / { path = substr($0, 10); branch = "(detached)"; bare = 0 }
-    /^bare$/     { bare = 1 }
-    /^branch /   { branch = substr($0, 8); sub(/^refs\/heads\//, "", branch) }
-    /^$/         { if (path != "" && !bare) print path "\t" branch; path = "" }
-    END          { if (path != "" && !bare) print path "\t" branch }'
+# Plans, preflights and creates worktrees for SPECS (newline-separated) into
+# task <id>; all-or-nothing. Appends to repos.tsv and links on success.
+create_repos() { # id default_branch from specs
+  local id=$1 default_branch=$2 from=$3 specs=$4 tdir plan="" spec branch path line
+  tdir=$(task_dir "$id")
+
+  while IFS= read -r spec; do
+    [ -n "$spec" ] || continue
+    resolve_spec "$spec"
+    branch=${SPEC_BRANCH:-$default_branch}
+    path="$R_ROOT/$(slug "$branch")"
+    if printf '%s\n' "$plan" | cut -f1 | grep -qxF "$R_NAME" ||
+      { [ -f "$tdir/repos.tsv" ] && cut -f1 "$tdir/repos.tsv" | grep -qxF "$R_NAME"; }; then
+      die "repo '$R_NAME' is already part of task '$id'"
+    fi
+    [ ! -e "$path" ] || die "$path already exists"
+    line=$(git --git-dir="$R_COMMON" worktree list --porcelain |
+      awk -v b="refs/heads/$branch" '/^worktree / { p = substr($0, 10) } $0 == "branch " b { print p; exit }')
+    if [ -n "$line" ]; then
+      local owner
+      owner=$(task_owning "$line")
+      [ -z "$owner" ] || owner=" (task '$owner')"
+      die "branch '$branch' in $R_NAME is checked out at $line$owner"
+    fi
+    plan="$plan$R_NAME$TAB$R_COMMON$TAB$branch$TAB$path"$'\n'
+  done <<<"$specs"
+
+  local name c b p created=""
+  while IFS=$TAB read -r name c b p; do
+    [ -n "$name" ] || continue
+    if ! add_worktree "$c" "$p" "$b" "$from"; then
+      rollback "$created"
+      return 1
+    fi
+    created="$created$c$TAB$p$TAB$b$TAB$CREATED_BRANCH"$'\n'
+  done <<<"$plan"
+
+  mkdir -p "$tdir/repos"
+  while IFS=$TAB read -r name c b p; do
+    [ -n "$name" ] || continue
+    printf '%s\t%s\t%s\t%s\n' "$name" "$c" "$b" "$p" >>"$tdir/repos.tsv"
+    ln -s "$p" "$tdir/repos/$name"
+    ln -s "$tdir" "$p/.collie"
+    mkdir -p "$c/info"
+    grep -qxF '/.collie' "$c/info/exclude" 2>/dev/null || echo '/.collie' >>"$c/info/exclude"
+    log_event "$id" worktree_created "repo=$name branch=$b path=$p"
+  done <<<"$plan"
+  NEW_PATHS=$(printf '%s' "$plan" | cut -f4)
 }
 
-# Resolves <branch|slug> to "path<TAB>branch".
-resolve() {
-  local hit
-  hit=$(worktrees | awk -F'\t' -v t="$1" '{ n = split($1, p, "/") } $2 == t || p[n] == t { print; exit }')
-  [ -n "$hit" ] || die "no worktree for '$1'"
-  printf '%s\n' "$hit"
+rollback() {
+  local c p b cb
+  while IFS=$TAB read -r c p b cb; do
+    [ -n "$c" ] || continue
+    git --git-dir="$c" worktree remove --force "$p" 2>/dev/null || true
+    [ "$cb" != 1 ] || git --git-dir="$c" branch -q -D "$b" 2>/dev/null || true
+    rmdir "$(dirname "$p")" 2>/dev/null || true
+  done <<<"$1"
 }
 
 # --- tmux -------------------------------------------------------------------
 
-window_id_for() {
-  tmux list-windows -a -F '#{window_id}	#{@collie_path}' 2>/dev/null |
-    awk -F'\t' -v p="$1" '$2 == p { print $1; exit }' || true
+has_session() { tmux has-session -t "=$1" 2>/dev/null; }
+
+open_window() { # id name path
+  local wid
+  if has_session "$1"; then
+    wid=$(tmux new-window -d -P -F '#{window_id}' -t "=$1:" -n "$2" -c "$3" </dev/null)
+  else
+    wid=$(tmux new-session -d -P -F '#{window_id}' -s "$1" -n "$2" -c "$3" \
+      -e "COLLIE_TASK=$1" -e "COLLIE_TASK_DIR=$(task_dir "$1")" </dev/null)
+  fi
+  tmux set-option -w -t "$wid" @collie_path "$3"
+  tmux set-option -w -t "$wid" @collie_task "$1"
 }
 
-open_window() {
-  local path=$1 name sess wid
-  name=$(basename "$path")
-  sess=$(session_name)
-  if tmux has-session -t "=$sess" 2>/dev/null; then
-    wid=$(tmux new-window -d -P -F '#{window_id}' -t "=$sess:" -n "$name" -c "$path")
-  else
-    wid=$(tmux new-session -d -P -F '#{window_id}' -s "$sess" -n "$name" -c "$path")
-  fi
-  tmux set-option -w -t "$wid" @collie_path "$path"
-  printf '%s\n' "$wid"
+ensure_session() {
+  local id=$1 name c b p
+  has_session "$id" && return 0
+  while IFS=$TAB read -r name c b p; do
+    if [ -d "$p" ]; then open_window "$id" "$name" "$p"; else warn "missing worktree $p"; fi
+  done <"$(task_dir "$id")/repos.tsv"
 }
 
 # --- commands ---------------------------------------------------------------
 
 cmd_new() {
-  local branch="" from="" window=1 go=0
+  local id="" specs="" ws="" type=feat title="" from="" status=active edit=0 window=1
   while [ $# -gt 0 ]; do
     case $1 in
+      -r) specs="$specs${2:?-r needs a repo}"$'\n'; shift ;;
+      -w) ws=${2:?-w needs a workspace}; shift ;;
+      -t) type=${2:?-t needs a type}; shift ;;
+      --title) title=${2:?--title needs text}; shift ;;
       --from) from=${2:?--from needs a ref}; shift ;;
+      --todo) status=todo ;;
+      --edit) edit=1 ;;
       --no-window) window=0 ;;
-      --go) go=1 ;;
       -*) die "new: unknown option $1" ;;
-      *) [ -z "$branch" ] || die "new: too many arguments"; branch=$1 ;;
+      *) [ -z "$id" ] || die "new: too many arguments"; id=$1 ;;
     esac
     shift
   done
-  [ -n "$branch" ] || die "usage: collie new <branch> [--from <ref>] [--no-window] [--go]"
-  load_repo
-
-  local path
-  path="$ROOT/$(slug "$branch")"
-  [ ! -e "$path" ] || die "$path already exists"
-  mkdir -p "$ROOT"
-
-  if g show-ref -q --verify "refs/heads/$branch"; then
-    [ -z "$from" ] || die "branch '$branch' already exists; drop --from"
-    g worktree add -q "$path" "$branch"
-  elif [ -z "$from" ] && g show-ref -q --verify "refs/remotes/origin/$branch"; then
-    g worktree add -q --track -b "$branch" "$path" "origin/$branch"
-  else
-    g worktree add -q --no-track -b "$branch" "$path" "${from:-$(default_base)}"
+  [ -n "$id" ] || die "usage: collie new <id> [-r repo[:branch]]... [-w workspace] ..."
+  valid_id "$id" || die "invalid id '$id' (use [a-z0-9-], max 40, no leading '-')"
+  local tdir r
+  tdir=$(task_dir "$id")
+  [ ! -e "$tdir" ] || die "task '$id' already exists"
+  if [ -n "$ws" ]; then
+    for r in $(workspace_repos "$ws"); do specs="$specs$r"$'\n'; done
   fi
-  printf '%s\n' "$path"
+  if [ -z "$specs" ]; then
+    repo_at . || die "not inside a git repository (use -r or -w)"
+    specs="$(pwd -P)"$'\n'
+  fi
 
-  [ "$window" -eq 1 ] && command -v tmux >/dev/null || return 0
-  local wid
-  wid=$(open_window "$path")
-  if [ "$go" -eq 1 ] && [ -n "${TMUX:-}" ]; then
-    tmux switch-client -t "$wid"
+  if ! create_repos "$id" "$type/$id" "$from" "$specs"; then
+    rm -rf "$tdir"
+    exit 1
+  fi
+  write_task_md "$tdir" "$id" "${title:-$id}" "$status"
+  log_event "$id" task_created "status=$status"
+  [ "$edit" -eq 0 ] || "${EDITOR:-vi}" "$tdir/TASK.md"
+  printf '%s\n' "$NEW_PATHS" | head -n 1
+  if [ "$window" -eq 1 ] && command -v tmux >/dev/null; then ensure_session "$id"; fi
+}
+
+cmd_add() {
+  local id="" specs="" from="" window=1
+  while [ $# -gt 0 ]; do
+    case $1 in
+      -r) specs="$specs${2:?-r needs a repo}"$'\n'; shift ;;
+      --from) from=${2:?--from needs a ref}; shift ;;
+      --no-window) window=0 ;;
+      -*) die "add: unknown option $1" ;;
+      *) [ -z "$id" ] || die "add: too many arguments"; id=$1 ;;
+    esac
+    shift
+  done
+  id=$(task_id "$id")
+  [ -n "$specs" ] || die "usage: collie add [<id>] -r repo[:branch]..."
+  local branch
+  branch=$(head -n 1 "$(task_dir "$id")/repos.tsv" | cut -f3)
+  create_repos "$id" "$branch" "$from" "$specs"
+  if [ "$window" -eq 1 ] && has_session "$id"; then
+    local name c b p
+    while IFS=$TAB read -r name c b p; do
+      printf '%s\n' "$NEW_PATHS" | grep -qxF "$p" && open_window "$id" "$name" "$p"
+    done <"$(task_dir "$id")/repos.tsv"
   fi
 }
 
 cmd_ls() {
-  load_repo
-  local windows
-  windows=$(tmux list-windows -a -F '#{@collie_path}' 2>/dev/null || true)
-  worktrees | while IFS=$'\t' read -r path branch; do
-    local mark=-
-    if printf '%s\n' "$windows" | grep -qxF "$path"; then mark='*'; fi
-    printf '%s\t%s\t%s\t%s\n' "$(basename "$path")" "$branch" "$path" "$mark"
+  local all=0 d id st mark
+  [ "${1:-}" != -a ] || all=1
+  for d in "$TASKS_DIR"/*; do
+    [ -f "$d/TASK.md" ] || continue
+    id=$(basename "$d")
+    st=$(fm_get "$d/TASK.md" status)
+    case $st in done | archived) [ "$all" -eq 1 ] || continue ;; esac
+    mark=-
+    if has_session "$id"; then mark='*'; fi
+    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$id" "$st" "$(fm_get "$d/TASK.md" priority)" "$mark" \
+      "$(cut -f1 "$d/repos.tsv" | paste -s -d, -)" "$(fm_get "$d/TASK.md" next)"
   done
+}
+
+cmd_show() {
+  local id d name c b p mark
+  id=$(task_id "${1:-}")
+  d=$(task_dir "$id")
+  awk 'NR == 1 { next } $0 == "---" { exit } { print }' "$d/TASK.md"
+  echo
+  echo "repos:"
+  while IFS=$TAB read -r name c b p; do
+    mark=""
+    [ -d "$p" ] || mark=" (missing)"
+    printf '  %s\t%s\t%s%s\n' "$name" "$b" "$p" "$mark"
+  done <"$d/repos.tsv"
+  echo
+  echo "events:"
+  tail -n 5 "$d/events.log" | sed 's/^/  /'
 }
 
 cmd_go() {
-  [ $# -le 1 ] || die "usage: collie go [<branch|slug>]"
-  load_repo
-  local path
-  if [ $# -eq 1 ]; then
-    path=$(resolve "$1" | cut -f1)
+  local id=${1:-}
+  if [ -z "$id" ]; then
+    command -v fzf >/dev/null || die "go: fzf required when no task is given"
+    id=$(cmd_ls | fzf --delimiter='\t' --prompt='task> ' | cut -f1)
+    [ -n "$id" ] || exit 1
+  fi
+  id=$(task_id "$id")
+  ensure_session "$id"
+  if [ -n "${TMUX:-}" ]; then
+    tmux switch-client -t "=$id"
+  elif [ -t 1 ]; then
+    exec tmux attach-session -t "=$id"
   else
-    command -v fzf >/dev/null || die "go: fzf required when no target is given"
-    path=$(cmd_ls | fzf --delimiter='\t' --with-nth=1,2,4 --prompt='worktree> ' | cut -f3)
-    [ -n "$path" ] || exit 1
+    head -n 1 "$(task_dir "$id")/repos.tsv" | cut -f4
   fi
-
-  if [ -z "${TMUX:-}" ]; then
-    printf '%s\n' "$path"
-    return
-  fi
-  local wid
-  wid=$(window_id_for "$path")
-  [ -n "$wid" ] || wid=$(open_window "$path")
-  tmux switch-client -t "$wid"
 }
 
-cmd_rm() {
-  local target="" force=0 delete_branch=0
+# Shared by done/archive: safety checks, then remove worktrees and session.
+finish_task() { # final_status args...
+  local final=$1 id="" force=0
+  shift
   while [ $# -gt 0 ]; do
     case $1 in
       --force) force=1 ;;
-      --delete-branch) delete_branch=1 ;;
-      -*) die "rm: unknown option $1" ;;
-      *) [ -z "$target" ] || die "rm: too many arguments"; target=$1 ;;
+      -*) die "$final: unknown option $1" ;;
+      *) [ -z "$id" ] || die "$final: too many arguments"; id=$1 ;;
     esac
     shift
   done
-  [ -n "$target" ] || die "usage: collie rm <branch|slug> [--force] [--delete-branch]"
-  load_repo
+  id=$(task_id "$id")
+  local d name c b p problems="" n here own=0
+  d=$(task_dir "$id")
 
-  local hit path branch here
-  hit=$(resolve "$target")
-  path=${hit%%$'\t'*}
-  branch=${hit#*$'\t'}
+  while IFS=$TAB read -r name c b p; do
+    [ -d "$p" ] || continue
+    [ -z "$(git -C "$p" status --porcelain)" ] || problems="$problems  dirty: $name ($p)"$'\n'
+    n=$(git --git-dir="$c" rev-list --count "$(default_base "$c")..refs/heads/$b" 2>/dev/null || echo 0)
+    [ "$n" -eq 0 ] || problems="$problems  unmerged: $name has $n commit(s) on $b not in base"$'\n'
+  done <"$d/repos.tsv"
+  if [ -n "$problems" ] && [ "$force" -eq 0 ]; then
+    die "refusing to $final '$id':"$'\n'"$problems"'(branches are kept; --force discards uncommitted changes)'
+  fi
+
+  if [ -n "${TMUX:-}" ] && [ "$(tmux display-message -p '#S')" = "$id" ]; then own=1; fi
   here=$(pwd -P)
-  case "$here/" in "$path"/*) die "currently inside $path; cd elsewhere first" ;; esac
+  if [ "$own" -eq 0 ]; then
+    while IFS=$TAB read -r name c b p; do
+      case "$here/" in "$p"/*) die "currently inside $p; cd elsewhere first" ;; esac
+    done <"$d/repos.tsv"
+  fi
 
-  local wid
-  wid=$(window_id_for "$path")
-  if [ "$force" -eq 1 ]; then
-    g worktree remove --force "$path"
-  else
-    g worktree remove "$path"
-  fi
-  [ -z "$wid" ] || tmux kill-window -t "$wid"
-  if [ "$delete_branch" -eq 1 ] && [ "$branch" != "(detached)" ]; then
-    g branch -q -d "$branch"
-  fi
+  while IFS=$TAB read -r name c b p; do
+    rm -f "$d/repos/$name"
+    [ -d "$p" ] || continue
+    rm -f "$p/.collie"
+    if [ "$force" -eq 1 ]; then
+      git --git-dir="$c" worktree remove --force "$p"
+    else
+      git --git-dir="$c" worktree remove "$p"
+    fi
+    log_event "$id" worktree_removed "repo=$name path=$p"
+  done <"$d/repos.tsv"
+  fm_set "$d/TASK.md" status "$final"
+  log_event "$id" "task_$final" "force=$force"
+  if has_session "$id"; then tmux kill-session -t "=$id"; fi
+}
+
+cmd_repos() { discover; }
+
+cmd_workspaces() {
+  local file="$CONFIG_DIR/workspaces"
+  [ -f "$file" ] || return 0
+  awk '/^[[:space:]]*(#|$)/ { next } { n = index($0, ":"); v = substr($0, n + 1); sub(/^[[:space:]]+/, "", v); print substr($0, 1, n - 1) "\t" v }' "$file"
 }
 
 case "${1:-help}" in
-  new | ls | go | rm)
+  new | add | ls | show | go | repos | workspaces)
     cmd=$1
     shift
     "cmd_$cmd" "$@"
+    ;;
+  "done")
+    shift
+    finish_task "done" "$@"
+    ;;
+  archive)
+    shift
+    finish_task archived "$@"
     ;;
   help | -h | --help) usage ;;
   -v | --version) echo "collie $VERSION" ;;
