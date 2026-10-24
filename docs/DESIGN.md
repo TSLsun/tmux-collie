@@ -160,10 +160,12 @@ created: 2026-01-01
 | `collie dash [-n]` | fzf dashboard, most urgent first; enter jumps to the most urgent agent window |
 | `collie set [<id>] status=review next="..."` | Update status, priority, next or title; a bare field reads stdin |
 | `collie notes [<id>]` | Edit the task's `NOTES.md` |
-| `collie review [<id>]` | Per-repo diff stat + REPORT.md; key to open lazygit (P5) |
+| `collie review [<id>] [-p]` | Per-repo commits, diff stat (`-p` patch), dirty files, then REPORT.md |
+| `collie spike <id>` | New `exp/<id>` task from the current worktree, carrying its uncommitted tracked changes (`git stash create`); source untouched |
+| `collie park [<id>] [-m text]` | Set `next` and append it to NOTES.md |
 | `collie done [<id>] [--force]` | Accept: safety checks, then remove worktrees and session |
 | `collie archive [<id>] [--force]` | Abandon: same cleanup |
-| `collie gc` | Pick tasks whose branches are merged and archive them (P5) |
+| `collie gc [-n]` | Finish (`done`) tasks whose branches all moved past their start and are contained in base; dirty ones are skipped |
 
 ### Admin
 
@@ -190,7 +192,7 @@ prefix h →  ┌ collie ─────────────┐
             │ n  notes            │
             │ N  next action      │
             │ s  status ▸         │
-            │ v  review     (P5)  │
+            │ v  review           │
             │ r  run agent        │
             │ d  done             │
             └─────────────────────┘
@@ -308,7 +310,7 @@ unless marked *manual*.
 - **Acceptance:** each adapter passes working → idle with a fake agent;
   *manual* check per real agent.
 
-### P5 — Review & lifecycle
+### P5 — Review & lifecycle ✅
 - `review` (multi-repo diff + REPORT), `gc`.
 - `spike`: branch off with uncommitted changes into `exp/*` without touching
   the source worktree (`git stash create`).

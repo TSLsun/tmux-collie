@@ -48,6 +48,20 @@ collie doctor                          # deps, agents, task/worktree consistency
 collie ls                              # agent column: waiting/idle/working/exited/unknown
 ```
 
+### Review and lifecycle
+
+```sh
+collie review deploy-v2                # commits, diff stat, dirty files, REPORT.md
+collie spike try-cache                 # from a dirty worktree: exp/try-cache task with the same changes
+collie park -m "rerun e2e after deploy"   # remember where you stopped
+git fetch && collie gc                 # finish tasks whose branches were merged
+```
+
+`collie run`'s default prompt asks the agent to write `.collie/REPORT.md`.
+`gc` sees fast-forward and merge commits on the base branch, not squash merges.
+`hooks/pre-push` refuses to push `exp/*` branches:
+`ln -s ~/.tmux/plugins/tmux-collie/hooks/pre-push "$(git rev-parse --git-common-dir)/hooks/pre-push"`.
+
 ### Dashboard and menu
 
 ```sh

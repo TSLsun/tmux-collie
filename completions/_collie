@@ -32,6 +32,11 @@ _collie() {
     'set:set status, priority, next or title'
     'notes:edit NOTES.md'
     'run:start an agent'
+    'review:per-repo commits and diffs'
+    'spike:branch the current worktree into an exp/ task'
+    'park:record the next action'
+    'gc:finish merged tasks'
+    'doctor:check dependencies and tasks'
     'done:accept and clean up a task'
     'archive:abandon and clean up a task'
     'state:agent hook endpoint'
@@ -48,14 +53,15 @@ _collie() {
     -r) _collie_repos; return ;;
     -w) _collie_workspaces; return ;;
     -t) compadd feat fix chore docs refactor test exp; return ;;
-    --agent) compadd claude; return ;;
+    --agent) compadd claude codex gemini; return ;;
   esac
   case ${words[2]} in
     state) compadd working waiting idle exited ;;
     set) compadd -S '=' status priority next title; _collie_tasks ;;
     ls) compadd -- -a ;;
     new) compadd -- -r -w -t --title --from --todo --edit --no-window ;;
-    add | show | go | notes | run | done | archive) _collie_tasks ;;
+    gc) compadd -- -n ;;
+    add | show | go | notes | run | review | park | done | archive) _collie_tasks ;;
   esac
 }
 

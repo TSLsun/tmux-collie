@@ -59,3 +59,13 @@ delete an item only when it is covered by a test.
 - [ ] `ancestor_pane` on Linux (`ps -o ppid=`), and with deep process trees
       (gives up after 10 levels).
 - [ ] `collie doctor` version parsing for tmux builds like `next-3.6` / `3.3a`.
+
+## P5 — Review & lifecycle
+- [ ] `gc` against a real remote: PR merge commits (non-ff) detected after
+      `git fetch`; squash merges are known not to be detected.
+- [ ] `gc` on tasks created before P5 (no `start=` in events): never collected.
+- [ ] `spike` with a merge/rebase in progress, submodules, or renames staged.
+- [ ] `review` popup from the menu (`| less -R`), long outputs and colours.
+- [ ] Agents actually writing `.collie/REPORT.md` from the default prompt.
+- [ ] `hooks/pre-push` installed by symlink into a bare repo's `hooks/`
+      (tests use `core.hooksPath`).

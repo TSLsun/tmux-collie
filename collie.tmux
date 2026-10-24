@@ -40,6 +40,7 @@ tmux bind-key "${key:-h}" display-menu -T '#[align=centre] collie ' -x C -y C \
   notes n "$popup '$C notes $T'" \
   "next action" N "$prompt '$C set $T next'" \
   status s "$status_menu" \
+  review v "$popup '$C review $T | less -R'" \
   "" \
   "run agent" r "run-shell '$C run $T'" \
   "done" d "confirm-before -p 'done $T? (y/n)' \"run-shell '$C done $T'\""
