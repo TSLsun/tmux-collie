@@ -27,7 +27,7 @@ collie new login                       # task in the current repo, branch feat/l
 collie new typo -t fix                 # branch fix/typo
 collie new deploy-v2 -r A -r B         # cross-repo task (repos by name or path)
 collie new deploy-v2 -r A -r B:release/v2   # per-repo branch
-collie new lake-fix -w lakehouse       # all repos of a workspace
+collie new checkout-fix -w shop        # all repos of a workspace
 collie add deploy-v2 -r C              # pull another repo in mid-task
 collie ls                              # id  status  priority  session(*|-)  repos  next
 collie show deploy-v2
@@ -44,7 +44,7 @@ set -g @collie-repo-roots '~/Repos/*/*'      # ':'-separated globs ($COLLIE_REPO
 
 ```
 # ~/.config/collie/workspaces
-lakehouse: core jobs infra
+shop: api web infra
 ```
 
 Task data lives in `~/.local/state/collie/tasks/<id>/` (`TASK.md`, `repos.tsv`,
