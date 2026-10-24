@@ -1,0 +1,21 @@
+#!/usr/bin/env bats
+
+load helper
+
+setup() { setup_env; }
+teardown() { teardown_env; }
+
+@test "collie.tmux: prepends bin/ to tmux global PATH" {
+  tmux new-session -d -s t
+  run tmux run-shell "$COLLIE_ROOT/collie.tmux"
+  [ "$status" -eq 0 ]
+  [[ "$(tmux show-environment -g PATH)" == "PATH=$COLLIE_ROOT/bin:"* ]]
+}
+
+@test "collie.tmux: is idempotent on reload" {
+  tmux new-session -d -s t
+  tmux run-shell "$COLLIE_ROOT/collie.tmux"
+  tmux run-shell "$COLLIE_ROOT/collie.tmux"
+  count=$(tmux show-environment -g PATH | sed 's/^PATH=//' | tr ':' '\n' | grep -cx "$COLLIE_ROOT/bin")
+  [ "$count" -eq 1 ]
+}
