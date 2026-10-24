@@ -1,0 +1,221 @@
+#!/usr/bin/env bash
+# collie — herd coding agents across git worktrees in tmux.
+# Bash 3.2 compatible (macOS /bin/bash): no associative arrays, no mapfile.
+set -euo pipefail
+
+VERSION=0.1.0-dev
+
+die() {
+  printf 'collie: %s\n' "$*" >&2
+  exit 1
+}
+
+usage() {
+  cat <<'EOF'
+usage: collie <command> [args]
+
+commands:
+  new <branch> [--from <ref>] [--no-window] [--go]
+                      create a worktree (and tmux window) for <branch>
+  ls                  list worktrees: slug, branch, path, window (*|-)
+  go [<branch|slug>]  switch to the worktree's window (fzf picker if omitted);
+                      outside tmux, print its path instead
+  rm <branch|slug> [--force] [--delete-branch]
+                      remove a worktree and its tmux window
+  help                show this help
+
+layouts:
+  bare    <root>/.bare + <root>/.git  ->  worktrees at <root>/<slug>
+  normal  <repo>/.git                 ->  worktrees at <repo>.worktrees/<slug>
+EOF
+}
+
+# --- repo layout ------------------------------------------------------------
+
+# Sets COMMON (git common dir), ROOT (worktree parent dir), NAME (repo name).
+load_repo() {
+  COMMON=$(git rev-parse --path-format=absolute --git-common-dir 2>/dev/null) ||
+    die "not inside a git repository"
+  if [ "$(git config --file "$COMMON/config" --bool core.bare 2>/dev/null)" = true ]; then
+    ROOT=$(dirname "$COMMON")
+    NAME=$(basename "$ROOT")
+  else
+    local main
+    main=$(dirname "$COMMON")
+    NAME=$(basename "$main")
+    ROOT="$(dirname "$main")/$NAME.worktrees"
+  fi
+}
+
+g() { git --git-dir="$COMMON" "$@"; }
+
+slug() { printf '%s' "${1//\//-}"; }
+
+session_name() { printf '%s' "$NAME" | tr '.:' '__'; }
+
+default_base() {
+  if g rev-parse -q --verify refs/remotes/origin/HEAD >/dev/null; then
+    echo origin/HEAD
+  else
+    g symbolic-ref -q HEAD || die "cannot determine default branch; use --from"
+  fi
+}
+
+# Prints "path<TAB>branch" per worktree (bare entry skipped).
+worktrees() {
+  g worktree list --porcelain | awk '
+    /^worktree / { path = substr($0, 10); branch = "(detached)"; bare = 0 }
+    /^bare$/     { bare = 1 }
+    /^branch /   { branch = substr($0, 8); sub(/^refs\/heads\//, "", branch) }
+    /^$/         { if (path != "" && !bare) print path "\t" branch; path = "" }
+    END          { if (path != "" && !bare) print path "\t" branch }'
+}
+
+# Resolves <branch|slug> to "path<TAB>branch".
+resolve() {
+  local hit
+  hit=$(worktrees | awk -F'\t' -v t="$1" '{ n = split($1, p, "/") } $2 == t || p[n] == t { print; exit }')
+  [ -n "$hit" ] || die "no worktree for '$1'"
+  printf '%s\n' "$hit"
+}
+
+# --- tmux -------------------------------------------------------------------
+
+window_id_for() {
+  tmux list-windows -a -F '#{window_id}	#{@collie_path}' 2>/dev/null |
+    awk -F'\t' -v p="$1" '$2 == p { print $1; exit }' || true
+}
+
+open_window() {
+  local path=$1 name sess wid
+  name=$(basename "$path")
+  sess=$(session_name)
+  if tmux has-session -t "=$sess" 2>/dev/null; then
+    wid=$(tmux new-window -d -P -F '#{window_id}' -t "=$sess:" -n "$name" -c "$path")
+  else
+    wid=$(tmux new-session -d -P -F '#{window_id}' -s "$sess" -n "$name" -c "$path")
+  fi
+  tmux set-option -w -t "$wid" @collie_path "$path"
+  printf '%s\n' "$wid"
+}
+
+# --- commands ---------------------------------------------------------------
+
+cmd_new() {
+  local branch="" from="" window=1 go=0
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --from) from=${2:?--from needs a ref}; shift ;;
+      --no-window) window=0 ;;
+      --go) go=1 ;;
+      -*) die "new: unknown option $1" ;;
+      *) [ -z "$branch" ] || die "new: too many arguments"; branch=$1 ;;
+    esac
+    shift
+  done
+  [ -n "$branch" ] || die "usage: collie new <branch> [--from <ref>] [--no-window] [--go]"
+  load_repo
+
+  local path
+  path="$ROOT/$(slug "$branch")"
+  [ ! -e "$path" ] || die "$path already exists"
+  mkdir -p "$ROOT"
+
+  if g show-ref -q --verify "refs/heads/$branch"; then
+    [ -z "$from" ] || die "branch '$branch' already exists; drop --from"
+    g worktree add -q "$path" "$branch"
+  elif [ -z "$from" ] && g show-ref -q --verify "refs/remotes/origin/$branch"; then
+    g worktree add -q --track -b "$branch" "$path" "origin/$branch"
+  else
+    g worktree add -q --no-track -b "$branch" "$path" "${from:-$(default_base)}"
+  fi
+  printf '%s\n' "$path"
+
+  [ "$window" -eq 1 ] && command -v tmux >/dev/null || return 0
+  local wid
+  wid=$(open_window "$path")
+  if [ "$go" -eq 1 ] && [ -n "${TMUX:-}" ]; then
+    tmux switch-client -t "$wid"
+  fi
+}
+
+cmd_ls() {
+  load_repo
+  local windows
+  windows=$(tmux list-windows -a -F '#{@collie_path}' 2>/dev/null || true)
+  worktrees | while IFS=$'\t' read -r path branch; do
+    local mark=-
+    if printf '%s\n' "$windows" | grep -qxF "$path"; then mark='*'; fi
+    printf '%s\t%s\t%s\t%s\n' "$(basename "$path")" "$branch" "$path" "$mark"
+  done
+}
+
+cmd_go() {
+  [ $# -le 1 ] || die "usage: collie go [<branch|slug>]"
+  load_repo
+  local path
+  if [ $# -eq 1 ]; then
+    path=$(resolve "$1" | cut -f1)
+  else
+    command -v fzf >/dev/null || die "go: fzf required when no target is given"
+    path=$(cmd_ls | fzf --delimiter='\t' --with-nth=1,2,4 --prompt='worktree> ' | cut -f3)
+    [ -n "$path" ] || exit 1
+  fi
+
+  if [ -z "${TMUX:-}" ]; then
+    printf '%s\n' "$path"
+    return
+  fi
+  local wid
+  wid=$(window_id_for "$path")
+  [ -n "$wid" ] || wid=$(open_window "$path")
+  tmux switch-client -t "$wid"
+}
+
+cmd_rm() {
+  local target="" force=0 delete_branch=0
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --force) force=1 ;;
+      --delete-branch) delete_branch=1 ;;
+      -*) die "rm: unknown option $1" ;;
+      *) [ -z "$target" ] || die "rm: too many arguments"; target=$1 ;;
+    esac
+    shift
+  done
+  [ -n "$target" ] || die "usage: collie rm <branch|slug> [--force] [--delete-branch]"
+  load_repo
+
+  local hit path branch here
+  hit=$(resolve "$target")
+  path=${hit%%$'\t'*}
+  branch=${hit#*$'\t'}
+  here=$(pwd -P)
+  case "$here/" in "$path"/*) die "currently inside $path; cd elsewhere first" ;; esac
+
+  local wid
+  wid=$(window_id_for "$path")
+  if [ "$force" -eq 1 ]; then
+    g worktree remove --force "$path"
+  else
+    g worktree remove "$path"
+  fi
+  [ -z "$wid" ] || tmux kill-window -t "$wid"
+  if [ "$delete_branch" -eq 1 ] && [ "$branch" != "(detached)" ]; then
+    g branch -q -d "$branch"
+  fi
+}
+
+case "${1:-help}" in
+  new | ls | go | rm)
+    cmd=$1
+    shift
+    "cmd_$cmd" "$@"
+    ;;
+  help | -h | --help) usage ;;
+  -v | --version) echo "collie $VERSION" ;;
+  *)
+    usage >&2
+    exit 1
+    ;;
+esac
