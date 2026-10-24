@@ -154,9 +154,9 @@ created: 2026-01-01
 |---|---|
 | `collie new <id> [-r repo[:branch]]... [-w workspace] [-t type] [--title ..] [--from ref] [--todo] [--edit] [--no-window]` | Create task, worktrees and session; defaults to the current repo |
 | `collie add [<id>] -r repo[:branch]...` | Pull another repo into an existing task |
-| `collie ls [-a]` | Active tasks: id, status, priority, session, repos, next |
+| `collie ls [-a]` | Active tasks: id, status, priority, session, agent, repos, next |
 | `collie go [<id>]` | Switch to the task session (fzf if no id); recreate it if missing |
-| `collie run [<id>] [--agent X]` | Launch an agent in a new window; records a run (P2) |
+| `collie run [<id>] [--agent X] [-r repo] [-p prompt] [-- args]` | Launch an agent in a new task window; records a run |
 | `collie set [<id>] status=review next="..."` | Update status or next action (P3) |
 | `collie review [<id>]` | Per-repo diff stat + REPORT.md; key to open lazygit (P5) |
 | `collie done [<id>] [--force]` | Accept: safety checks, then remove worktrees and session |
@@ -168,7 +168,8 @@ created: 2026-01-01
 | Command | Purpose |
 |---|---|
 | `collie show [<id>]` | Full task info + recent events |
-| `collie state <working\|waiting\|idle>` | Endpoint called by agent hooks (P2) |
+| `collie state <working\|waiting\|idle\|exited>` | Endpoint called by agent hooks; no-op outside a collie window |
+| `collie status` | Agent counts for the status bar (`#{collie_status}`) |
 | `collie doctor` | Dependencies, installed agents, hook snippets, task/git/tmux reconciliation (P4) |
 | `collie repos` / `collie workspaces` | What collie can see |
 
@@ -199,25 +200,48 @@ the user's own terminal config.
 
 ## 5. Agent adapters
 
-One file per agent, `agents/<name>.sh`, implementing:
+One file per agent, `agents/<name>.sh`, sourced by `collie run`:
 
 ```bash
-agent_detect          # is it installed (command -v)
-agent_launch_cmd      # command to start it in a worktree, pointing it at .collie/TASK.md
-agent_extra_dirs      # how to grant access to the task's other worktrees (claude: --add-dir)
-agent_hook_snippet    # config snippet printed by `collie doctor`
+AGENT_HOOKS=1         # 1 if the agent reports state through `collie state`
+agent_argv            # sets AGENT_ARGV from RUN_PROMPT (initial prompt) and
+                      # RUN_DIRS (other worktrees + task dir, one per line)
 ```
+
+An agent name without an adapter file runs as-is (generic adapter):
+`collie run --agent aider -- --model x`. `collie run` checks the command
+exists, then starts it through a wrapper (`collie _exec`) that records the
+exit (`run_exited`, state `exited`) and leaves a shell in the window.
+
+Run state lives in window options (`@collie_run`, `@collie_agent`,
+`@collie_state`, `@collie_hooks`); `collie state` finds its window via
+`$TMUX_PANE`, so hooks need no arguments besides the state. Transitions are
+logged once (`agent_state run=N state=X`); repeats are dropped.
+
+The claude adapter passes its hooks with `--settings '<json>'`, so they only
+fire in sessions collie started and the user's settings stay untouched:
+`UserPromptSubmit`/`PostToolUse` → working, `Notification`
+(`permission_prompt|elicitation_dialog`) → waiting, `Stop` → idle,
+`SessionEnd` → exited.
 
 | Agent | State source | Confidence |
 |---|---|---|
-| claude | hooks: `UserPromptSubmit` → working, `Notification` → waiting, `Stop` → idle | known |
+| claude | hooks via `--settings` (above) | working/idle/exited verified; waiting unverified |
 | omp | to be researched | P4 |
 | codex | `notify` (turn complete → idle) + silence detection | unverified |
 | gemini | hooks, if available | unverified |
-| generic | tmux `monitor-silence` + process exit | always works, coarse |
+| generic | wrapper exit + `window_activity`: working → idle after `@collie-silence` s (30) without output | always works, coarse; no `waiting` |
 
-`exited` / `unknown` don't come from hooks; `ls` derives them from window
-existence and the pane's foreground process (`#{pane_current_command}`).
+`exited` / `unknown` are also derived: a run whose window is gone (no
+`run_exited` logged) is `exited` while the session exists and `unknown` once the
+session is gone (e.g. `kill-server`).
+
+Notifications fire on → `waiting` and on `working` → `idle`, skipped for the
+active window of an attached session. `@collie-notify`: `on` (osascript /
+notify-send), `off`, or a command receiving title and body.
+
+Known gap: Claude's folder-trust dialog (every new worktree) is not reported by
+any hook, so the run shows `working` until it is answered.
 
 ---
 
@@ -247,11 +271,12 @@ unless marked *manual*.
   - `new -w` creates all repos of a workspace; `add` extends an existing task
   - small change in two commands: `collie new fix-typo` → commit, merge → `collie done`
 
-### P2 — Agent runtime
+### P2 — Agent runtime ✅
 **Goal:** know what every agent is doing.
 - `run`, `state`; claude adapter + generic adapter.
 - Derive `exited` / `unknown`; log each run as events.
-- Status-bar glyphs; notifications on `waiting` / `idle` (macOS / Linux, opt-out).
+- Status-bar counts (`#{collie_status}`); notifications on `waiting` / `idle`
+  (macOS / Linux, opt-out).
 - **Acceptance:**
   - three concurrent tasks show correct state transitions (fake agent script
     driving the hooks)

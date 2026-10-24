@@ -27,12 +27,20 @@ tasks:
                       create a task: worktree per repo + tmux session
   add [<id>] -r repo[:branch]... [--from ref] [--no-window]
                       attach more repos to an existing task
-  ls [-a]             list tasks: id, status, priority, session (*|-), repos, next
-  show [<id>]         task fields, repos and recent events
+  ls [-a]             list tasks: id, status, priority, session (*|-), agent, repos, next
+  show [<id>]         task fields, repos, agent runs and recent events
   go [<id>]           switch to the task session (fzf picker if omitted);
                       outside tmux and not a tty, print the primary worktree path
   done [<id>] [--force]     accept: remove worktrees + session, keep branches
   archive [<id>] [--force]  abandon: same cleanup, status archived
+
+agents:
+  run [<id>] [--agent name] [-r repo] [-p prompt] [-- args]
+                      start an agent in a new task window (default agent:
+                      $COLLIE_AGENT, @collie-agent, else claude); -p '' = no prompt
+  state <working|waiting|idle|exited>
+                      called by agent hooks; no-op outside a collie window
+  status              agent counts for the status bar (#{collie_status})
 
 discovery:
   repos               repos found under @collie-repo-roots / $COLLIE_REPO_ROOTS
@@ -277,6 +285,92 @@ ensure_session() {
   done <"$(task_dir "$id")/repos.tsv"
 }
 
+tmux_opt() { tmux show-options -gqv "$1" 2>/dev/null || true; }
+
+# --- agent runtime ----------------------------------------------------------
+
+DEFAULT_PROMPT='Your task contract is .collie/TASK.md. Read it first; if its Objective is empty, ask me what to do.'
+
+# Agent windows as "session<TAB>window<TAB>run<TAB>agent<TAB>state". Agents
+# without hooks count as idle after @collie-silence seconds (30) of no output.
+win_states() { # list-windows target args
+  local silence=${COLLIE_SILENCE:-$(tmux_opt @collie-silence)}
+  { tmux list-windows "$@" -F '#{session_name}|#{window_id}|#{@collie_run}|#{@collie_agent}|#{@collie_state}|#{@collie_hooks}|#{window_activity}' 2>/dev/null || true; } |
+    awk -F'|' -v now="$(date +%s)" -v s="${silence:-30}" '
+      $5 == "" { next }
+      { st = $5 }
+      st == "working" && $6 == "0" && now - $7 >= s { st = "idle" }
+      { print $1 "\t" $2 "\t" ($3 == "" ? "-" : $3) "\t" ($4 == "" ? "-" : $4) "\t" st }'
+}
+
+# Runs of a task as "run<TAB>agent<TAB>state<TAB>window": agent windows, then
+# runs started but never seen exiting (exited if the session is up, unknown if
+# it is gone).
+task_runs() {
+  local id=$1 wins="" fallback=unknown
+  if has_session "$id"; then
+    fallback=exited
+    wins=$(win_states -t "=$id" | awk -F'\t' '{ print $3 "\t" $4 "\t" $5 "\t" $2 }')
+  fi
+  [ -z "$wins" ] || printf '%s\n' "$wins"
+  printf '%s\n' "$wins" | awk -F'\t' -v fb="$fallback" '
+    function kv(k,  a, i, n) {
+      n = split($3, a, " ")
+      for (i = 1; i <= n; i++) if (index(a[i], k "=") == 1) return substr(a[i], length(k) + 2)
+    }
+    FNR == NR { seen[$1] = 1; next }
+    $2 == "run_started" { r = kv("run"); agent[r] = kv("agent"); order[++n] = r }
+    $2 == "run_exited" { ended[kv("run")] = 1 }
+    END {
+      for (i = 1; i <= n; i++) {
+        r = order[i]
+        if (!(r in ended) && !(r in seen)) print r "\t" agent[r] "\t" fb "\t-"
+      }
+    }' - "$(task_dir "$id")/events.log"
+}
+
+# Most urgent state among a task's runs, or "-".
+agent_summary() {
+  task_runs "$1" | awk -F'\t' '
+    BEGIN { n = split("waiting idle working exited unknown", o, " "); for (i = 1; i <= n; i++) r[o[i]] = i; b = n + 1; best = "-" }
+    ($3 in r) && r[$3] < b { b = r[$3]; best = $3 }
+    END { print best }'
+}
+
+# @collie-notify / $COLLIE_NOTIFY: on (default), off, or a command that gets
+# title and body as arguments.
+notify() { # title body
+  local how=${COLLIE_NOTIFY-$(tmux_opt @collie-notify)}
+  case $how in
+    off) ;;
+    "" | on)
+      if command -v osascript >/dev/null; then
+        osascript -e 'on run a' -e 'display notification (item 2 of a) with title (item 1 of a)' -e 'end run' "$1" "$2"
+      elif command -v notify-send >/dev/null; then
+        notify-send "$1" "$2"
+      fi
+      ;;
+    *) sh -c "$how \"\$1\" \"\$2\"" sh "$1" "$2" ;;
+  esac
+}
+
+# Records a state change for the window of a pane; ignores non-collie windows.
+set_state() { # pane state
+  local info id run old wid agent active attached
+  info=$(tmux display-message -p -t "$1" '#{@collie_task}|#{@collie_run}|#{@collie_state}|#{window_id}|#{@collie_agent}|#{window_active}|#{session_attached}' 2>/dev/null) || return 0
+  IFS='|' read -r id run old wid agent active attached <<<"$info"
+  [ -n "$id" ] && [ -f "$(task_dir "$id")/TASK.md" ] || return 0
+  [ "$2" != "$old" ] || return 0
+  tmux set-option -w -t "$wid" @collie_state "$2" 2>/dev/null || return 0
+  log_event "$id" agent_state "run=${run:--} state=$2"
+  # no popup for the window you are looking at
+  [ "$active" = 1 ] && [ "${attached:-0}" -gt 0 ] && return 0
+  case $2:$old in
+    waiting:*) notify "collie: $id" "${agent:-agent} is waiting for you" >/dev/null 2>&1 & ;;
+    idle:working) notify "collie: $id" "${agent:-agent} finished its turn" >/dev/null 2>&1 & ;;
+  esac
+}
+
 # --- commands ---------------------------------------------------------------
 
 cmd_new() {
@@ -355,8 +449,8 @@ cmd_ls() {
     case $st in done | archived) [ "$all" -eq 1 ] || continue ;; esac
     mark=-
     if has_session "$id"; then mark='*'; fi
-    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$id" "$st" "$(fm_get "$d/TASK.md" priority)" "$mark" \
-      "$(cut -f1 "$d/repos.tsv" | paste -s -d, -)" "$(fm_get "$d/TASK.md" next)"
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$id" "$st" "$(fm_get "$d/TASK.md" priority)" "$mark" \
+      "$(agent_summary "$id")" "$(cut -f1 "$d/repos.tsv" | paste -s -d, -)" "$(fm_get "$d/TASK.md" next)"
   done
 }
 
@@ -372,6 +466,9 @@ cmd_show() {
     [ -d "$p" ] || mark=" (missing)"
     printf '  %s\t%s\t%s%s\n' "$name" "$b" "$p" "$mark"
   done <"$d/repos.tsv"
+  echo
+  echo "runs:"
+  task_runs "$id" | sed 's/^/  /'
   echo
   echo "events:"
   tail -n 5 "$d/events.log" | sed 's/^/  /'
@@ -445,6 +542,97 @@ finish_task() { # final_status args...
   if has_session "$id"; then tmux kill-session -t "=$id"; fi
 }
 
+cmd_run() {
+  local id="" agent="" repo="" prompt=$DEFAULT_PROMPT extra=()
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --agent) agent=${2:?--agent needs a name}; shift ;;
+      -r) repo=${2:?-r needs a repo}; shift ;;
+      -p) [ $# -ge 2 ] || die "-p needs a prompt"; prompt=$2; shift ;;
+      --) shift; extra=("$@"); break ;;
+      -*) die "run: unknown option $1" ;;
+      *) [ -z "$id" ] || die "run: too many arguments"; id=$1 ;;
+    esac
+    shift
+  done
+  id=$(task_id "$id")
+  command -v tmux >/dev/null || die "run: tmux required"
+  agent=${agent:-${COLLIE_AGENT:-$(tmux_opt @collie-agent)}}
+  agent=${agent:-claude}
+
+  local d name c b p rname="" path=""
+  d=$(task_dir "$id")
+  while IFS=$TAB read -r name c b p; do
+    if [ -z "$rname" ] && { [ -z "$repo" ] || [ "$name" = "$repo" ]; }; then rname=$name path=$p; fi
+  done <"$d/repos.tsv"
+  [ -n "$rname" ] || die "repo '$repo' is not part of task '$id'"
+  [ -d "$path" ] || die "missing worktree $path"
+
+  # adapter inputs: other worktrees + the task dir, and the initial prompt
+  # shellcheck disable=SC2034
+  local RUN_PROMPT=$prompt RUN_DIRS
+  # shellcheck disable=SC2034
+  RUN_DIRS=$(awk -F'\t' -v p="$path" '$4 != p { print $4 }' "$d/repos.tsv"; printf '%s\n' "$d")
+  AGENT_HOOKS=0
+  if [[ $agent != */* ]] && [ -f "$PLUGIN_DIR/agents/$agent.sh" ]; then
+    # shellcheck source=/dev/null
+    . "$PLUGIN_DIR/agents/$agent.sh"
+    agent_argv
+  else
+    AGENT_ARGV=("$agent")
+  fi
+  command -v "${AGENT_ARGV[0]}" >/dev/null || die "agent command '${AGENT_ARGV[0]}' not found"
+
+  # an agent with hooks and no prompt sits at its input box
+  local st=working run wid o
+  [ "$AGENT_HOOKS" = 0 ] || [ -n "$prompt" ] || st=idle
+  run=$(($(awk -F'\t' '$2 == "run_started" { n++ } END { print n + 0 }' "$d/events.log") + 1))
+  ensure_session "$id"
+  wid=$(tmux new-window -d -P -F '#{window_id}' -t "=$id:" -n "$agent" -c "$path" \
+    "$BASH" "$PLUGIN_DIR/bin/collie" _exec "$id" "$run" "${AGENT_ARGV[@]}" ${extra[@]+"${extra[@]}"} </dev/null)
+  for o in "@collie_task=$id" "@collie_path=$path" "@collie_run=$run" "@collie_agent=$agent" \
+    "@collie_hooks=$AGENT_HOOKS" "@collie_state=$st"; do
+    tmux set-option -w -t "$wid" "${o%%=*}" "${o#*=}"
+  done
+  # an instant agent exit may log run_exited first; task_runs is order-free
+  log_event "$id" run_started "run=$run agent=$agent repo=$rname window=$wid"
+  if [ "$(fm_get "$d/TASK.md" status)" = todo ]; then
+    fm_set "$d/TASK.md" status active
+    log_event "$id" status_changed "status=active"
+  fi
+}
+
+# Window command of a run: runs the agent, records its exit, leaves a shell.
+cmd__exec() { # id run argv...
+  local id=$1 run=$2 code=0
+  shift 2
+  trap : INT
+  "$@" || code=$?
+  trap - INT
+  log_event "$id" run_exited "run=$run code=$code"
+  set_state "${TMUX_PANE:-}" exited
+  exec "${SHELL:-/bin/sh}"
+}
+
+cmd_state() {
+  case ${1:-} in
+    working | waiting | idle | exited) ;;
+    *) die "usage: collie state <working|waiting|idle|exited>" ;;
+  esac
+  [ -z "${TMUX_PANE:-}" ] || set_state "$TMUX_PANE" "$1"
+}
+
+cmd_status() {
+  win_states -a | awk -F'\t' '
+    { n[$5]++ }
+    END {
+      if (n["waiting"]) s = s " #[fg=red]●" n["waiting"]
+      if (n["idle"]) s = s " #[fg=yellow]●" n["idle"]
+      if (n["working"]) s = s " #[fg=green]●" n["working"]
+      if (s != "") print substr(s, 2) "#[default]"
+    }'
+}
+
 cmd_repos() { discover; }
 
 cmd_workspaces() {
@@ -454,7 +642,7 @@ cmd_workspaces() {
 }
 
 case "${1:-help}" in
-  new | add | ls | show | go | repos | workspaces)
+  new | add | ls | show | go | run | state | status | _exec | repos | workspaces)
     cmd=$1
     shift
     "cmd_$cmd" "$@"

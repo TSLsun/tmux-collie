@@ -19,3 +19,10 @@ teardown() { teardown_env; }
   count=$(tmux show-environment -g PATH | sed 's/^PATH=//' | tr ':' '\n' | grep -cx "$COLLIE_ROOT/bin")
   [ "$count" -eq 1 ]
 }
+
+@test "collie.tmux: replaces #{collie_status} in status-right" {
+  tmux new-session -d -s t
+  tmux set-option -g status-right 'x #{collie_status} y'
+  tmux run-shell "$COLLIE_ROOT/collie.tmux"
+  [ "$(tmux show-options -gqv status-right)" = "x #(\"$COLLIE_ROOT/bin/collie\" status) y" ]
+}

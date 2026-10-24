@@ -177,8 +177,8 @@ two_repos() {
   run collie ls
   [ "$status" -eq 0 ]
   [ "${#lines[@]}" -eq 2 ]
-  [[ "${lines[0]}" == "x	active	P2	*	A,B	" ]]
-  [[ "${lines[1]}" == "y	todo	P2	-	A	" ]]
+  [[ "${lines[0]}" == "x	active	P2	*	-	A,B	" ]]
+  [[ "${lines[1]}" == "y	todo	P2	-	-	A	" ]]
   run collie ls -a
   [ "${#lines[@]}" -eq 3 ]
 }

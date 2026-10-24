@@ -12,3 +12,13 @@ case ":$path:" in
   *":$BIN:"*) ;;
   *) tmux set-environment -g PATH "$BIN:$path" ;;
 esac
+
+# #{collie_status} in status-left/right becomes the agent counts.
+pat='#{collie_status}'
+cmd="#(\"$BIN/collie\" status)"
+for side in status-left status-right; do
+  v=$(tmux show-options -gqv "$side")
+  case $v in
+    *"$pat"*) tmux set-option -g "$side" "${v//"$pat"/$cmd}" ;;
+  esac
+done

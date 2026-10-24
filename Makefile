@@ -4,6 +4,6 @@ test:
 	bats test/
 
 lint:
-	shellcheck -x bin/collie collie.tmux test/helper.bash
+	shellcheck -x bin/collie collie.tmux agents/*.sh test/helper.bash
 
 check: lint test

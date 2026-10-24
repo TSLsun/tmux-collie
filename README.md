@@ -4,7 +4,8 @@ Herd coding agents across git worktrees, from tmux.
 
 > **Status: 0.x, experimental.** Interfaces may change without notice.
 
-See [docs/DESIGN.md](docs/DESIGN.md) for goals, data model and roadmap.
+See [docs/DESIGN.md](docs/DESIGN.md) for goals, data model and roadmap, and
+[docs/UNVERIFIED.md](docs/UNVERIFIED.md) for what has not been checked yet.
 
 ## Install
 
@@ -35,6 +36,28 @@ collie go deploy-v2                    # switch/attach (fzf picker if no id)
 collie done deploy-v2                  # accept: remove worktrees + session, keep branches
 collie archive deploy-v2               # abandon: same cleanup
 ```
+
+### Agents
+
+```sh
+collie run deploy-v2                   # claude in a new window of the task session
+collie run deploy-v2 -r B -p 'fix CI'  # in repo B's worktree, custom first prompt
+collie run --agent aider -- --model x  # any command works (no state hooks)
+collie ls                              # agent column: waiting/idle/working/exited/unknown
+```
+
+`collie run` points the agent at `.collie/TASK.md` (`-p ''` for no prompt).
+Claude Code reports its state through hooks that collie passes with
+`--settings`; nothing to install. Other agents count as idle after 30s
+without output (`@collie-silence`).
+
+```tmux
+set -g status-right '#{collie_status} %H:%M'   # ●waiting ●idle ●working counts
+set -g @collie-agent 'claude'                  # default agent ($COLLIE_AGENT wins)
+set -g @collie-notify 'on'                     # on | off | command "title" "body"
+```
+
+Windows carry `@collie_state`, usable in `window-status-format`.
 
 Configuration:
 
