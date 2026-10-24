@@ -157,7 +157,9 @@ created: 2026-01-01
 | `collie ls [-a]` | Active tasks: id, status, priority, session, agent, repos, next |
 | `collie go [<id>]` | Switch to the task session (fzf if no id); recreate it if missing |
 | `collie run [<id>] [--agent X] [-r repo] [-p prompt] [-- args]` | Launch an agent in a new task window; records a run |
-| `collie set [<id>] status=review next="..."` | Update status or next action (P3) |
+| `collie dash [-n]` | fzf dashboard, most urgent first; enter jumps to the most urgent agent window |
+| `collie set [<id>] status=review next="..."` | Update status, priority, next or title; a bare field reads stdin |
+| `collie notes [<id>]` | Edit the task's `NOTES.md` |
 | `collie review [<id>]` | Per-repo diff stat + REPORT.md; key to open lazygit (P5) |
 | `collie done [<id>] [--force]` | Accept: safety checks, then remove worktrees and session |
 | `collie archive [<id>] [--force]` | Abandon: same cleanup |
@@ -185,10 +187,11 @@ so nothing has to be memorised:
 prefix h →  ┌ collie ─────────────┐
             │ h  dashboard        │   ← prefix h h: the most used action
             │ g  lazygit          │
-            │ n  notes / next     │
+            │ n  notes            │
+            │ N  next action      │
+            │ s  status ▸         │
+            │ v  review     (P5)  │
             │ r  run agent        │
-            │ v  review           │
-            │ s  set status       │
             │ d  done             │
             └─────────────────────┘
 ```
@@ -283,10 +286,11 @@ unless marked *manual*.
   - killing the agent → `exited`; `kill-server` → `unknown`
   - *manual:* one working → idle cycle with a real Claude Code session
 
-### P3 — Dashboard & interaction
+### P3 — Dashboard & interaction ✅
 **Goal:** from any pane, reach the agent that needs you in two keystrokes.
 - fzf dashboard (ordering per §3.3; preview shows next, diff stat, NOTES tail).
-- `prefix h` menu, lazygit / NOTES popups, `set`, zsh completion.
+- `prefix h` menu, lazygit / NOTES popups, `set`, `notes`, zsh completion
+  (`completions/_collie`).
 - Docs: terminal key mapping examples.
 - **Acceptance:** dashboard ordering tests; *manual* day-to-day check.
 

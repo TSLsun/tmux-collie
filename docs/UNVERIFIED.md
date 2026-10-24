@@ -29,3 +29,16 @@ delete an item only when it is covered by a test.
       refresh every `status-interval`).
 - [ ] Latency of `collie state` from `PostToolUse` on every tool call is
       unnoticeable.
+
+## P3 — Dashboard & interaction
+- [ ] `collie dash` interactively: fzf layout, preview pane, `ctrl-r` reload,
+      enter selecting the urgent window and switching session (from a popup,
+      `switch-client` must act on the popup's client). Tests cover rows,
+      ordering, preview text and target window only.
+- [ ] The `prefix h` menu with a real client: `#{session_name}` expanding in
+      nested items (status submenu, confirm-before), popups sizing, lazygit popup
+      opening in the pane's directory. Tests only check the binding text and
+      `run-shell collie done`.
+- [ ] Menu actions on a session that is not a task (should show collie's error).
+- [ ] zsh completion in an interactive shell (only `zsh -n` is checked).
+- [ ] Alacritty `chars = "\u0002hh"` example in README.

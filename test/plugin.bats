@@ -26,3 +26,14 @@ teardown() { teardown_env; }
   tmux run-shell "$COLLIE_ROOT/collie.tmux"
   [ "$(tmux show-options -gqv status-right)" = "x #(\"$COLLIE_ROOT/bin/collie\" status) y" ]
 }
+
+@test "collie.tmux: binds the menu to prefix h (or @collie-key)" {
+  tmux new-session -d -s t
+  tmux run-shell "$COLLIE_ROOT/collie.tmux"
+  run tmux list-keys -T prefix h
+  [[ "$output" == *display-menu* && "$output" == *"collie dash"* && "$output" == *"status=review"* ]]
+  tmux set-option -g @collie-key j
+  tmux run-shell "$COLLIE_ROOT/collie.tmux"
+  run tmux list-keys -T prefix j
+  [[ "$output" == *display-menu* ]]
+}

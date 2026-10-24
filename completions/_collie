@@ -1,0 +1,62 @@
+#compdef collie
+# zsh completion for collie. Add the directory to fpath before compinit:
+#   fpath+=(~/.tmux/plugins/tmux-collie/completions)
+
+_collie_tasks() {
+  local -a tasks
+  tasks=(${(f)"$(collie ls -a 2>/dev/null | cut -f1)"})
+  _describe task tasks
+}
+
+_collie_repos() {
+  local -a repos
+  repos=(${(f)"$(collie repos 2>/dev/null | cut -f1)"})
+  _describe repo repos
+}
+
+_collie_workspaces() {
+  local -a ws
+  ws=(${(f)"$(collie workspaces 2>/dev/null | cut -f1)"})
+  _describe workspace ws
+}
+
+_collie() {
+  local -a cmds
+  cmds=(
+    'new:create a task'
+    'add:attach repos to a task'
+    'ls:list tasks'
+    'show:show a task'
+    'go:switch to a task session'
+    'dash:dashboard'
+    'set:set status, priority, next or title'
+    'notes:edit NOTES.md'
+    'run:start an agent'
+    'done:accept and clean up a task'
+    'archive:abandon and clean up a task'
+    'state:agent hook endpoint'
+    'status:status-bar counts'
+    'repos:discovered repos'
+    'workspaces:named repo sets'
+    'help:usage'
+  )
+  if (( CURRENT == 2 )); then
+    _describe command cmds
+    return
+  fi
+  case ${words[CURRENT-1]} in
+    -r) _collie_repos; return ;;
+    -w) _collie_workspaces; return ;;
+    -t) compadd feat fix chore docs refactor test exp; return ;;
+    --agent) compadd claude; return ;;
+  esac
+  case ${words[2]} in
+    state) compadd working waiting idle exited ;;
+    set) compadd -S '=' status priority next title; _collie_tasks ;;
+    ls) compadd -- -a ;;
+    new) compadd -- -r -w -t --title --from --todo --edit --no-window ;;
+    add | show | go | notes | run | done | archive) _collie_tasks ;;
+  esac
+}
+
+_collie "$@"

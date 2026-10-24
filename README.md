@@ -46,6 +46,33 @@ collie run --agent aider -- --model x  # any command works (no state hooks)
 collie ls                              # agent column: waiting/idle/working/exited/unknown
 ```
 
+### Dashboard and menu
+
+```sh
+collie dash                            # fzf: waiting > idle > review > blocked > working
+collie set deploy-v2 status=review "next=check the infra diff"
+collie notes deploy-v2                 # $EDITOR on NOTES.md
+```
+
+`prefix h` opens a menu (dashboard, lazygit, notes, next action, status, run
+agent, done) for the current session's task; `prefix h h` goes straight to
+the dashboard. Change the key with `set -g @collie-key 'h'`.
+
+To reach the dashboard with one terminal key, send `prefix h h`. Alacritty
+with prefix `C-b`:
+
+```toml
+[[keyboard.bindings]]
+key = "J"
+mods = "Command"
+chars = "\u0002hh"
+```
+
+zsh completion: `fpath+=(~/.tmux/plugins/tmux-collie/completions)` before
+`compinit`.
+
+### Agent details
+
 `collie run` points the agent at `.collie/TASK.md` (`-p ''` for no prompt).
 Claude Code reports its state through hooks that collie passes with
 `--settings`; nothing to install. Other agents count as idle after 30s
