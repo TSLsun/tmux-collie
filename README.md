@@ -155,6 +155,12 @@ make check   # shellcheck + bats (uses an isolated tmux server per test)
 
 Scripts target bash 3.2 (macOS `/bin/bash`).
 
+To try a checkout in your running tmux, `set -g @collie-dev on`: the menu gets
+`dev: load this checkout` (reloads the plugin from the current pane's
+tmux-collie checkout, e.g. a task worktree) and `dev: back to installed`
+(reloads the copy tpm installed, `@collie-home`). Same from a shell:
+`collie _dev load <dir>` / `collie _dev reset`.
+
 ## License
 
 MIT

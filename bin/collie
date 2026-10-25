@@ -801,7 +801,30 @@ cmd__menu() { # session [client]
   else
     items+=("" "-not a collie task — use collie new" "" "")
   fi
+  if [ "${COLLIE_DEV:-$(tmux_opt @collie-dev)}" = on ]; then
+    items+=("" "dev: load this checkout" D "run-shell '$C _dev load #{q:pane_current_path}'"
+      "dev: back to installed" B "run-shell '$C _dev reset'")
+  fi
   tmux display-menu ${2:+-c "$2"} -T '#[align=centre] collie ' -x C -y C "${items[@]}"
+}
+
+# @collie-dev: reload the plugin from another tmux-collie checkout (load <dir>)
+# or from the one tpm installed (reset).
+cmd__dev() {
+  local root
+  case ${1:-} in
+    load)
+      root=$(git -C "${2:-.}" rev-parse --show-toplevel 2>/dev/null) && [ -f "$root/collie.tmux" ] ||
+        die "dev: ${2:-.} is not a tmux-collie checkout"
+      ;;
+    reset)
+      root=$(tmux_opt @collie-home)
+      [ -n "$root" ] || die "dev: @collie-home unset"
+      ;;
+    *) die "usage: collie _dev load <dir> | reset" ;;
+  esac
+  tmux run-shell "'$root/collie.tmux'"
+  tmux display-message "collie: loaded $root @ $(git -C "$root" rev-parse --short HEAD 2>/dev/null || echo '?')"
 }
 
 # Run a command line in a popup; on failure keep the popup open until a key.
@@ -1028,7 +1051,7 @@ cmd_workspaces() {
 }
 
 case "${1:-help}" in
-  new | add | ls | show | go | run | state | status | set | notes | dash | review | spike | park | gc | doctor | _exec | _target | _preview | _menu | _popup | repos | workspaces)
+  new | add | ls | show | go | run | state | status | set | notes | dash | review | spike | park | gc | doctor | _exec | _target | _preview | _menu | _popup | _dev | repos | workspaces)
     cmd=$1
     shift
     "cmd_$cmd" "$@"
