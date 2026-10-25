@@ -133,6 +133,15 @@ default_base() {
   fi
 }
 
+# Branch is merged when its tip is in base, or when merging it into base would
+# not change base's tree (squash merges). Needs git >= 2.38 for the latter.
+merged_into() { # common branch base
+  local tree
+  git --git-dir="$1" merge-base --is-ancestor "refs/heads/$2" "$3" && return 0
+  tree=$(git --git-dir="$1" merge-tree --write-tree "$3" "refs/heads/$2" 2>/dev/null) || return 1
+  [ "${tree%%$'\n'*}" = "$(git --git-dir="$1" rev-parse "$3^{tree}")" ]
+}
+
 slug() { printf '%s' "${1//\//-}"; }
 
 # --- task files -------------------------------------------------------------
@@ -541,9 +550,14 @@ finish_task() { # final_status args...
 
   while IFS=$TAB read -r name c b p; do
     [ -d "$p" ] || continue
+    if [ -e "$p/.collie" ] && [ ! -L "$p/.collie" ]; then
+      die "refusing to $final '$id': $p/.collie is not a symlink to the task dir; move it aside first"
+    fi
     [ -z "$(git -C "$p" status --porcelain)" ] || problems="$problems  dirty: $name ($p)"$'\n'
-    n=$(git --git-dir="$c" rev-list --count "$(default_base "$c")..refs/heads/$b" 2>/dev/null || echo 0)
-    [ "$n" -eq 0 ] || problems="$problems  unmerged: $name has $n commit(s) on $b not in base"$'\n'
+    if git --git-dir="$c" show-ref -q --verify "refs/heads/$b" && ! merged_into "$c" "$b" "$(default_base "$c")"; then
+      n=$(git --git-dir="$c" rev-list --count "$(default_base "$c")..refs/heads/$b")
+      problems="$problems  unmerged: $name has $n commit(s) on $b not in base"$'\n'
+    fi
   done <"$d/repos.tsv"
   if [ -n "$problems" ] && [ "$force" -eq 0 ]; then
     die "refusing to $final '$id':"$'\n'"$problems"'(branches are kept; --force discards uncommitted changes)'
@@ -935,7 +949,7 @@ cmd_park() {
 }
 
 # A task is merged when every branch moved past where its worktree started
-# and its tip is contained in the base branch (squash merges are not seen).
+# and that tip is merged into the base branch (see merged_into).
 cmd_gc() {
   local dry=0 d id name c b p start tip merged
   [ "${1:-}" != -n ] || dry=1
@@ -951,8 +965,7 @@ cmd_gc() {
         }
         END { print s }' "$d/events.log")
       tip=$(git --git-dir="$c" rev-parse -q --verify "refs/heads/$b") || { merged=0; break; }
-      if [ -z "$start" ] || [ "$tip" = "$start" ] ||
-        ! git --git-dir="$c" merge-base --is-ancestor "$tip" "$(default_base "$c")"; then
+      if [ -z "$start" ] || [ "$tip" = "$start" ] || ! merged_into "$c" "$b" "$(default_base "$c")"; then
         merged=0
         break
       fi
