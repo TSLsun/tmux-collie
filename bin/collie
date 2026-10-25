@@ -832,7 +832,7 @@ cmd__dev() {
 # Run a command line in a popup; on failure keep the popup open until a key.
 cmd__popup() {
   local rc=0
-  eval "$*" || rc=$?
+  (eval "$*") || rc=$?
   [ "$rc" -eq 0 ] && return 0
   printf '\n[collie: exit %s — press any key]' "$rc"
   read -rsn1 _ || true
