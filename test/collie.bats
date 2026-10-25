@@ -303,3 +303,34 @@ two_repos() {
   run collie bogus
   [ "$status" -ne 0 ]
 }
+
+@test "new: ship off by default leaves TASK.md as the template" {
+  make_bare_repo A
+  cd "$REPO/main"
+  run collie new x --no-window
+  [ "$status" -eq 0 ]
+  diff <(sed '1,/^---$/d' "$(task_dir x)/TASK.md") "$COLLIE_ROOT/templates/TASK.md"
+}
+
+@test "new: ship on (COLLIE_SHIP, --ship) appends the ship rules; --no-ship wins" {
+  make_bare_repo A
+  cd "$REPO/main"
+  COLLIE_SHIP=on collie new a --no-window
+  collie new b --ship --no-window
+  COLLIE_SHIP=1 collie new c --no-ship --no-window
+  for id in a b; do
+    grep -qx '## Ship' "$(task_dir $id)/TASK.md"
+    grep -q 'REPORT.md' "$(task_dir $id)/TASK.md"
+    grep -qx '## Verify' "$(task_dir $id)/TASK.md"
+  done
+  ! grep -q '^## Ship' "$(task_dir c)/TASK.md"
+}
+
+@test "new: ship from @collie-ship" {
+  make_bare_repo A
+  cd "$REPO/main"
+  tmux -f /dev/null new-session -d -s keep
+  tmux set -g @collie-ship on
+  collie new a --no-window
+  grep -qx '## Ship' "$(task_dir a)/TASK.md"
+}
