@@ -9,10 +9,16 @@ See [docs/DESIGN.md](docs/DESIGN.md) for goals, data model and roadmap, and
 
 ## Install
 
+Requires bash 3.2+ (macOS `/bin/bash` is fine), git and tmux 3.2+.
+Optional: [fzf](https://github.com/junegunn/fzf) (`dash`, `go` without an id),
+[lazygit](https://github.com/jesseduffield/lazygit) (menu entry), and at least
+one coding agent CLI (claude, codex, gemini or omp). `collie doctor` checks
+all of these.
+
 With [tpm](https://github.com/tmux-plugins/tpm):
 
 ```tmux
-set -g @plugin 'TSLsun/tmux-collie'
+set -g @plugin 'TSLsun/tmux-collie'          # or 'TSLsun/tmux-collie#v0.1.0' to pin
 ```
 
 Then `prefix + I`. The plugin prepends its `bin/` to tmux's global `PATH`, so
