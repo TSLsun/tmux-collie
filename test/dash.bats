@@ -69,6 +69,96 @@ teardown() { teardown_env; }
   [ "$(printf '%s\n' "$output" | cut -f1 | paste -s -d' ' -)" = "b c d e a g f" ]
 }
 
+@test "_rows: id first, then status glyph and live agent badge; attention first" {
+  for t in a b c; do collie new "$t" --no-window; done
+  collie run a -- 300
+  collie run b -- 300
+  hook b waiting
+  run collie _rows
+  [ "$status" -eq 0 ]
+  [ "$(printf '%s\n' "$output" | cut -f1 | paste -s -d' ' -)" = "b a c" ]
+  plain=$(printf '%s\n' "$output" | sed $'s/\033\\[[0-9;]*m//g')
+  [[ "$(printf '%s\n' "$plain" | sed -n 1p)" == "b	● b	active	P2	sleep	A	"* ]]
+  [[ "$(printf '%s\n' "$plain" | sed -n 2p)" == "a	◐ a	active	P2	sleep	A	"* ]]
+  [[ "$(printf '%s\n' "$plain" | sed -n 3p)" == "c	○ c	active	P2	-	A	"* ]]
+  [[ "$output" == *$'\033[31m●'* && "$output" == *$'\033[33m◐'* ]]
+}
+
+@test "manual agent: one started by hand in a task session shows up, idle by silence" {
+  collie new x
+  mkdir -p "$TMP/bin"
+  ln -s "$(command -v sleep)" "$TMP/bin/claude"
+  tmux new-window -d -t "=x:" "sh -c '$TMP/bin/claude 300; :'"
+  wait_for '[ "$(COLLIE_SILENCE=999 agent_of x)" = working ]'
+  [ "$(COLLIE_SILENCE=0 agent_of x)" = idle ]
+  [[ "$(collie _rows | sed $'s/\033\\[[0-9;]*m//g')" == *"	claude	"* ]]
+  run collie show x
+  [[ "$output" == *"-	claude	"* ]]
+}
+
+@test "adopt: stops a hand-started agent and resumes it under collie run" {
+  collie new x
+  mkdir -p "$TMP/bin" "$TMP/manual"
+  ln -s "$(command -v sleep)" "$TMP/manual/claude"
+  printf '#!/bin/sh\necho "$@" >"%s/args"\nexec sleep 300\n' "$TMP" >"$TMP/bin/claude"
+  chmod +x "$TMP/bin/claude"
+  export PATH="$TMP/bin:$PATH"
+  tmux new-window -d -t "=x:" -c "$TMP/repos/A/feat-x" "sh -c '$TMP/manual/claude 300; :'"
+  wait_for '[ "$(agent_of x)" = working ]'
+  run collie adopt x </dev/null
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"confirm with -y"* ]]
+  collie adopt x -y
+  wait_for '[ -f "$TMP/args" ]'
+  [[ "$(cat "$TMP/args")" == *"--settings"*"--continue" ]]
+  ! pgrep -f "$TMP/manual/claude" >/dev/null
+  grep -q "agent_adopted	agent=claude" "$(task_dir x)/events.log"
+  grep -q "run_started	run=1 agent=claude repo=A" "$(task_dir x)/events.log"
+  run collie adopt x -y
+  [[ "$output" == *"no agent started by hand"* ]]
+}
+
+@test "_key: menu keys act only while the menu prompt is up; arrows move the selection" {
+  [ "$(FZF_PROMPT='collie> ' collie _key x r)" = "put(r)" ]
+  [ "$(FZF_PROMPT='collie> ' collie _key x esc)" = abort ]
+  [ "$(FZF_PROMPT='collie> ' collie _key x enter)" = accept ]
+  [ "$(FZF_PROMPT='collie> ' collie _key x up)" = up ]
+  [[ "$(FZF_PROMPT='▸ run agent ' collie _key x r)" == "change-prompt(collie> )+clear-screen+execute("*"_actions 'x' 'r')+reload("*"_rows)" ]]
+  [ "$(FZF_PROMPT='▸ run agent ' collie _key x down)" = "change-prompt(▸ adopt agent )" ]
+  [ "$(FZF_PROMPT='▸ run agent ' collie _key x up)" = "change-prompt(▸ new task )" ]
+  [ "$(FZF_PROMPT='▸ new task ' collie _key x down)" = "change-prompt(▸ run agent )" ]
+  [[ "$(FZF_PROMPT='▸ review ' collie _key x enter)" == *"_actions 'x' 'v'"* ]]
+  [ "$(FZF_PROMPT='▸ run agent ' collie _key x esc)" = "change-prompt(collie> )+clear-screen" ]
+  [ "$(FZF_PROMPT='▸ new task ' collie _key '' r)" = "change-prompt(collie> )+clear-screen" ]
+}
+
+@test "_actions: one key runs an action on the task; done asks first" {
+  collie new x --no-window
+  collie _actions x r
+  [ -n "$(run_pane x)" ]
+  echo n | collie _actions x d
+  [ "$(fm x status)" = active ]
+  collie _actions x q
+  printf '#!/bin/sh\npwd >"%s/pwd"\nexit 3\n' "$TMP" >"$TMP/sh"
+  chmod +x "$TMP/sh"
+  SHELL="$TMP/sh" collie _actions x t
+  [ "$(cat "$TMP/pwd")" = "$TMP/repos/A/feat-x" ]
+  echo y | collie _actions x d
+  [ "$(fm x status)" = done ]
+}
+
+@test "_jump: waiting/idle records the pane; nothing recorded is an error" {
+  collie new x --no-window
+  run collie _jump
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"no agent pane to jump to"* ]]
+  collie run x -- 300
+  hook x working
+  [ -z "$(tmux show-options -gqv @collie-last-pane)" ]
+  hook x waiting
+  [ "$(tmux show-options -gqv @collie-last-pane)" = "$(run_pane x)" ]
+}
+
 @test "_preview: title, next, runs, per-repo ahead/dirty and notes tail" {
   collie new x --no-window --title "Ship it"
   collie set x "next=open the PR"

@@ -151,6 +151,27 @@ squash_upstream() {
   [ ! -d "$TMP/repos/A/feat-m" ]
 }
 
+@test "done: fetches origin first, so a PR merged remotely needs no manual fetch" {
+  collie new m --no-window
+  commit_in "$TMP/repos/A/feat-m" m
+  git -C "$TMP/origin-A" fetch -q "$REPO/.bare" feat/m
+  git -C "$TMP/origin-A" merge -q --squash FETCH_HEAD >/dev/null
+  git -C "$TMP/origin-A" commit -q -m "squash feat/m"
+  run collie done m
+  [ "$status" -eq 0 ]
+  [ "$(fm m status)" = done ]
+}
+
+@test "done: a failed fetch is reported, and so is why it refuses" {
+  collie new m --no-window
+  commit_in "$TMP/repos/A/feat-m" m
+  git -C "$REPO" remote set-url origin "$TMP/nowhere"
+  run collie done m
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"A: git fetch origin failed"* ]]
+  [[ "$output" == *"unmerged: A has 1 commit(s) on feat/m not in origin/"* ]]
+}
+
 @test "done: still refuses a squash-merged branch with later work" {
   collie new m --no-window
   commit_in "$TMP/repos/A/feat-m" m

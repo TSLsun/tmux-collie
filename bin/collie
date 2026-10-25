@@ -9,6 +9,7 @@ STATE_DIR=${COLLIE_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/collie}
 TASKS_DIR="$STATE_DIR/tasks"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/collie"
 TAB=$'\t'
+DASH_PROMPT='collie> ' PICK_MARK='▸ '
 
 die() {
   printf 'collie: %s\n' "$*" >&2
@@ -49,6 +50,8 @@ agents:
   run [<id>] [--agent name] [-r repo] [-p prompt] [-- args]
                       start an agent in a new task window (default agent:
                       $COLLIE_AGENT, @collie-agent, else claude); -p '' = no prompt
+  adopt [<id>] [-y]   restart an agent you started by hand in the task's session
+                      under collie run, resuming its conversation (claude)
   state <working|waiting|idle|exited>
                       called by agent hooks; no-op outside a collie window
   status              agent counts for the status bar (#{collie_status})
@@ -125,11 +128,19 @@ workspace_repos() {
   printf '%s\n' "$hit"
 }
 
+# origin/HEAD, else origin's copy of the HEAD branch (git < 2.48 fetch does not
+# create origin/HEAD), else the HEAD branch.
 default_base() {
+  local head
   if git --git-dir="$1" rev-parse -q --verify refs/remotes/origin/HEAD >/dev/null; then
     echo origin/HEAD
+    return
+  fi
+  head=$(git --git-dir="$1" symbolic-ref -q HEAD) || return 1
+  if git --git-dir="$1" rev-parse -q --verify "refs/remotes/origin/${head#refs/heads/}" >/dev/null; then
+    echo "origin/${head#refs/heads/}"
   else
-    git --git-dir="$1" symbolic-ref -q HEAD
+    echo "$head"
   fi
 }
 
@@ -140,6 +151,13 @@ merged_into() { # common branch base
   git --git-dir="$1" merge-base --is-ancestor "refs/heads/$2" "$3" && return 0
   tree=$(git --git-dir="$1" merge-tree --write-tree "$3" "refs/heads/$2" 2>/dev/null) || return 1
   [ "${tree%%$'\n'*}" = "$(git --git-dir="$1" rev-parse "$3^{tree}")" ]
+}
+
+# Updates origin's refs so merges done on the remote count; no-op without an
+# origin remote. Never prompts for credentials.
+fetch_origin() { # common
+  git --git-dir="$1" remote get-url origin >/dev/null 2>&1 || return 0
+  GIT_TERMINAL_PROMPT=0 git --git-dir="$1" fetch -q origin </dev/null 2>/dev/null
 }
 
 slug() { printf '%s' "${1//\//-}"; }
@@ -330,14 +348,47 @@ win_states() { # list-windows target args
       { print $1 "\t" $2 "\t" ($3 == "" ? "-" : $3) "\t" ($4 == "" ? "-" : $4) "\t" st }'
 }
 
-# Runs of a task as "run<TAB>agent<TAB>state<TAB>window": agent windows, then
+# Agents started by hand in a session (not via `collie run`) as
+# "-<TAB>agent<TAB>state<TAB>window<TAB>pane<TAB>pid<TAB>path": panes with a
+# known agent among their process or its descendants (up to 6 levels; agents
+# inside another agent don't count). Without hooks the state is working until
+# @collie-silence seconds without output, then idle.
+manual_runs() { # session
+  local silence=${COLLIE_SILENCE:-$(tmux_opt @collie-silence)}
+  awk -v now="$(date +%s)" -v s="${silence:-30}" '
+    function base(p) { sub(/.*\//, "", p); sub(/\.(js|mjs|ts)$/, "", p); return p }
+    BEGIN { n = split("claude codex gemini omp aider", k, " "); for (i = 1; i <= n; i++) known[k[i]] = 1 }
+    FNR == NR {
+      par[$1] = $2
+      a = base($3)
+      if ((a == "node" || a == "bun") && $4 != "") a = base($4)
+      if (a in known) ag[$1] = a
+      next
+    }
+    FNR == 1 {
+      # each outermost agent marks its ancestors as the panes it may run in
+      for (p in ag) {
+        for (q = par[p]; q + 0 > 1 && !(q in ag); q = par[q]) if (++up[p] > 6) break
+        if (q in ag) continue
+        for (q = p; q + 0 > 1 && dn[p]++ <= 6; q = par[q]) if (!(q in at)) { at[q] = ag[p]; atp[q] = p }
+      }
+    }
+    { split($0, f, "|"); a = at[f[1]]; pid = atp[f[1]] }
+    f[3] != "" { next }
+    a != "" { print "-\t" a "\t" (now - f[4] >= s ? "idle" : "working") "\t" f[2] "\t" f[5] "\t" pid "\t" f[6] }' \
+    <(ps -A -o pid=,ppid=,args=) \
+    <(tmux list-panes -s -t "$1" -F '#{pane_pid}|#{window_id}|#{@collie_state}|#{window_activity}|#{pane_id}|#{pane_current_path}' 2>/dev/null || true)
+}
+
+# Runs of a task as "run<TAB>agent<TAB>state<TAB>window": agent windows (also
+# agents started by hand, run "-"), then
 # runs started but never seen exiting (exited if the session is up, unknown if
 # it is gone).
 task_runs() {
   local id=$1 wins="" fallback=unknown
   if has_session "$id"; then
     fallback=exited
-    wins=$(win_states -t "=$id" | awk -F'\t' '{ print $3 "\t" $4 "\t" $5 "\t" $2 }')
+    wins=$(win_states -t "=$id" | awk -F'\t' '{ print $3 "\t" $4 "\t" $5 "\t" $2 }'; manual_runs "=$id" | cut -f1-4)
   fi
   [ -z "$wins" ] || printf '%s\n' "$wins"
   printf '%s\n' "$wins" | awk -F'\t' -v fb="$fallback" '
@@ -366,12 +417,19 @@ task_top() {
 
 # @collie-notify / $COLLIE_NOTIFY: on (default), off, or a command that gets
 # title and body as arguments.
-notify() { # title body
-  local how=${COLLIE_NOTIFY-$(tmux_opt @collie-notify)}
+# With terminal-notifier installed and a pane given, clicking the notification
+# focuses the terminal (@collie-terminal bundle id) and jumps to that pane.
+notify() { # title body [pane]
+  local how=${COLLIE_NOTIFY-$(tmux_opt @collie-notify)} app
   case $how in
     off) ;;
     "" | on)
-      if command -v osascript >/dev/null; then
+      if [ -n "${3:-}" ] && command -v terminal-notifier >/dev/null; then
+        app=$(tmux_opt @collie-terminal)
+        terminal-notifier -title "$1" -message "$2" -group "collie-$3" \
+          -activate "${app:-${__CFBundleIdentifier:-com.apple.Terminal}}" \
+          -execute "$(printf 'PATH=%q TMUX=%q %q %q _jump %q' "$PATH" "${TMUX:-}" "$BASH" "$PLUGIN_DIR/bin/collie" "$3")"
+      elif command -v osascript >/dev/null; then
         osascript -e 'on run a' -e 'display notification (item 2 of a) with title (item 1 of a)' -e 'end run' "$1" "$2"
       elif command -v notify-send >/dev/null; then
         notify-send "$1" "$2"
@@ -383,7 +441,7 @@ notify() { # title body
 
 # Records a state change for the window of a pane; ignores non-collie windows.
 set_state() { # pane state
-  local info id run old wid agent active attached
+  local info id run old wid agent active attached msg
   info=$(tmux display-message -p -t "$1" '#{@collie_task}|#{@collie_run}|#{@collie_state}|#{window_id}|#{@collie_agent}|#{window_active}|#{session_attached}' 2>/dev/null) || return 0
   IFS='|' read -r id run old wid agent active attached <<<"$info"
   [ -n "$id" ] && [ -f "$(task_dir "$id")/TASK.md" ] || return 0
@@ -393,9 +451,24 @@ set_state() { # pane state
   # no popup for the window you are looking at
   [ "$active" = 1 ] && [ "${attached:-0}" -gt 0 ] && return 0
   case $2:$old in
-    waiting:*) notify "collie: $id" "${agent:-agent} is waiting for you" >/dev/null 2>&1 & ;;
-    idle:working) notify "collie: $id" "${agent:-agent} finished its turn" >/dev/null 2>&1 & ;;
+    waiting:*) msg="is waiting for you" ;;
+    idle:working) msg="finished its turn" ;;
+    *) return 0 ;;
   esac
+  # target of `collie _jump` (menu: jump to alert)
+  tmux set-option -g @collie-last-pane "$1" 2>/dev/null || true
+  notify "collie: $id" "${agent:-agent} $msg" "$1" >/dev/null 2>&1 &
+}
+
+# Switches a client to a pane (default "-": the last one that notified).
+cmd__jump() { # [pane|-] [client]
+  local pane=${1:--}
+  [ "$pane" != - ] || pane=$(tmux_opt @collie-last-pane)
+  if [ -z "$pane" ] || ! tmux display-message -p -t "$pane" '' >/dev/null 2>&1; then
+    tmux display-message "collie: no agent pane to jump to" 2>/dev/null || true
+    die "no agent pane to jump to"
+  fi
+  tmux switch-client ${2:+-c "$2"} -t "$pane" \; select-window -t "$pane" \; select-pane -t "$pane"
 }
 
 # --- commands ---------------------------------------------------------------
@@ -561,7 +634,7 @@ finish_task() { # final_status args...
     shift
   done
   id=$(task_id "$id")
-  local d name c b p problems="" n here own=0
+  local d name c b p problems="" n base here own=0
   d=$(task_dir "$id")
 
   while IFS=$TAB read -r name c b p; do
@@ -570,9 +643,11 @@ finish_task() { # final_status args...
       die "refusing to $final '$id': $p/.collie is not a symlink to the task dir; move it aside first"
     fi
     [ -z "$(git -C "$p" status --porcelain)" ] || problems="$problems  dirty: $name ($p)"$'\n'
-    if git --git-dir="$c" show-ref -q --verify "refs/heads/$b" && ! merged_into "$c" "$b" "$(default_base "$c")"; then
-      n=$(git --git-dir="$c" rev-list --count "$(default_base "$c")..refs/heads/$b")
-      problems="$problems  unmerged: $name has $n commit(s) on $b not in base"$'\n'
+    fetch_origin "$c" || warn "$name: git fetch origin failed; checking against local refs"
+    base=$(default_base "$c")
+    if git --git-dir="$c" show-ref -q --verify "refs/heads/$b" && ! merged_into "$c" "$b" "$base"; then
+      n=$(git --git-dir="$c" rev-list --count "$base..refs/heads/$b")
+      problems="$problems  unmerged: $name has $n commit(s) on $b not in ${base#refs/heads/}"$'\n'
     fi
   done <"$d/repos.tsv"
   if [ -n "$problems" ] && [ "$force" -eq 0 ]; then
@@ -662,6 +737,44 @@ cmd_run() {
     fm_set "$d/TASK.md" status active
     log_event "$id" status_changed "status=active"
   fi
+}
+
+# Restarts an agent started by hand in the task's session as a `collie run`
+# that resumes its conversation, so its hooks report state and notify.
+cmd_adopt() {
+  local id="" yes=0 info agent wid pane pid path repo a i
+  while [ $# -gt 0 ]; do
+    case $1 in
+      -y) yes=1 ;;
+      -*) die "adopt: unknown option $1" ;;
+      *) [ -z "$id" ] || die "adopt: too many arguments"; id=$1 ;;
+    esac
+    shift
+  done
+  id=$(task_id "$id")
+  has_session "$id" || die "adopt: task '$id' has no session"
+  info=$(manual_runs "=$id" | head -n 1)
+  [ -n "$info" ] || die "adopt: no agent started by hand in task '$id'"
+  IFS=$TAB read -r a agent a wid pane pid path <<<"$info"
+  AGENT_RESUME=()
+  # shellcheck source=/dev/null
+  [ ! -f "$PLUGIN_DIR/agents/$agent.sh" ] || . "$PLUGIN_DIR/agents/$agent.sh"
+  [ ${#AGENT_RESUME[@]} -gt 0 ] || die "adopt: collie cannot resume $agent sessions"
+  repo=$(awk -F'\t' -v p="$path" '$4 == p || index(p, $4 "/") == 1 { print $1; exit }' "$(task_dir "$id")/repos.tsv")
+  [ -n "$repo" ] || die "adopt: $agent in $pane runs outside the task's worktrees ($path)"
+  if [ "$yes" -eq 0 ]; then
+    [ -t 0 ] || die "adopt: confirm with -y"
+    read -r -p "stop $agent in $pane and resume it under collie run? (y/n) " a || exit 1
+    [ "$a" = y ] || exit 1
+  fi
+  kill -TERM "$pid" 2>/dev/null || die "adopt: cannot stop $agent (pid $pid)"
+  for i in $(seq 1 100); do
+    kill -0 "$pid" 2>/dev/null || break
+    sleep 0.1
+  done
+  ! kill -0 "$pid" 2>/dev/null || die "adopt: $agent (pid $pid) did not exit"
+  log_event "$id" agent_adopted "agent=$agent pane=$pane window=$wid"
+  cmd_run "$id" -r "$repo" --agent "$agent" -p '' -- "${AGENT_RESUME[@]}"
 }
 
 # Window command of a run: runs the agent, records its exit, leaves a shell.
@@ -775,24 +888,151 @@ dash_rows() {
     }' | sort -t "$TAB" -k1,1n -k4,4 -k2,2 | cut -f2-
 }
 
+# dash_rows for fzf: the id, then the row shown with a status glyph (red ●
+# needs you, yellow ◐ working, dim ○ none) and a colored badge per live agent.
+cmd__rows() {
+  local row
+  dash_rows | while IFS= read -r row; do
+    printf '%s\t%s\n' "$(task_runs "${row%%"$TAB"*}" |
+      awk -F'\t' '$3 != "exited" && $3 != "unknown" && !s[$2]++ { printf "%s ", $2 }')" "$row"
+  done | awk -F'\t' '
+    BEGIN {
+      c["claude"] = "38;5;208"; c["codex"] = "32"; c["gemini"] = "34"; c["omp"] = "35"; c["aider"] = "36"
+      e = "\033["
+    }
+    {
+      g = e "2m○"
+      if ($6 == "waiting" || $6 == "idle") g = e "31m●"
+      else if ($6 == "working") g = e "33m◐"
+      n = split($1, a, " "); b = ""
+      for (i = 1; i <= n; i++) b = b (i > 1 ? " " : "") e "1;" (a[i] in c ? c[a[i]] : "37") "m" a[i] e "0m"
+      if (b == "") b = e "2m-" e "0m"
+      print $2 "\t" g e "0m " $2 "\t" $3 "\t" $4 "\t" b "\t" $7 "\t" $8
+    }'
+}
+
 cmd_dash() {
   if [ "${1:-}" = -n ]; then
     dash_rows
     return
   fi
   command -v fzf >/dev/null || die "dash: fzf required"
-  local self="'$BASH' '$PLUGIN_DIR/bin/collie'" rows header sel id wid
-  rows=$(dash_rows)
-  header='enter: go   ctrl-r: refresh   (id status priority session agent repos next)'
-  [ -n "$rows" ] || header='no tasks — collie new <id>'
-  sel=$(printf '%s' "$rows" | fzf --delimiter='\t' --no-sort --prompt='collie> ' \
+  local self="'$BASH' '$PLUGIN_DIR/bin/collie'" rows header sel id wid k binds=()
+  rows=$(cmd__rows)
+  for k in $(action_items x | cut -c1) esc enter up down; do binds+=(--bind="$k:transform($self _key {1} $k)"); done
+  header='enter: go   ?: actions'
+  [ -n "$rows" ] || header='no tasks — ?: new task'
+  sel=$(printf '%s' "$rows" | fzf --ansi --delimiter='\t' --with-nth=2.. --no-sort --prompt="$DASH_PROMPT" \
     --header="$header" \
     --preview="$self _preview {1}" --preview-window=right,50% \
-    --bind="ctrl-r:reload($self dash -n)") || return 0
+    --bind="?:transform($self _pick {1})" "${binds[@]}") || return 0
   id=${sel%%"$TAB"*}
   wid=$(cmd__target "$id")
   if [ "$wid" != - ]; then tmux select-window -t "$wid" 2>/dev/null || true; fi
   cmd_go "$id"
+}
+
+# Dashboard `?` (an fzf transform): draws the action menu over the dashboard
+# and puts the selected action in the prompt ("▸ <label> "), which _key reads
+# as "menu open" and as the selection. fzf keeps reading keys meanwhile, so
+# keys go through fzf binds, not a read here. A tmux popup cannot open over
+# the dashboard's popup, hence the drawing.
+cmd__pick() { # [id]
+  pick_draw "${1:-}" 1 || return 0
+  echo "change-prompt($PICK_MARK$(action_items "${1:-}" | sed -n 1p | cut -c4-) )"
+}
+
+# Draws the menu with row <sel> highlighted on /dev/tty, just above the
+# selected dashboard row (fzf's default layout: prompt, info and header take
+# the last 3 lines, list row 1 sits above them).
+pick_draw() { # id sel
+  local items n w=30 top left=2 line i=0 t=${1:-collie} hl
+  items=$(action_items "$1")
+  n=$(printf '%s\n' "$items" | wc -l)
+  top=$((${FZF_LINES:-24} - ${FZF_POS:-1} - n - 4))
+  [ "$top" -ge 1 ] || top=1
+  {
+    printf '\033[%d;%dH\033[0;34m╭─ \033[1m%s\033[22m %s╮' "$top" "$left" "$t" "$(rule $((w - 5 - ${#t})) ─)"
+    while IFS= read -r line; do
+      i=$((i + 1)) top=$((top + 1)) hl=""
+      [ "$i" -ne "$2" ] || hl=$'\033[1;44m'
+      printf '\033[%d;%dH│\033[0m%s \033[36m%s\033[39m  %-*s\033[0;34m│' \
+        "$top" "$left" "$hl" "${line:0:1}" $((w - 6)) "${line:3}"
+    done <<<"$items"
+    printf '\033[%d;%dH╰─ ↑↓ enter · key · esc %s╯\033[0m' $((top + 1)) "$left" "$(rule $((w - 25)) ─)"
+  } >/dev/tty 2>/dev/null
+}
+
+# fzf transform for a menu key (an action key, up, down, esc or enter): with
+# the menu open, move the selection, run an action or close; otherwise the
+# key's usual job.
+cmd__key() { # id key
+  local self="'$BASH' '$PLUGIN_DIR/bin/collie'" back="change-prompt($DASH_PROMPT)+clear-screen"
+  local items n cur k
+  case ${FZF_PROMPT:-} in
+    "$PICK_MARK"*) ;;
+    *)
+      case $2 in esc) echo abort ;; enter) echo accept ;; up | down) echo "$2" ;; *) echo "put($2)" ;; esac
+      return
+      ;;
+  esac
+  items=$(action_items "$1")
+  n=$(printf '%s\n' "$items" | wc -l)
+  cur=${FZF_PROMPT#"$PICK_MARK"}
+  cur=$(printf '%s\n' "$items" | awk -v l="${cur% }" 'substr($0, 4) == l { print NR; exit }')
+  cur=${cur:-1}
+  case $2 in
+    up | down)
+      if [ "$2" = up ]; then cur=$(((cur + n - 2) % n + 1)); else cur=$((cur % n + 1)); fi
+      pick_draw "$1" "$cur" || true
+      echo "change-prompt($PICK_MARK$(printf '%s\n' "$items" | sed -n "${cur}p" | cut -c4-) )"
+      return
+      ;;
+    enter) k=$(printf '%s\n' "$items" | sed -n "${cur}p" | cut -c1) ;;
+    esc) k="" ;;
+    *) k=$(printf '%s\n' "$items" | cut -c1 | grep -xF -- "$2" || true) ;;
+  esac
+  if [ -n "$k" ]; then
+    echo "$back+execute($self _actions '$1' '$k')+reload($self _rows)"
+  else
+    echo "$back"
+  fi
+}
+
+rule() { local s="" i; for ((i = 0; i < $1; i++)); do s="$s$2"; done; printf '%s' "$s"; }
+
+# "<key>  <label>" lines of the dashboard actions for a task (or none).
+action_items() { # [id]
+  [ -z "$1" ] || printf '%s\n' 'r  run agent' 'a  adopt agent' 'N  next action' 'e  notes' 'v  review' 't  terminal' 'd  done'
+  printf '%s\n' 'c  new task'
+}
+
+# Runs the dashboard action for a key (see action_items); done asks first.
+cmd__actions() { # id key
+  local id=${1:-} k=${2:-} self="'$BASH' '$PLUGIN_DIR/bin/collie'" a
+  [ ! -t 1 ] || printf '\033[H\033[2J'
+  case ${id:+x}$k in
+    xr) a="$self run '$id'" ;;
+    xa) a="$self adopt '$id'" ;;
+    xN) a="$self set '$id' next" ;;
+    xe) a="$self notes '$id'" ;;
+    xv) a="$self review '$id' | less -R" ;;
+    xt)
+      # a shell in the task's first worktree; its exit status is not a failure
+      a=$(awk -F'\t' 'NR == 1 { print $4 }' "$(task_dir "$id")/repos.tsv" 2>/dev/null)
+      [ -d "$a" ] || a=$(task_dir "$id")
+      (cd "$a" && "${SHELL:-sh}") || true
+      return 0
+      ;;
+    xd)
+      read -r -p "done $id? (y/n) " k || return 0
+      [ "$k" = y ] || return 0
+      a="$self done '$id'"
+      ;;
+    c | xc) a="$self new" ;;
+    *) return 0 ;;
+  esac
+  cmd__popup "$a"
 }
 
 # Menu for prefix <@collie-key>, built per session: task actions only inside a
@@ -801,6 +1041,7 @@ cmd__menu() { # session [client]
   local C="$PLUGIN_DIR/bin/collie" T=$1 popup="display-popup -E -w 90% -h 85%" st s items
   items=(dashboard h "$popup '$C _popup $C dash'"
     lazygit g "$popup -d '#{pane_current_path}' '$C _popup lazygit'"
+    terminal t "$popup -d '#{pane_current_path}'"
     "new task" c "display-popup -EE -w 70 -h 13 -d '#{pane_current_path}' '$C new'")
   if valid_id "$T" && [ -f "$(task_dir "$T")/TASK.md" ]; then
     st="display-menu -T status"
@@ -813,10 +1054,11 @@ cmd__menu() { # session [client]
       review v "$popup '$C _popup \"$C review $T | less -R\"'"
       ""
       "run agent" r "run-shell '$C run $T'"
-      "done" d "confirm-before -p 'done $T? (y/n)' \"run-shell '$C done $T'\"")
+      "done" d "confirm-before -p 'done $T? (y/n)' \"display-popup -E -w 90 -h 12 '$C _popup $C done $T'\"")
   else
     items+=("" "-not a collie task — use collie new" "" "")
   fi
+  items+=("" "jump to alert" j "run-shell '$C _jump - ${2:-}'")
   if [ "${COLLIE_DEV:-$(tmux_opt @collie-dev)}" = on ]; then
     items+=("" "dev: load this checkout" D "run-shell '$C _dev load #{q:pane_current_path}'"
       "dev: back to installed" B "run-shell '$C _dev reset'")
@@ -1030,7 +1272,7 @@ cmd_park() {
 # A task is merged when every branch moved past where its worktree started
 # and that tip is merged into the base branch (see merged_into).
 cmd_gc() {
-  local dry=0 d id name c b p start tip merged
+  local dry=0 d id name c b p start tip merged fetched=""
   [ "${1:-}" != -n ] || dry=1
   for d in "$TASKS_DIR"/*; do
     [ -f "$d/TASK.md" ] || continue
@@ -1044,6 +1286,10 @@ cmd_gc() {
         }
         END { print s }' "$d/events.log")
       tip=$(git --git-dir="$c" rev-parse -q --verify "refs/heads/$b") || { merged=0; break; }
+      if ! printf '%s\n' "$fetched" | grep -qxF "$c"; then
+        fetch_origin "$c" || warn "$name: git fetch origin failed; checking against local refs"
+        fetched="$fetched$c"$'\n'
+      fi
       if [ -z "$start" ] || [ "$tip" = "$start" ] || ! merged_into "$c" "$b" "$(default_base "$c")"; then
         merged=0
         break
@@ -1069,7 +1315,7 @@ cmd_workspaces() {
 }
 
 case "${1:-help}" in
-  new | add | ls | show | go | run | state | status | set | notes | dash | review | spike | park | gc | doctor | _exec | _target | _preview | _menu | _popup | _dev | repos | workspaces)
+  new | add | ls | show | go | run | adopt | state | status | set | notes | dash | review | spike | park | gc | doctor | _exec | _target | _preview | _rows | _pick | _key | _actions | _jump | _menu | _popup | _dev | repos | workspaces)
     cmd=$1
     shift
     "cmd_$cmd" "$@"

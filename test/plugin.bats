@@ -51,7 +51,8 @@ stub_tmux() {
   stub_tmux
   PATH="$TMP/stub:$PATH" run collie _menu x cl
   [ "$status" -eq 0 ]
-  [[ "$output" == *"display-menu"* && "$output" == *"collie dash"* && "$output" == *"status=review"* && "$output" == *"done x"* ]]
+  [[ "$output" == *"display-menu"* && "$output" == *"collie dash"* && "$output" == *"status=review"* && "$output" == *"_popup "*"done x"* ]]
+  [[ "$output" == *"jump to alert"*"_jump - cl"* ]]
   [[ "$output" != *"not a collie task"* ]]
 }
 
@@ -61,6 +62,7 @@ stub_tmux() {
   [ "$status" -eq 0 ]
   [[ "$output" == *"collie dash"* && "$output" == *"-not a collie task — use collie new"* ]]
   [[ "$output" == *"-EE"*"collie new"* ]]
+  [[ "$output" == *"terminal"$'\n'"t"$'\n'"display-popup -E -w 90% -h 85% -d '#{pane_current_path}'"$'\n'* ]]
   [[ "$output" != *notes* && "$output" != *"run agent"* ]]
 }
 
