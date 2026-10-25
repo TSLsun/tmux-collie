@@ -765,15 +765,53 @@ cmd_dash() {
     return
   fi
   command -v fzf >/dev/null || die "dash: fzf required"
-  local self="'$BASH' '$PLUGIN_DIR/bin/collie'" sel id wid
-  sel=$(dash_rows | fzf --delimiter='\t' --no-sort --prompt='collie> ' \
-    --header='enter: go   ctrl-r: refresh   (id status priority session agent repos next)' \
+  local self="'$BASH' '$PLUGIN_DIR/bin/collie'" rows header sel id wid
+  rows=$(dash_rows)
+  header='enter: go   ctrl-r: refresh   (id status priority session agent repos next)'
+  [ -n "$rows" ] || header='no tasks — collie new <id>'
+  sel=$(printf '%s' "$rows" | fzf --delimiter='\t' --no-sort --prompt='collie> ' \
+    --header="$header" \
     --preview="$self _preview {1}" --preview-window=right,50% \
     --bind="ctrl-r:reload($self dash -n)") || return 0
   id=${sel%%"$TAB"*}
   wid=$(cmd__target "$id")
   if [ "$wid" != - ]; then tmux select-window -t "$wid" 2>/dev/null || true; fi
   cmd_go "$id"
+}
+
+# Menu for prefix <@collie-key>, built per session: task actions only inside a
+# task's session (see collie.tmux).
+cmd__menu() { # session [client]
+  local C="$PLUGIN_DIR/bin/collie" T=$1 popup="display-popup -E -w 90% -h 85%" st s items
+  items=(dashboard h "$popup '$C _popup $C dash'"
+    lazygit g "$popup -d '#{pane_current_path}' '$C _popup lazygit'"
+    "new task" c "display-popup -EE -w 70 -h 8 -d '#{pane_current_path}' '$C new'")
+  if valid_id "$T" && [ -f "$(task_dir "$T")/TASK.md" ]; then
+    st="display-menu -T status"
+    for s in active blocked review todo; do
+      st="$st $s ${s:0:1} \"run-shell '$C set $T status=$s'\""
+    done
+    items+=(notes n "$popup '$C _popup $C notes $T'"
+      "next action" N "display-popup -E -w 70 -h 3 '$C _popup $C set $T next'"
+      status s "$st"
+      review v "$popup '$C _popup \"$C review $T | less -R\"'"
+      ""
+      "run agent" r "run-shell '$C run $T'"
+      "done" d "confirm-before -p 'done $T? (y/n)' \"run-shell '$C done $T'\"")
+  else
+    items+=("" "-not a collie task — use collie new" "" "")
+  fi
+  tmux display-menu ${2:+-c "$2"} -T '#[align=centre] collie ' -x C -y C "${items[@]}"
+}
+
+# Run a command line in a popup; on failure keep the popup open until a key.
+cmd__popup() {
+  local rc=0
+  eval "$*" || rc=$?
+  [ "$rc" -eq 0 ] && return 0
+  printf '\n[collie: exit %s — press any key]' "$rc"
+  read -rsn1 _ || true
+  return "$rc"
 }
 
 # Window of the task's most urgent run, or "-".
@@ -990,7 +1028,7 @@ cmd_workspaces() {
 }
 
 case "${1:-help}" in
-  new | add | ls | show | go | run | state | status | set | notes | dash | review | spike | park | gc | doctor | _exec | _target | _preview | repos | workspaces)
+  new | add | ls | show | go | run | state | status | set | notes | dash | review | spike | park | gc | doctor | _exec | _target | _preview | _menu | _popup | repos | workspaces)
     cmd=$1
     shift
     "cmd_$cmd" "$@"
