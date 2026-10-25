@@ -32,6 +32,8 @@ per repo involved, and one tmux session (one window per repo).
 ```sh
 collie new login                       # task in the current repo, branch feat/login
 collie new typo -t fix                 # branch fix/typo
+collie new login -m 'add OAuth login'  # pre-fill TASK.md's Objective
+collie new                             # on a terminal: prompts for id, type, objective
 collie new deploy-v2 -r A -r B         # cross-repo task (repos by name or path)
 collie new deploy-v2 -r A -r B:release/v2   # per-repo branch
 collie new checkout-fix -w shop        # all repos of a workspace
@@ -76,9 +78,10 @@ collie set deploy-v2 status=review "next=check the infra diff"
 collie notes deploy-v2                 # $EDITOR on NOTES.md
 ```
 
-`prefix h` opens a menu (dashboard, lazygit, notes, next action, status, run
-agent, done) for the current session's task; `prefix h h` goes straight to
-the dashboard. Change the key with `set -g @collie-key 'h'`.
+`prefix h` opens a menu (dashboard, lazygit, notes, next action, status, new
+task, run agent, done) for the current session's task; `prefix h h` goes straight to
+the dashboard. `new task` (`c`) prompts in a popup, creates the task from the
+current pane's repo and switches to it. Change the key with `set -g @collie-key 'h'`.
 
 To reach the dashboard with one terminal key, send `prefix h h`. Alacritty
 with prefix `C-b`:

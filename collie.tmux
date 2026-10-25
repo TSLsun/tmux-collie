@@ -42,5 +42,6 @@ tmux bind-key "${key:-h}" display-menu -T '#[align=centre] collie ' -x C -y C \
   status s "$status_menu" \
   review v "$popup '$C review $T | less -R'" \
   "" \
+  "new task" c "display-popup -EE -w 70 -h 8 -d '#{pane_current_path}' '$C new'" \
   "run agent" r "run-shell '$C run $T'" \
   "done" d "confirm-before -p 'done $T? (y/n)' \"run-shell '$C done $T'\""

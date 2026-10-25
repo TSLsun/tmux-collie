@@ -46,6 +46,24 @@ two_repos() {
   [ "$(fm y status)" = todo ]
 }
 
+@test "new: -m writes the objective into TASK.md" {
+  make_bare_repo A
+  cd "$REPO/main"
+  run collie new x -m 'add OAuth login & keep $HOME' --no-window
+  [ "$status" -eq 0 ]
+  run awk '/^## Objective$/ { getline; print; exit }' "$(task_dir x)/TASK.md"
+  [ "$output" = 'add OAuth login & keep $HOME' ]
+  grep -qx '## Context' "$(task_dir x)/TASK.md"
+}
+
+@test "new: without an id and no tty, prints usage" {
+  make_bare_repo A
+  cd "$REPO/main"
+  run collie new --no-window </dev/null
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"usage: collie new"* ]]
+}
+
 @test "new: rejects invalid ids" {
   make_bare_repo A
   cd "$REPO/main"
