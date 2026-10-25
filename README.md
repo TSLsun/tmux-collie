@@ -67,7 +67,10 @@ collie gc                              # finish tasks whose branches were merged
 
 `collie run`'s default prompt asks the agent to write `.collie/REPORT.md`.
 `done` and `gc` fetch `origin` first, so a PR merged on GitHub counts without
-a manual fetch, and also recognize squash merges with git >= 2.38.
+a manual fetch (progress is reported per repo on stderr), and also recognize
+squash merges with git >= 2.38. A client viewing a finished task's session
+switches to its last session (else the most recently used one) instead of
+detaching; it detaches only when no other session exists.
 `hooks/pre-push` refuses to push `exp/*` branches:
 `ln -s ~/.tmux/plugins/tmux-collie/hooks/pre-push "$(git rev-parse --git-common-dir)/hooks/pre-push"`.
 
