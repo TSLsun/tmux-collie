@@ -9,7 +9,11 @@ setup() {
   make_bare_repo A
   cd "$REPO/main"
 }
-teardown() { teardown_env; }
+teardown() {
+  # the fifo writers of attach_client would otherwise keep bats waiting
+  [ -z "${CLIENT_PIDS:-}" ] || kill $CLIENT_PIDS 2>/dev/null || true
+  teardown_env
+}
 
 commit_in() { # dir file
   echo "$2" >"$1/$2"
@@ -179,8 +183,9 @@ squash_upstream() {
 # a control-mode client stands in for a terminal attached to session $1
 attach_client() {
   mkfifo "$TMP/client-$1"
-  tmux -C attach -t "=$1" <"$TMP/client-$1" >/dev/null 3>&- &
-  sleep 600 >"$TMP/client-$1" 3>&- & # keeps the client's stdin open
+  tmux -C attach -t "=$1" <"$TMP/client-$1" >/dev/null 2>&1 3>&- &
+  sleep 600 >"$TMP/client-$1" 2>/dev/null 3>&- & # keeps the client's stdin open
+  CLIENT_PIDS="${CLIENT_PIDS:-} $!"
   wait_for "[ -n \"\$(tmux list-clients -t '=$1')\" ]"
 }
 client_session() { tmux list-clients -F '#{client_session}'; }
