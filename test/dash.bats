@@ -98,12 +98,12 @@ teardown() { teardown_env; }
 
 @test "_actions: one key runs an action on the task; done asks first" {
   collie new x --no-window
-  printf r | collie _actions x
+  collie _actions x r
   [ -n "$(run_pane x)" ]
-  printf 'dn\n' | collie _actions x
+  echo n | collie _actions x d
   [ "$(fm x status)" = active ]
-  printf q | collie _actions x
-  printf 'dy\n' | collie _actions x
+  collie _actions x q
+  echo y | collie _actions x d
   [ "$(fm x status)" = done ]
 }
 

@@ -859,32 +859,58 @@ cmd_dash() {
     return
   fi
   command -v fzf >/dev/null || die "dash: fzf required"
-  local self="'$BASH' '$PLUGIN_DIR/bin/collie'" rows header sel id wid reload
+  local self="'$BASH' '$PLUGIN_DIR/bin/collie'" rows header sel id wid
   rows=$(cmd__rows)
-  reload="reload($self _rows)"
   header='enter: go   ?: actions'
   [ -n "$rows" ] || header='no tasks — ?: new task'
   sel=$(printf '%s' "$rows" | fzf --ansi --delimiter='\t' --with-nth=2.. --no-sort --prompt='collie> ' \
     --header="$header" \
     --preview="$self _preview {1}" --preview-window=right,50% \
-    --bind="?:execute($self _actions {1})+$reload") || return 0
+    --bind="?:transform($self _pick {1})") || return 0
   id=${sel%%"$TAB"*}
   wid=$(cmd__target "$id")
   if [ "$wid" != - ]; then tmux select-window -t "$wid" 2>/dev/null || true; fi
   cmd_go "$id"
 }
 
-# Dashboard `?`: a key list for the selected task, one key runs an action.
-cmd__actions() { # [id]
-  local id=${1:-} self="'$BASH' '$PLUGIN_DIR/bin/collie'" k a
-  if [ -n "$id" ]; then
-    printf 'task %s\n\n' "$id"
-    printf '  %s  %s\n' r 'run agent' N 'next action' e notes v review d 'done' c 'new task'
+# Dashboard `?` (an fzf transform): draws a key menu over the dashboard, reads
+# one key from the terminal and prints the fzf actions to run for it. A tmux
+# popup cannot open over the dashboard's popup, hence drawing it ourselves.
+cmd__pick() { # [id]
+  local id=${1:-} self="'$BASH' '$PLUGIN_DIR/bin/collie'" items rows cols n w=32 top left line k t
+  t=${id:-collie}
+  items=$(action_items "$id")
+  n=$(printf '%s\n' "$items" | wc -l)
+  read -r rows cols < <(stty size </dev/tty 2>/dev/null || echo 24 80)
+  top=$(((rows - n - 2) / 2 + 1)) left=$(((cols - w) / 2 + 1))
+  {
+    printf '\033[%d;%dH\033[34m╭─ \033[1m%s\033[22m %s╮' "$top" "$left" "$t" "$(rule $((w - 5 - ${#t})) ─)"
+    while IFS= read -r line; do
+      top=$((top + 1))
+      printf '\033[%d;%dH│\033[0m \033[36m%s\033[0m %-*s\033[34m│' "$top" "$left" "${line:0:1}" $((w - 5)) "${line:3}"
+    done <<<"$items"
+    printf '\033[%d;%dH╰─ esc: close %s╯\033[0m' $((top + 1)) "$left" "$(rule $((w - 15)) ─)"
+  } >/dev/tty 2>/dev/null || { echo clear-screen; return 0; }
+  IFS= read -rsn1 k </dev/tty || k=
+  if [ -n "$k" ] && printf '%s\n' "$items" | cut -c1 | grep -qxF -- "$k"; then
+    echo "clear-screen+execute($self _actions '$id' '$k')+reload($self _rows)"
   else
-    printf '  c  new task\n'
+    echo clear-screen
   fi
-  printf '\n  any other key: back\n'
-  read -rsn1 k || return 0
+}
+
+rule() { local s="" i; for ((i = 0; i < $1; i++)); do s="$s$2"; done; printf '%s' "$s"; }
+
+# "<key>  <label>" lines of the dashboard actions for a task (or none).
+action_items() { # [id]
+  [ -z "$1" ] || printf '%s\n' 'r  run agent' 'N  next action' 'e  notes' 'v  review' 'd  done'
+  printf '%s\n' 'c  new task'
+}
+
+# Runs the dashboard action for a key (see action_items); done asks first.
+cmd__actions() { # id key
+  local id=${1:-} k=${2:-} self="'$BASH' '$PLUGIN_DIR/bin/collie'" a
+  [ ! -t 1 ] || printf '\033[H\033[2J'
   case ${id:+x}$k in
     xr) a="$self run '$id'" ;;
     xN) a="$self set '$id' next" ;;
@@ -898,7 +924,6 @@ cmd__actions() { # [id]
     c | xc) a="$self new" ;;
     *) return 0 ;;
   esac
-  echo
   cmd__popup "$a"
 }
 
@@ -1181,7 +1206,7 @@ cmd_workspaces() {
 }
 
 case "${1:-help}" in
-  new | add | ls | show | go | run | state | status | set | notes | dash | review | spike | park | gc | doctor | _exec | _target | _preview | _rows | _actions | _jump | _menu | _popup | _dev | repos | workspaces)
+  new | add | ls | show | go | run | state | status | set | notes | dash | review | spike | park | gc | doctor | _exec | _target | _preview | _rows | _pick | _actions | _jump | _menu | _popup | _dev | repos | workspaces)
     cmd=$1
     shift
     "cmd_$cmd" "$@"

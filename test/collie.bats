@@ -231,7 +231,7 @@ two_repos() {
   run collie go x
   [ "$status" -eq 0 ]
   [ "$output" = "$TMP/repos/A/feat-x" ]
-  [ "$(window_path x B)" = "$TMP/repos/B.worktrees/feat-x" ]
+  wait_for '[ "$(window_path x B)" = "$TMP/repos/B.worktrees/feat-x" ]'
 }
 
 @test "go: unknown task fails" {
