@@ -33,7 +33,8 @@ per repo involved, and one tmux session (one window per repo).
 collie new login                       # task in the current repo, branch feat/login
 collie new typo -t fix                 # branch fix/typo
 collie new login -m 'add OAuth login'  # pre-fill TASK.md's Objective
-collie new                             # on a terminal: prompts for id, type, objective
+collie new                             # on a terminal: prompts for id, type, objective, ship
+collie new login --ship                # agent ships it: commits, PR, CI (see below)
 collie new deploy-v2 -r A -r B         # cross-repo task (repos by name or path)
 collie new deploy-v2 -r A -r B:release/v2   # per-repo branch
 collie new checkout-fix -w shop        # all repos of a workspace
@@ -156,6 +157,23 @@ symlink to it, excluded via the repo's `info/exclude`.
 `done`/`archive` refuse dirty worktrees or commits not in the base branch
 (`--force` overrides; branches are always kept). `new` is all-or-nothing:
 a failure rolls back worktrees and branches it already created.
+
+### Ship workflow
+
+Off by default. When on, `collie new` appends a `## Ship` section to TASK.md
+telling the agent (any agent) to finish the delivery loop: logical
+Conventional Commits with fixups squashed, push and `gh pr create` once the
+Acceptance Criteria and Verify checks pass (no `gh`: push and report the
+branch URL), wait for CI, fix a clearly-caused failure at most once, and
+otherwise stop and write the failure analysis to REPORT.md. It never merges.
+
+```tmux
+set -g @collie-ship 'on'                       # default for new tasks ($COLLIE_SHIP wins)
+```
+
+`collie new --ship` / `--no-ship` overrides it per task, and the new-task popup
+asks. The rules live in the task's TASK.md, so you can read or edit them before
+`collie run`; replace them for all tasks with `~/.config/collie/SHIP.md`.
 
 ### Repository layouts
 

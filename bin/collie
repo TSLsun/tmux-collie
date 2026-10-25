@@ -25,8 +25,11 @@ usage: collie <command> [args]
 tasks:
   new [<id>] [-r repo[:branch]]... [-w workspace] [-t type] [--title text]
            [-m objective] [--from ref] [--todo] [--edit] [--no-window]
+           [--ship|--no-ship]
                       create a task: worktree per repo + tmux session;
-                      no id on a tty prompts for id, type and objective
+                      no id on a tty prompts for id, type, objective, ship;
+                      --ship adds commit/push/PR/CI rules to TASK.md
+                      (default: $COLLIE_SHIP, @collie-ship, else off)
   add [<id>] -r repo[:branch]... [--from ref] [--no-window]
                       attach more repos to an existing task
   ls [-a]             list tasks: id, status, priority, session (*|-), agent, repos, next
@@ -207,9 +210,10 @@ log_event() {
   printf '%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$2" "${3:-}" >>"$(task_dir "$1")/events.log"
 }
 
-write_task_md() { # dir id title status [objective]
-  local tmpl="$CONFIG_DIR/TASK.md"
+write_task_md() { # dir id title status [objective] [ship]
+  local tmpl="$CONFIG_DIR/TASK.md" ship="$CONFIG_DIR/SHIP.md"
   [ -f "$tmpl" ] || tmpl="$PLUGIN_DIR/templates/TASK.md"
+  [ -f "$ship" ] || ship="$PLUGIN_DIR/templates/SHIP.md"
   {
     printf -- '---\nid: %s\ntitle: %s\nstatus: %s\npriority: P2\nnext:\ncreated: %s\n---\n' \
       "$2" "$3" "$4" "$(date +%Y-%m-%d)"
@@ -218,6 +222,8 @@ write_task_md() { # dir id title status [objective]
       { print }
       o != "" && !done && $0 == "## Objective" { print o; done = 1 }
       END { if (o != "" && !done) print "\n## Objective\n" o }' "$tmpl"
+    # ship on: the commit/push/PR/CI rules go at the end
+    [ "${6:-0}" = 0 ] || cat "$ship"
   } >"$1/TASK.md"
 }
 
@@ -482,7 +488,8 @@ cmd__jump() { # [pane|-] [client]
 
 cmd_new() {
   local id="" specs="" ws="" type=feat title="" from="" status=active edit=0 window=1
-  local goal="" asked=0 t
+  local goal="" asked=0 t ship=${COLLIE_SHIP-$(tmux_opt @collie-ship)}
+  case $ship in on | 1 | yes | true) ship=1 ;; *) ship=0 ;; esac
   while [ $# -gt 0 ]; do
     case $1 in
       -r) specs="$specs${2:?-r needs a repo}"$'\n'; shift ;;
@@ -494,6 +501,8 @@ cmd_new() {
       --todo) status=todo ;;
       --edit) edit=1 ;;
       --no-window) window=0 ;;
+      --ship) ship=1 ;;
+      --no-ship) ship=0 ;;
       -*) die "new: unknown option $1" ;;
       *) [ -z "$id" ] || die "new: too many arguments"; id=$1 ;;
     esac
@@ -515,11 +524,14 @@ cmd_new() {
     printf '  %-10s %-12s %s\n' branch '<type>/<id>' "from ${base:-the default branch}" \
       id required '[a-z0-9-], max 40' \
       type "$type" 'e.g. fix, refactor, docs' \
-      objective optional 'goes into TASK.md'
+      objective optional 'goes into TASK.md' \
+      ship "$([ "$ship" = 1 ] && echo on || echo off)" 'agent pushes, opens a PR, checks CI'
     echo
     read -r -e -p "task id: " id
     read -r -e -p "type [$type]: " t && type=${t:-$type}
     [ -n "$goal" ] || read -r -e -p "objective (optional): " goal
+    read -r -e -p "ship [$([ "$ship" = 1 ] && echo Y/n || echo y/N)]: " t
+    case $t in [yY]*) ship=1 ;; [nN]*) ship=0 ;; esac
     asked=1
   fi
   [ -n "$id" ] || die "usage: collie new <id> [-r repo[:branch]]... [-w workspace] ..."
@@ -539,7 +551,7 @@ cmd_new() {
     rm -rf "$tdir"
     exit 1
   fi
-  write_task_md "$tdir" "$id" "${title:-$id}" "$status" "$goal"
+  write_task_md "$tdir" "$id" "${title:-$id}" "$status" "$goal" "$ship"
   log_event "$id" task_created "status=$status"
   [ "$edit" -eq 0 ] || "${EDITOR:-vi}" "$tdir/TASK.md"
   printf '%s\n' "$NEW_PATHS" | head -n 1
@@ -1067,7 +1079,7 @@ cmd__menu() { # session [client]
   items=(dashboard h "$popup '$C _popup $C dash'"
     lazygit g "$popup -d '#{pane_current_path}' '$C _popup lazygit'"
     terminal t "$popup -d '#{pane_current_path}'"
-    "new task" c "display-popup -EE -w 70 -h 13 -d '#{pane_current_path}' '$C new'")
+    "new task" c "display-popup -EE -w 70 -h 15 -d '#{pane_current_path}' '$C new'")
   if valid_id "$T" && [ -f "$(task_dir "$T")/TASK.md" ]; then
     st="display-menu -T status"
     for s in active blocked review todo; do
