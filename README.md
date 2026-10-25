@@ -114,6 +114,9 @@ collie passes per run (`--settings`, `-c hooks...`, a generated system
 settings file); nothing to install. Codex asks you to trust the hooks once
 in `/hooks`. Other agents count as idle after 30s without output
 (`@collie-silence`).
+Agents you start by hand in a task's session (`claude`, `codex`, `gemini`,
+`omp`, `aider`) are found by process and show up the same way, but without
+hooks they are only working or idle (by output silence) and do not notify.
 
 ```tmux
 set -g status-right '#{collie_status} %H:%M'   # ●waiting ●idle ●working counts

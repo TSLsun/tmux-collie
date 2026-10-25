@@ -337,14 +337,38 @@ win_states() { # list-windows target args
       { print $1 "\t" $2 "\t" ($3 == "" ? "-" : $3) "\t" ($4 == "" ? "-" : $4) "\t" st }'
 }
 
-# Runs of a task as "run<TAB>agent<TAB>state<TAB>window": agent windows, then
+# Agents started by hand in a session (not via `collie run`) as
+# "-<TAB>agent<TAB>state<TAB>window": panes whose process, or a child of it, is
+# a known agent. Without hooks the state is working until @collie-silence
+# seconds without output, then idle.
+manual_runs() { # session
+  local silence=${COLLIE_SILENCE:-$(tmux_opt @collie-silence)}
+  awk -v now="$(date +%s)" -v s="${silence:-30}" '
+    function base(p) { sub(/.*\//, "", p); sub(/\.(js|mjs|ts)$/, "", p); return p }
+    BEGIN { n = split("claude codex gemini omp aider", k, " "); for (i = 1; i <= n; i++) known[k[i]] = 1 }
+    FNR == NR {
+      a = base($3)
+      if ((a == "node" || a == "bun") && $4 != "") a = base($4)
+      if (a in known) { self[$1] = a; child[$2] = a }
+      next
+    }
+    { split($0, f, "|") }
+    f[3] != "" { next }
+    { a = (f[1] in self) ? self[f[1]] : child[f[1]] }
+    a != "" { print "-\t" a "\t" (now - f[4] >= s ? "idle" : "working") "\t" f[2] }' \
+    <(ps -A -o pid=,ppid=,args=) \
+    <(tmux list-panes -s -t "$1" -F '#{pane_pid}|#{window_id}|#{@collie_state}|#{window_activity}' 2>/dev/null || true)
+}
+
+# Runs of a task as "run<TAB>agent<TAB>state<TAB>window": agent windows (also
+# agents started by hand, run "-"), then
 # runs started but never seen exiting (exited if the session is up, unknown if
 # it is gone).
 task_runs() {
   local id=$1 wins="" fallback=unknown
   if has_session "$id"; then
     fallback=exited
-    wins=$(win_states -t "=$id" | awk -F'\t' '{ print $3 "\t" $4 "\t" $5 "\t" $2 }')
+    wins=$(win_states -t "=$id" | awk -F'\t' '{ print $3 "\t" $4 "\t" $5 "\t" $2 }'; manual_runs "=$id")
   fi
   [ -z "$wins" ] || printf '%s\n' "$wins"
   printf '%s\n' "$wins" | awk -F'\t' -v fb="$fallback" '

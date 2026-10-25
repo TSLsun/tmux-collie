@@ -84,6 +84,18 @@ teardown() { teardown_env; }
   [[ "$output" == *$'\033[31m●'* && "$output" == *$'\033[33m◐'* ]]
 }
 
+@test "manual agent: one started by hand in a task session shows up, idle by silence" {
+  collie new x
+  mkdir -p "$TMP/bin"
+  ln -s "$(command -v sleep)" "$TMP/bin/claude"
+  tmux new-window -d -t "=x:" "sh -c '$TMP/bin/claude 300; :'"
+  wait_for '[ "$(COLLIE_SILENCE=999 agent_of x)" = working ]'
+  [ "$(COLLIE_SILENCE=0 agent_of x)" = idle ]
+  [[ "$(collie _rows | sed $'s/\033\\[[0-9;]*m//g')" == *"	claude	"* ]]
+  run collie show x
+  [[ "$output" == *"-	claude	"* ]]
+}
+
 @test "_actions: one key runs an action on the task; done asks first" {
   collie new x --no-window
   printf r | collie _actions x
