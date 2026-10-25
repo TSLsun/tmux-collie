@@ -32,6 +32,7 @@ _collie() {
     'set:set status, priority, next or title'
     'notes:edit NOTES.md'
     'run:start an agent'
+    'adopt:restart an agent started by hand under collie run'
     'review:per-repo commits and diffs'
     'spike:branch the current worktree into an exp/ task'
     'park:record the next action'
@@ -61,7 +62,7 @@ _collie() {
     ls) compadd -- -a ;;
     new) compadd -- -r -w -t -m --title --from --todo --edit --no-window ;;
     gc) compadd -- -n ;;
-    add | show | go | notes | run | review | park | done | archive) _collie_tasks ;;
+    add | show | go | notes | run | adopt | review | park | done | archive) _collie_tasks ;;
   esac
 }
 

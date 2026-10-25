@@ -117,6 +117,8 @@ in `/hooks`. Other agents count as idle after 30s without output
 Agents you start by hand in a task's session (`claude`, `codex`, `gemini`,
 `omp`, `aider`) are found by process and show up the same way, but without
 hooks they are only working or idle (by output silence) and do not notify.
+`collie adopt` (dashboard `?` → `a`) stops such a Claude and restarts it with
+`collie run … -- --continue`: same conversation, now with hooks.
 
 ```tmux
 set -g status-right '#{collie_status} %H:%M'   # ●waiting ●idle ●working counts

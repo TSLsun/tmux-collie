@@ -96,6 +96,28 @@ teardown() { teardown_env; }
   [[ "$output" == *"-	claude	"* ]]
 }
 
+@test "adopt: stops a hand-started agent and resumes it under collie run" {
+  collie new x
+  mkdir -p "$TMP/bin" "$TMP/manual"
+  ln -s "$(command -v sleep)" "$TMP/manual/claude"
+  printf '#!/bin/sh\necho "$@" >"%s/args"\nexec sleep 300\n' "$TMP" >"$TMP/bin/claude"
+  chmod +x "$TMP/bin/claude"
+  export PATH="$TMP/bin:$PATH"
+  tmux new-window -d -t "=x:" -c "$TMP/repos/A/feat-x" "sh -c '$TMP/manual/claude 300; :'"
+  wait_for '[ "$(agent_of x)" = working ]'
+  run collie adopt x </dev/null
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"confirm with -y"* ]]
+  collie adopt x -y
+  wait_for '[ -f "$TMP/args" ]'
+  [[ "$(cat "$TMP/args")" == *"--settings"*"--continue" ]]
+  ! pgrep -f "$TMP/manual/claude" >/dev/null
+  grep -q "agent_adopted	agent=claude" "$(task_dir x)/events.log"
+  grep -q "run_started	run=1 agent=claude repo=A" "$(task_dir x)/events.log"
+  run collie adopt x -y
+  [[ "$output" == *"no agent started by hand"* ]]
+}
+
 @test "_actions: one key runs an action on the task; done asks first" {
   collie new x --no-window
   collie _actions x r

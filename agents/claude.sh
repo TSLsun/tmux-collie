@@ -5,6 +5,8 @@
 
 # shellcheck disable=SC2034  # read by bin/collie
 AGENT_HOOKS=1
+# shellcheck disable=SC2034  # args that resume the latest conversation in the cwd (adopt)
+AGENT_RESUME=(--continue)
 
 agent_argv() {
   local d settings

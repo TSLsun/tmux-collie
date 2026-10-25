@@ -49,6 +49,8 @@ agents:
   run [<id>] [--agent name] [-r repo] [-p prompt] [-- args]
                       start an agent in a new task window (default agent:
                       $COLLIE_AGENT, @collie-agent, else claude); -p '' = no prompt
+  adopt [<id>] [-y]   restart an agent you started by hand in the task's session
+                      under collie run, resuming its conversation (claude)
   state <working|waiting|idle|exited>
                       called by agent hooks; no-op outside a collie window
   status              agent counts for the status bar (#{collie_status})
@@ -338,9 +340,9 @@ win_states() { # list-windows target args
 }
 
 # Agents started by hand in a session (not via `collie run`) as
-# "-<TAB>agent<TAB>state<TAB>window": panes whose process, or a child of it, is
-# a known agent. Without hooks the state is working until @collie-silence
-# seconds without output, then idle.
+# "-<TAB>agent<TAB>state<TAB>window<TAB>pane<TAB>pid<TAB>path": panes whose
+# process, or a child of it, is a known agent. Without hooks the state is
+# working until @collie-silence seconds without output, then idle.
 manual_runs() { # session
   local silence=${COLLIE_SILENCE:-$(tmux_opt @collie-silence)}
   awk -v now="$(date +%s)" -v s="${silence:-30}" '
@@ -349,15 +351,16 @@ manual_runs() { # session
     FNR == NR {
       a = base($3)
       if ((a == "node" || a == "bun") && $4 != "") a = base($4)
-      if (a in known) { self[$1] = a; child[$2] = a }
+      if (a in known) { self[$1] = a; child[$2] = a; cpid[$2] = $1 }
       next
     }
     { split($0, f, "|") }
     f[3] != "" { next }
-    { a = (f[1] in self) ? self[f[1]] : child[f[1]] }
-    a != "" { print "-\t" a "\t" (now - f[4] >= s ? "idle" : "working") "\t" f[2] }' \
+    f[1] in self { a = self[f[1]]; pid = f[1] }
+    !(f[1] in self) { a = child[f[1]]; pid = cpid[f[1]] }
+    a != "" { print "-\t" a "\t" (now - f[4] >= s ? "idle" : "working") "\t" f[2] "\t" f[5] "\t" pid "\t" f[6] }' \
     <(ps -A -o pid=,ppid=,args=) \
-    <(tmux list-panes -s -t "$1" -F '#{pane_pid}|#{window_id}|#{@collie_state}|#{window_activity}' 2>/dev/null || true)
+    <(tmux list-panes -s -t "$1" -F '#{pane_pid}|#{window_id}|#{@collie_state}|#{window_activity}|#{pane_id}|#{pane_current_path}' 2>/dev/null || true)
 }
 
 # Runs of a task as "run<TAB>agent<TAB>state<TAB>window": agent windows (also
@@ -368,7 +371,7 @@ task_runs() {
   local id=$1 wins="" fallback=unknown
   if has_session "$id"; then
     fallback=exited
-    wins=$(win_states -t "=$id" | awk -F'\t' '{ print $3 "\t" $4 "\t" $5 "\t" $2 }'; manual_runs "=$id")
+    wins=$(win_states -t "=$id" | awk -F'\t' '{ print $3 "\t" $4 "\t" $5 "\t" $2 }'; manual_runs "=$id" | cut -f1-4)
   fi
   [ -z "$wins" ] || printf '%s\n' "$wins"
   printf '%s\n' "$wins" | awk -F'\t' -v fb="$fallback" '
@@ -719,6 +722,44 @@ cmd_run() {
   fi
 }
 
+# Restarts an agent started by hand in the task's session as a `collie run`
+# that resumes its conversation, so its hooks report state and notify.
+cmd_adopt() {
+  local id="" yes=0 info agent wid pane pid path repo a i
+  while [ $# -gt 0 ]; do
+    case $1 in
+      -y) yes=1 ;;
+      -*) die "adopt: unknown option $1" ;;
+      *) [ -z "$id" ] || die "adopt: too many arguments"; id=$1 ;;
+    esac
+    shift
+  done
+  id=$(task_id "$id")
+  has_session "$id" || die "adopt: task '$id' has no session"
+  info=$(manual_runs "=$id" | head -n 1)
+  [ -n "$info" ] || die "adopt: no agent started by hand in task '$id'"
+  IFS=$TAB read -r a agent a wid pane pid path <<<"$info"
+  AGENT_RESUME=()
+  # shellcheck source=/dev/null
+  [ ! -f "$PLUGIN_DIR/agents/$agent.sh" ] || . "$PLUGIN_DIR/agents/$agent.sh"
+  [ ${#AGENT_RESUME[@]} -gt 0 ] || die "adopt: collie cannot resume $agent sessions"
+  repo=$(awk -F'\t' -v p="$path" '$4 == p || index(p, $4 "/") == 1 { print $1; exit }' "$(task_dir "$id")/repos.tsv")
+  [ -n "$repo" ] || die "adopt: $agent in $pane runs outside the task's worktrees ($path)"
+  if [ "$yes" -eq 0 ]; then
+    [ -t 0 ] || die "adopt: confirm with -y"
+    read -r -p "stop $agent in $pane and resume it under collie run? (y/n) " a || exit 1
+    [ "$a" = y ] || exit 1
+  fi
+  kill -TERM "$pid" 2>/dev/null || die "adopt: cannot stop $agent (pid $pid)"
+  for i in $(seq 1 100); do
+    kill -0 "$pid" 2>/dev/null || break
+    sleep 0.1
+  done
+  ! kill -0 "$pid" 2>/dev/null || die "adopt: $agent (pid $pid) did not exit"
+  log_event "$id" agent_adopted "agent=$agent pane=$pane window=$wid"
+  cmd_run "$id" -r "$repo" --agent "$agent" -p '' -- "${AGENT_RESUME[@]}"
+}
+
 # Window command of a run: runs the agent, records its exit, leaves a shell.
 cmd__exec() { # id run argv...
   local id=$1 run=$2 code=0 i
@@ -903,7 +944,7 @@ rule() { local s="" i; for ((i = 0; i < $1; i++)); do s="$s$2"; done; printf '%s
 
 # "<key>  <label>" lines of the dashboard actions for a task (or none).
 action_items() { # [id]
-  [ -z "$1" ] || printf '%s\n' 'r  run agent' 'N  next action' 'e  notes' 'v  review' 'd  done'
+  [ -z "$1" ] || printf '%s\n' 'r  run agent' 'a  adopt agent' 'N  next action' 'e  notes' 'v  review' 'd  done'
   printf '%s\n' 'c  new task'
 }
 
@@ -913,6 +954,7 @@ cmd__actions() { # id key
   [ ! -t 1 ] || printf '\033[H\033[2J'
   case ${id:+x}$k in
     xr) a="$self run '$id'" ;;
+    xa) a="$self adopt '$id'" ;;
     xN) a="$self set '$id' next" ;;
     xe) a="$self notes '$id'" ;;
     xv) a="$self review '$id' | less -R" ;;
@@ -1206,7 +1248,7 @@ cmd_workspaces() {
 }
 
 case "${1:-help}" in
-  new | add | ls | show | go | run | state | status | set | notes | dash | review | spike | park | gc | doctor | _exec | _target | _preview | _rows | _pick | _actions | _jump | _menu | _popup | _dev | repos | workspaces)
+  new | add | ls | show | go | run | adopt | state | status | set | notes | dash | review | spike | park | gc | doctor | _exec | _target | _preview | _rows | _pick | _actions | _jump | _menu | _popup | _dev | repos | workspaces)
     cmd=$1
     shift
     "cmd_$cmd" "$@"
