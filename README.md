@@ -66,7 +66,7 @@ git fetch && collie gc                 # finish tasks whose branches were merged
 ```
 
 `collie run`'s default prompt asks the agent to write `.collie/REPORT.md`.
-`gc` sees fast-forward and merge commits on the base branch, not squash merges.
+`done` and `gc` also recognize squash merges with git >= 2.38.
 `hooks/pre-push` refuses to push `exp/*` branches:
 `ln -s ~/.tmux/plugins/tmux-collie/hooks/pre-push "$(git rev-parse --git-common-dir)/hooks/pre-push"`.
 

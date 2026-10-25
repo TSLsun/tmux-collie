@@ -259,7 +259,9 @@ two_repos() {
   two_repos
   cd "$TMP"
   collie new x -r A -r B --no-window
-  git -C "$TMP/repos/A/feat-x" commit -q --allow-empty -m work
+  echo work >"$TMP/repos/A/feat-x/w"
+  git -C "$TMP/repos/A/feat-x" add w
+  git -C "$TMP/repos/A/feat-x" commit -q -m work
   echo wip >"$TMP/repos/B.worktrees/feat-x/f"
   run collie done x
   [ "$status" -ne 0 ]

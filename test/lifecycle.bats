@@ -23,6 +23,14 @@ merge_upstream() {
   git -C "$REPO" fetch -q origin
 }
 
+# squash-merge a branch into origin's main (the only strategy some repos allow)
+squash_upstream() {
+  git -C "$TMP/origin-A" fetch -q "$REPO/.bare" "$1"
+  git -C "$TMP/origin-A" merge -q --squash FETCH_HEAD >/dev/null
+  git -C "$TMP/origin-A" commit -q -m "squash $1"
+  git -C "$REPO" fetch -q origin
+}
+
 # --- review -----------------------------------------------------------------
 
 @test "review: commits, diff stat and dirty files for every repo, then REPORT.md" {
@@ -115,6 +123,56 @@ merge_upstream() {
   echo dirty >"$TMP/repos/A/feat-m/d"
   run collie gc
   [[ "$output" == *"skipped m"* ]]
+  [ "$(fm m status)" = active ]
+}
+
+@test "gc: finishes squash-merged tasks" {
+  collie new m --no-window
+  commit_in "$TMP/repos/A/feat-m" m
+  commit_in "$TMP/repos/A/feat-m" m2
+  squash_upstream feat/m
+  run collie gc
+  [ "$status" -eq 0 ]
+  [ "$output" = "done m" ]
+  [ "$(fm m status)" = done ]
+}
+
+# --- done -------------------------------------------------------------------
+
+@test "done: accepts a squash-merged branch without --force" {
+  collie new m --no-window
+  commit_in "$TMP/repos/A/feat-m" m
+  commit_in "$TMP/repos/A/feat-m" m2
+  squash_upstream feat/m
+  commit_in "$TMP/origin-A" later
+  git -C "$REPO" fetch -q origin
+  run collie done m
+  [ "$status" -eq 0 ]
+  [ ! -d "$TMP/repos/A/feat-m" ]
+}
+
+@test "done: still refuses a squash-merged branch with later work" {
+  collie new m --no-window
+  commit_in "$TMP/repos/A/feat-m" m
+  squash_upstream feat/m
+  commit_in "$TMP/repos/A/feat-m" extra
+  run collie done m
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"unmerged: A has 2 commit(s)"* ]]
+  [ -d "$TMP/repos/A/feat-m" ]
+}
+
+@test "done: refuses before touching anything when .collie is a real directory" {
+  collie new m --no-window
+  p="$TMP/repos/A/feat-m"
+  rm "$p/.collie"
+  mkdir "$p/.collie"
+  echo mine >"$p/.collie/f"
+  run collie done m --force
+  [ "$status" -ne 0 ]
+  [[ "$output" == *".collie"* ]]
+  [ -f "$p/.collie/f" ]
+  [ -L "$(task_dir m)/repos/A" ]
   [ "$(fm m status)" = active ]
 }
 
