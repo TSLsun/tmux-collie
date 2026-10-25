@@ -419,8 +419,24 @@ cmd_new() {
     esac
     shift
   done
-  # no id on a terminal (e.g. the menu popup): ask for it
+  # no id on a terminal (e.g. the menu popup): show what will be asked, then ask
   if [ -z "$id" ] && [ -t 0 ]; then
+    local where base=${from:-}
+    if [ -n "$ws" ]; then
+      where="workspace $ws"
+    elif [ -n "$specs" ]; then
+      where=$(printf '%s' "$specs" | tr '\n' ' ')
+    else
+      repo_at . || die "not inside a git repository (use -r or -w)"
+      where="$R_NAME (current pane)"
+      [ -n "$base" ] || base=$(git --git-dir="$R_COMMON" rev-parse --abbrev-ref "$(default_base "$R_COMMON")" 2>/dev/null) || true
+    fi
+    printf 'new task in %s\n' "$where"
+    printf '  %-10s %-12s %s\n' branch '<type>/<id>' "from ${base:-the default branch}" \
+      id required '[a-z0-9-], max 40' \
+      type "$type" 'e.g. fix, refactor, docs' \
+      objective optional 'goes into TASK.md'
+    echo
     read -r -e -p "task id: " id
     read -r -e -p "type [$type]: " t && type=${t:-$type}
     [ -n "$goal" ] || read -r -e -p "objective (optional): " goal
@@ -765,15 +781,78 @@ cmd_dash() {
     return
   fi
   command -v fzf >/dev/null || die "dash: fzf required"
-  local self="'$BASH' '$PLUGIN_DIR/bin/collie'" sel id wid
-  sel=$(dash_rows | fzf --delimiter='\t' --no-sort --prompt='collie> ' \
-    --header='enter: go   ctrl-r: refresh   (id status priority session agent repos next)' \
+  local self="'$BASH' '$PLUGIN_DIR/bin/collie'" rows header sel id wid
+  rows=$(dash_rows)
+  header='enter: go   ctrl-r: refresh   (id status priority session agent repos next)'
+  [ -n "$rows" ] || header='no tasks — collie new <id>'
+  sel=$(printf '%s' "$rows" | fzf --delimiter='\t' --no-sort --prompt='collie> ' \
+    --header="$header" \
     --preview="$self _preview {1}" --preview-window=right,50% \
     --bind="ctrl-r:reload($self dash -n)") || return 0
   id=${sel%%"$TAB"*}
   wid=$(cmd__target "$id")
   if [ "$wid" != - ]; then tmux select-window -t "$wid" 2>/dev/null || true; fi
   cmd_go "$id"
+}
+
+# Menu for prefix <@collie-key>, built per session: task actions only inside a
+# task's session (see collie.tmux).
+cmd__menu() { # session [client]
+  local C="$PLUGIN_DIR/bin/collie" T=$1 popup="display-popup -E -w 90% -h 85%" st s items
+  items=(dashboard h "$popup '$C _popup $C dash'"
+    lazygit g "$popup -d '#{pane_current_path}' '$C _popup lazygit'"
+    "new task" c "display-popup -EE -w 70 -h 13 -d '#{pane_current_path}' '$C new'")
+  if valid_id "$T" && [ -f "$(task_dir "$T")/TASK.md" ]; then
+    st="display-menu -T status"
+    for s in active blocked review todo; do
+      st="$st $s ${s:0:1} \"run-shell '$C set $T status=$s'\""
+    done
+    items+=(notes n "$popup '$C _popup $C notes $T'"
+      "next action" N "display-popup -E -w 70 -h 3 '$C _popup $C set $T next'"
+      status s "$st"
+      review v "$popup '$C _popup \"$C review $T | less -R\"'"
+      ""
+      "run agent" r "run-shell '$C run $T'"
+      "done" d "confirm-before -p 'done $T? (y/n)' \"run-shell '$C done $T'\"")
+  else
+    items+=("" "-not a collie task — use collie new" "" "")
+  fi
+  if [ "${COLLIE_DEV:-$(tmux_opt @collie-dev)}" = on ]; then
+    items+=("" "dev: load this checkout" D "run-shell '$C _dev load #{q:pane_current_path}'"
+      "dev: back to installed" B "run-shell '$C _dev reset'")
+  fi
+  tmux display-menu ${2:+-c "$2"} -T '#[align=centre] collie ' -x C -y C "${items[@]}"
+}
+
+# @collie-dev: reload the plugin from another tmux-collie checkout (load <dir>)
+# or from the one tpm installed (reset).
+cmd__dev() {
+  local root
+  case ${1:-} in
+    load)
+      root=$(git -C "${2:-.}" rev-parse --show-toplevel 2>/dev/null) || root=
+      if [ -z "$root" ] || [ ! -f "$root/collie.tmux" ]; then
+        die "dev: ${2:-.} is not a tmux-collie checkout"
+      fi
+      ;;
+    reset)
+      root=$(tmux_opt @collie-home)
+      [ -n "$root" ] || die "dev: @collie-home unset"
+      ;;
+    *) die "usage: collie _dev load <dir> | reset" ;;
+  esac
+  tmux run-shell "'$root/collie.tmux'"
+  tmux display-message "collie: loaded $root @ $(git -C "$root" rev-parse --short HEAD 2>/dev/null || echo '?')"
+}
+
+# Run a command line in a popup; on failure keep the popup open until a key.
+cmd__popup() {
+  local rc=0
+  (eval "$*") || rc=$?
+  [ "$rc" -eq 0 ] && return 0
+  printf '\n[collie: exit %s — press any key]' "$rc"
+  read -rsn1 _ || true
+  return "$rc"
 }
 
 # Window of the task's most urgent run, or "-".
@@ -990,7 +1069,7 @@ cmd_workspaces() {
 }
 
 case "${1:-help}" in
-  new | add | ls | show | go | run | state | status | set | notes | dash | review | spike | park | gc | doctor | _exec | _target | _preview | repos | workspaces)
+  new | add | ls | show | go | run | state | status | set | notes | dash | review | spike | park | gc | doctor | _exec | _target | _preview | _menu | _popup | _dev | repos | workspaces)
     cmd=$1
     shift
     "cmd_$cmd" "$@"

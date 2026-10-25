@@ -79,9 +79,11 @@ collie notes deploy-v2                 # $EDITOR on NOTES.md
 ```
 
 `prefix h` opens a menu (dashboard, lazygit, notes, next action, status, new
-task, run agent, done) for the current session's task; `prefix h h` goes straight to
-the dashboard. `new task` (`c`) prompts in a popup, creates the task from the
-current pane's repo and switches to it. Change the key with `set -g @collie-key 'h'`.
+task, run agent, done) for the current session's task; outside a task session it
+keeps only dashboard, lazygit and new task. `prefix h h` goes straight to the
+dashboard. `new task` (`c`) prompts in a popup, creates the task from the
+current pane's repo and switches to it. A popup whose command fails stays open
+until you press a key. Change the key with `set -g @collie-key 'h'`.
 
 To reach the dashboard with one terminal key, send `prefix h h`. Alacritty
 with prefix `C-b`:
@@ -152,6 +154,12 @@ make check   # shellcheck + bats (uses an isolated tmux server per test)
 ```
 
 Scripts target bash 3.2 (macOS `/bin/bash`).
+
+To try a checkout in your running tmux, `set -g @collie-dev on`: the menu gets
+`dev: load this checkout` (reloads the plugin from the current pane's
+tmux-collie checkout, e.g. a task worktree) and `dev: back to installed`
+(reloads the copy tpm installed, `@collie-home`). Same from a shell:
+`collie _dev load <dir>` / `collie _dev reset`.
 
 ## License
 
