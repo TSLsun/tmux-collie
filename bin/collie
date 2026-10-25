@@ -229,7 +229,6 @@ create_repos() { # id default_branch from specs
       { [ -f "$tdir/repos.tsv" ] && cut -f1 "$tdir/repos.tsv" | grep -qxF "$R_NAME"; }; then
       die "repo '$R_NAME' is already part of task '$id'"
     fi
-    [ ! -e "$path" ] || die "$path already exists"
     line=$(git --git-dir="$R_COMMON" worktree list --porcelain |
       awk -v b="refs/heads/$branch" '/^worktree / { p = substr($0, 10) } $0 == "branch " b { print p; exit }')
     if [ -n "$line" ]; then
@@ -238,6 +237,7 @@ create_repos() { # id default_branch from specs
       [ -z "$owner" ] || owner=" (task '$owner')"
       die "branch '$branch' in $R_NAME is checked out at $line$owner"
     fi
+    [ ! -e "$path" ] || die "$path already exists"
     plan="$plan$R_NAME$TAB$R_COMMON$TAB$branch$TAB$path"$'\n'
   done <<<"$specs"
 
