@@ -7,8 +7,10 @@ COLLIE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 setup_env() {
   TMP="$(cd "$BATS_TEST_TMPDIR" && pwd -P)"
   export TMUX_TMPDIR="$TMP/tmux"
-  mkdir -p "$TMUX_TMPDIR" "$TMP/repos"
+  mkdir -p "$TMUX_TMPDIR" "$TMP/repos" "$TMP/home"
   unset TMUX TMUX_PANE COLLIE_TASK COLLIE_TASK_DIR
+  # the test tmux server must not load the user's ~/.tmux.conf (and plugins)
+  export HOME="$TMP/home"
   export COLLIE_STATE_DIR="$TMP/state"
   export XDG_CONFIG_HOME="$TMP/config"
   export COLLIE_REPO_ROOTS="$TMP/repos/*"

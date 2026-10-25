@@ -84,6 +84,17 @@ teardown() { teardown_env; }
   [[ "$output" == *$'\033[31m●'* && "$output" == *$'\033[33m◐'* ]]
 }
 
+@test "_actions: one key runs an action on the task; done asks first" {
+  collie new x --no-window
+  printf r | collie _actions x
+  [ -n "$(run_pane x)" ]
+  printf 'dn\n' | collie _actions x
+  [ "$(fm x status)" = active ]
+  printf q | collie _actions x
+  printf 'dy\n' | collie _actions x
+  [ "$(fm x status)" = done ]
+}
+
 @test "_jump: waiting/idle records the pane; nothing recorded is an error" {
   collie new x --no-window
   run collie _jump

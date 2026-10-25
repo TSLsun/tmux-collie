@@ -838,19 +838,44 @@ cmd_dash() {
   local self="'$BASH' '$PLUGIN_DIR/bin/collie'" rows header sel id wid reload
   rows=$(cmd__rows)
   reload="reload($self _rows)"
-  header='enter: go  ctrl-n: new  ctrl-r: run agent  ctrl-d: done  ctrl-l: refresh'
-  [ -n "$rows" ] || header='no tasks — ctrl-n: new task'
+  header='enter: go   ?: actions'
+  [ -n "$rows" ] || header='no tasks — ?: new task'
   sel=$(printf '%s' "$rows" | fzf --ansi --delimiter='\t' --with-nth=2.. --no-sort --prompt='collie> ' \
     --header="$header" \
     --preview="$self _preview {1}" --preview-window=right,50% \
-    --bind="ctrl-l:$reload" \
-    --bind="ctrl-n:execute($self _popup $self new)+$reload" \
-    --bind="ctrl-r:execute-silent($self run {1})+$reload" \
-    --bind="ctrl-d:execute(printf 'done %s? (y/n) ' {1}; read -r a; [ \"\$a\" != y ] || $self _popup $self done {1})+$reload") || return 0
+    --bind="?:execute($self _actions {1})+$reload") || return 0
   id=${sel%%"$TAB"*}
   wid=$(cmd__target "$id")
   if [ "$wid" != - ]; then tmux select-window -t "$wid" 2>/dev/null || true; fi
   cmd_go "$id"
+}
+
+# Dashboard `?`: a key list for the selected task, one key runs an action.
+cmd__actions() { # [id]
+  local id=${1:-} self="'$BASH' '$PLUGIN_DIR/bin/collie'" k a
+  if [ -n "$id" ]; then
+    printf 'task %s\n\n' "$id"
+    printf '  %s  %s\n' r 'run agent' N 'next action' e notes v review d 'done' c 'new task'
+  else
+    printf '  c  new task\n'
+  fi
+  printf '\n  any other key: back\n'
+  read -rsn1 k || return 0
+  case ${id:+x}$k in
+    xr) a="$self run '$id'" ;;
+    xN) a="$self set '$id' next" ;;
+    xe) a="$self notes '$id'" ;;
+    xv) a="$self review '$id' | less -R" ;;
+    xd)
+      read -r -p "done $id? (y/n) " k || return 0
+      [ "$k" = y ] || return 0
+      a="$self done '$id'"
+      ;;
+    c | xc) a="$self new" ;;
+    *) return 0 ;;
+  esac
+  echo
+  cmd__popup "$a"
 }
 
 # Menu for prefix <@collie-key>, built per session: task actions only inside a
@@ -1132,7 +1157,7 @@ cmd_workspaces() {
 }
 
 case "${1:-help}" in
-  new | add | ls | show | go | run | state | status | set | notes | dash | review | spike | park | gc | doctor | _exec | _target | _preview | _rows | _jump | _menu | _popup | _dev | repos | workspaces)
+  new | add | ls | show | go | run | state | status | set | notes | dash | review | spike | park | gc | doctor | _exec | _target | _preview | _rows | _actions | _jump | _menu | _popup | _dev | repos | workspaces)
     cmd=$1
     shift
     "cmd_$cmd" "$@"

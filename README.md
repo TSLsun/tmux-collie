@@ -81,8 +81,9 @@ collie notes deploy-v2                 # $EDITOR on NOTES.md
 
 Dashboard rows start with a status glyph (red `●` an agent waits for you or
 finished its turn, yellow `◐` working, dim `○` no agent) and show a colored
-badge per running agent; rows that need you come first. Keys: `enter` go,
-`ctrl-n` new task, `ctrl-r` run agent, `ctrl-d` done, `ctrl-l` refresh.
+badge per running agent; rows that need you come first. `enter` goes to the
+task; `?` lists one-key actions for it (run agent, next action, notes, review,
+done, new task).
 
 `prefix h` opens a menu (dashboard, lazygit, notes, next action, status, new
 task, run agent, done, jump to alert) for the current session's task; outside a
