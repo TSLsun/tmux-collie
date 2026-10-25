@@ -69,6 +69,33 @@ teardown() { teardown_env; }
   [ "$(printf '%s\n' "$output" | cut -f1 | paste -s -d' ' -)" = "b c d e a g f" ]
 }
 
+@test "_rows: id first, then status glyph and live agent badge; attention first" {
+  for t in a b c; do collie new "$t" --no-window; done
+  collie run a -- 300
+  collie run b -- 300
+  hook b waiting
+  run collie _rows
+  [ "$status" -eq 0 ]
+  [ "$(printf '%s\n' "$output" | cut -f1 | paste -s -d' ' -)" = "b a c" ]
+  plain=$(printf '%s\n' "$output" | sed $'s/\033\\[[0-9;]*m//g')
+  [[ "$(printf '%s\n' "$plain" | sed -n 1p)" == "b	● b	active	P2	sleep	A	"* ]]
+  [[ "$(printf '%s\n' "$plain" | sed -n 2p)" == "a	◐ a	active	P2	sleep	A	"* ]]
+  [[ "$(printf '%s\n' "$plain" | sed -n 3p)" == "c	○ c	active	P2	-	A	"* ]]
+  [[ "$output" == *$'\033[31m●'* && "$output" == *$'\033[33m◐'* ]]
+}
+
+@test "_jump: waiting/idle records the pane; nothing recorded is an error" {
+  collie new x --no-window
+  run collie _jump
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"no agent pane to jump to"* ]]
+  collie run x -- 300
+  hook x working
+  [ -z "$(tmux show-options -gqv @collie-last-pane)" ]
+  hook x waiting
+  [ "$(tmux show-options -gqv @collie-last-pane)" = "$(run_pane x)" ]
+}
+
 @test "_preview: title, next, runs, per-repo ahead/dirty and notes tail" {
   collie new x --no-window --title "Ship it"
   collie set x "next=open the PR"

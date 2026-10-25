@@ -62,11 +62,12 @@ collie ls                              # agent column: waiting/idle/working/exit
 collie review deploy-v2                # commits, diff stat, dirty files, REPORT.md
 collie spike try-cache                 # from a dirty worktree: exp/try-cache task with the same changes
 collie park -m "rerun e2e after deploy"   # remember where you stopped
-git fetch && collie gc                 # finish tasks whose branches were merged
+collie gc                              # finish tasks whose branches were merged
 ```
 
 `collie run`'s default prompt asks the agent to write `.collie/REPORT.md`.
-`done` and `gc` also recognize squash merges with git >= 2.38.
+`done` and `gc` fetch `origin` first, so a PR merged on GitHub counts without
+a manual fetch, and also recognize squash merges with git >= 2.38.
 `hooks/pre-push` refuses to push `exp/*` branches:
 `ln -s ~/.tmux/plugins/tmux-collie/hooks/pre-push "$(git rev-parse --git-common-dir)/hooks/pre-push"`.
 
@@ -78,9 +79,15 @@ collie set deploy-v2 status=review "next=check the infra diff"
 collie notes deploy-v2                 # $EDITOR on NOTES.md
 ```
 
+Dashboard rows start with a status glyph (red `●` an agent waits for you or
+finished its turn, yellow `◐` working, dim `○` no agent) and show a colored
+badge per running agent; rows that need you come first. Keys: `enter` go,
+`ctrl-n` new task, `ctrl-r` run agent, `ctrl-d` done, `ctrl-l` refresh.
+
 `prefix h` opens a menu (dashboard, lazygit, notes, next action, status, new
-task, run agent, done) for the current session's task; outside a task session it
-keeps only dashboard, lazygit and new task. `prefix h h` goes straight to the
+task, run agent, done, jump to alert) for the current session's task; outside a
+task session it keeps only dashboard, lazygit, new task and jump to alert.
+`jump to alert` (`j`) switches to the pane of the last agent that notified. `prefix h h` goes straight to the
 dashboard. `new task` (`c`) prompts in a popup, creates the task from the
 current pane's repo and switches to it. A popup whose command fails stays open
 until you press a key. Change the key with `set -g @collie-key 'h'`.
@@ -112,6 +119,12 @@ set -g status-right '#{collie_status} %H:%M'   # ●waiting ●idle ●working c
 set -g @collie-agent 'claude'                  # default agent ($COLLIE_AGENT wins)
 set -g @collie-notify 'on'                     # on | off | command "title" "body"
 ```
+
+With [terminal-notifier](https://github.com/julienXX/terminal-notifier)
+installed, clicking a notification focuses the terminal and jumps to the agent's
+pane; set `@collie-terminal` to the terminal's bundle id if it is not detected
+(e.g. `com.mitchellh.ghostty`). Without it, notifications are unchanged; use
+`prefix h j`.
 
 Windows carry `@collie_state`, usable in `window-status-format`.
 
