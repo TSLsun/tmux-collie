@@ -64,6 +64,31 @@ EOF
   grep -qxF "$TMP/repos/B.worktrees/feat-x" "$ARGS"
 }
 
+@test "omp adapter: the -e extension maps lifecycle events to states" {
+  node --experimental-strip-types -e '' 2>/dev/null || skip "node cannot load .ts"
+  cat >"$TMP/bin/omp" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$@" >"$ARGS"
+node --experimental-strip-types --no-warnings --input-type=module -e '
+const h = {};
+const { default: ext } = await import(process.argv[1]);
+ext({ on: (e, f) => (h[e] = f) });
+h.agent_start();
+await new Promise((r) => setTimeout(r, 300));
+h.tool_approval_requested();
+await new Promise((r) => setTimeout(r, 300));
+h.agent_end();
+' "$2"
+exec sleep 300
+EOF
+  chmod +x "$TMP/bin/omp"
+  collie run x --agent omp -p ''
+  wait_for 'grep -q "state=waiting" "$(task_dir x)/events.log" && [ "$(agent_of x)" = idle ]'
+  grep -q "agent_state	run=1 state=working" "$(task_dir x)/events.log"
+  [ "$(sed -n 2p "$ARGS")" = "$COLLIE_ROOT/agents/omp.ts" ]
+  grep -qxF "$TMP/repos/B.worktrees/feat-x" "$ARGS"
+}
+
 @test "state: finds its pane through parent processes when TMUX_PANE is unset" {
   cat >"$TMP/bin/fake" <<EOF
 #!/bin/sh

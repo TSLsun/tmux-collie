@@ -53,7 +53,7 @@ _collie() {
     -r) _collie_repos; return ;;
     -w) _collie_workspaces; return ;;
     -t) compadd feat fix chore docs refactor test exp; return ;;
-    --agent) compadd claude codex gemini; return ;;
+    --agent) compadd claude codex gemini omp; return ;;
   esac
   case ${words[2]} in
     state) compadd working waiting idle exited ;;

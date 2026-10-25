@@ -232,7 +232,7 @@ fire in sessions collie started and the user's settings stay untouched:
 | Agent | State source | Confidence |
 |---|---|---|
 | claude | hooks via `--settings` (above) | working/idle/exited verified; waiting unverified |
-| omp | not researched (not installed on the dev machine); runs as generic | — |
+| omp | extension `agents/omp.ts` loaded with `-e` (omp has no command hooks): `agent_start`/`tool_execution_end` → working, `tool_approval_requested` → waiting, `tool_approval_resolved` → working, `agent_end` → idle, `session_shutdown` → exited | fake agent only |
 | codex | hooks via `-c hooks.<Event>=[...]`: `UserPromptSubmit`/`PostToolUse` → working, `PermissionRequest` → waiting, `Stop` → idle, `SessionEnd` → exited; trust once in `/hooks` | fake agent only |
 | gemini | hooks in a generated settings file passed as `GEMINI_CLI_SYSTEM_SETTINGS_PATH`: `BeforeAgent`/`AfterTool` → working, `Notification` (`ToolPermission`) → waiting, `AfterAgent` → idle, `SessionEnd` → exited; hooks print `{}` | fake agent only |
 | generic | wrapper exit + `window_activity`: working → idle after `@collie-silence` s (30) without output | always works, coarse; no `waiting` |
@@ -302,7 +302,7 @@ unless marked *manual*.
 - Docs: terminal key mapping examples.
 - **Acceptance:** dashboard ordering tests; *manual* day-to-day check.
 
-### P4 — More agents & doctor ✅ (omp pending)
+### P4 — More agents & doctor ✅
 - omp, codex, gemini adapters.
 - `doctor`: dependency versions, installed agents, task/git/tmux
   reconciliation (hooks are injected per run, so there are no snippets to

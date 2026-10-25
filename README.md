@@ -42,7 +42,7 @@ collie archive deploy-v2               # abandon: same cleanup
 ```sh
 collie run deploy-v2                   # claude in a new window of the task session
 collie run deploy-v2 -r B -p 'fix CI'  # in repo B's worktree, custom first prompt
-collie run deploy-v2 --agent codex      # also: gemini; state hooks injected per run
+collie run deploy-v2 --agent codex      # also: gemini, omp; state hooks injected per run
 collie run --agent aider -- --model x  # any command works (no state hooks)
 collie doctor                          # deps, agents, task/worktree consistency
 collie ls                              # agent column: waiting/idle/working/exited/unknown
