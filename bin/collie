@@ -128,11 +128,19 @@ workspace_repos() {
   printf '%s\n' "$hit"
 }
 
+# origin/HEAD, else origin's copy of the HEAD branch (git < 2.48 fetch does not
+# create origin/HEAD), else the HEAD branch.
 default_base() {
+  local head
   if git --git-dir="$1" rev-parse -q --verify refs/remotes/origin/HEAD >/dev/null; then
     echo origin/HEAD
+    return
+  fi
+  head=$(git --git-dir="$1" symbolic-ref -q HEAD) || return 1
+  if git --git-dir="$1" rev-parse -q --verify "refs/remotes/origin/${head#refs/heads/}" >/dev/null; then
+    echo "origin/${head#refs/heads/}"
   else
-    git --git-dir="$1" symbolic-ref -q HEAD
+    echo "$head"
   fi
 }
 
@@ -341,24 +349,32 @@ win_states() { # list-windows target args
 }
 
 # Agents started by hand in a session (not via `collie run`) as
-# "-<TAB>agent<TAB>state<TAB>window<TAB>pane<TAB>pid<TAB>path": panes whose
-# process, or a child of it, is a known agent. Without hooks the state is
-# working until @collie-silence seconds without output, then idle.
+# "-<TAB>agent<TAB>state<TAB>window<TAB>pane<TAB>pid<TAB>path": panes with a
+# known agent among their process or its descendants (up to 6 levels; agents
+# inside another agent don't count). Without hooks the state is working until
+# @collie-silence seconds without output, then idle.
 manual_runs() { # session
   local silence=${COLLIE_SILENCE:-$(tmux_opt @collie-silence)}
   awk -v now="$(date +%s)" -v s="${silence:-30}" '
     function base(p) { sub(/.*\//, "", p); sub(/\.(js|mjs|ts)$/, "", p); return p }
     BEGIN { n = split("claude codex gemini omp aider", k, " "); for (i = 1; i <= n; i++) known[k[i]] = 1 }
     FNR == NR {
+      par[$1] = $2
       a = base($3)
       if ((a == "node" || a == "bun") && $4 != "") a = base($4)
-      if (a in known) { self[$1] = a; child[$2] = a; cpid[$2] = $1 }
+      if (a in known) ag[$1] = a
       next
     }
-    { split($0, f, "|") }
+    FNR == 1 {
+      # each outermost agent marks its ancestors as the panes it may run in
+      for (p in ag) {
+        for (q = par[p]; q + 0 > 1 && !(q in ag); q = par[q]) if (++up[p] > 6) break
+        if (q in ag) continue
+        for (q = p; q + 0 > 1 && dn[p]++ <= 6; q = par[q]) if (!(q in at)) { at[q] = ag[p]; atp[q] = p }
+      }
+    }
+    { split($0, f, "|"); a = at[f[1]]; pid = atp[f[1]] }
     f[3] != "" { next }
-    f[1] in self { a = self[f[1]]; pid = f[1] }
-    !(f[1] in self) { a = child[f[1]]; pid = cpid[f[1]] }
     a != "" { print "-\t" a "\t" (now - f[4] >= s ? "idle" : "working") "\t" f[2] "\t" f[5] "\t" pid "\t" f[6] }' \
     <(ps -A -o pid=,ppid=,args=) \
     <(tmux list-panes -s -t "$1" -F '#{pane_pid}|#{window_id}|#{@collie_state}|#{window_activity}|#{pane_id}|#{pane_current_path}' 2>/dev/null || true)

@@ -169,7 +169,7 @@ squash_upstream() {
   run collie done m
   [ "$status" -ne 0 ]
   [[ "$output" == *"A: git fetch origin failed"* ]]
-  [[ "$output" == *"unmerged: A has 1 commit(s) on feat/m not in origin/HEAD"* ]]
+  [[ "$output" == *"unmerged: A has 1 commit(s) on feat/m not in origin/"* ]]
 }
 
 @test "done: still refuses a squash-merged branch with later work" {
