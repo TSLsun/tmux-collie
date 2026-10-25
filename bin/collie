@@ -9,6 +9,7 @@ STATE_DIR=${COLLIE_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/collie}
 TASKS_DIR="$STATE_DIR/tasks"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/collie"
 TAB=$'\t'
+DASH_PROMPT='collie> ' PICK_PROMPT='key> '
 
 die() {
   printf 'collie: %s\n' "$*" >&2
@@ -900,25 +901,27 @@ cmd_dash() {
     return
   fi
   command -v fzf >/dev/null || die "dash: fzf required"
-  local self="'$BASH' '$PLUGIN_DIR/bin/collie'" rows header sel id wid
+  local self="'$BASH' '$PLUGIN_DIR/bin/collie'" rows header sel id wid k binds=()
   rows=$(cmd__rows)
+  for k in $(action_items x | cut -c1) esc enter; do binds+=(--bind="$k:transform($self _key {1} $k)"); done
   header='enter: go   ?: actions'
   [ -n "$rows" ] || header='no tasks — ?: new task'
-  sel=$(printf '%s' "$rows" | fzf --ansi --delimiter='\t' --with-nth=2.. --no-sort --prompt='collie> ' \
+  sel=$(printf '%s' "$rows" | fzf --ansi --delimiter='\t' --with-nth=2.. --no-sort --prompt="$DASH_PROMPT" \
     --header="$header" \
     --preview="$self _preview {1}" --preview-window=right,50% \
-    --bind="?:transform($self _pick {1})") || return 0
+    --bind="?:transform($self _pick {1})" "${binds[@]}") || return 0
   id=${sel%%"$TAB"*}
   wid=$(cmd__target "$id")
   if [ "$wid" != - ]; then tmux select-window -t "$wid" 2>/dev/null || true; fi
   cmd_go "$id"
 }
 
-# Dashboard `?` (an fzf transform): draws a key menu over the dashboard, reads
-# one key from the terminal and prints the fzf actions to run for it. A tmux
-# popup cannot open over the dashboard's popup, hence drawing it ourselves.
+# Dashboard `?` (an fzf transform): draws a key menu over the dashboard and
+# switches the prompt to PICK_PROMPT, which _key reads as "menu open". fzf
+# keeps reading keys meanwhile, so keys go through fzf binds, not a read here.
+# A tmux popup cannot open over the dashboard's popup, hence the drawing.
 cmd__pick() { # [id]
-  local id=${1:-} self="'$BASH' '$PLUGIN_DIR/bin/collie'" items rows cols n w=32 top left line k t
+  local id=${1:-} items rows cols n w=32 top left line t
   t=${id:-collie}
   items=$(action_items "$id")
   n=$(printf '%s\n' "$items" | wc -l)
@@ -931,12 +934,20 @@ cmd__pick() { # [id]
       printf '\033[%d;%dH│\033[0m \033[36m%s\033[0m %-*s\033[34m│' "$top" "$left" "${line:0:1}" $((w - 5)) "${line:3}"
     done <<<"$items"
     printf '\033[%d;%dH╰─ esc: close %s╯\033[0m' $((top + 1)) "$left" "$(rule $((w - 15)) ─)"
-  } >/dev/tty 2>/dev/null || { echo clear-screen; return 0; }
-  IFS= read -rsn1 k </dev/tty || k=
-  if [ -n "$k" ] && printf '%s\n' "$items" | cut -c1 | grep -qxF -- "$k"; then
-    echo "clear-screen+execute($self _actions '$id' '$k')+reload($self _rows)"
+  } >/dev/tty 2>/dev/null || return 0
+  echo "change-prompt($PICK_PROMPT)"
+}
+
+# fzf transform for a menu key (an action key, esc or enter): with the menu
+# open, run the action (or just close); otherwise the key's usual job.
+cmd__key() { # id key
+  local self="'$BASH' '$PLUGIN_DIR/bin/collie'" back="change-prompt($DASH_PROMPT)+clear-screen"
+  if [ "${FZF_PROMPT:-}" != "$PICK_PROMPT" ]; then
+    case $2 in esc) echo abort ;; enter) echo accept ;; *) echo "put($2)" ;; esac
+  elif [ "$2" != esc ] && [ "$2" != enter ] && action_items "$1" | cut -c1 | grep -qxF -- "$2"; then
+    echo "$back+execute($self _actions '$1' '$2')+reload($self _rows)"
   else
-    echo clear-screen
+    echo "$back"
   fi
 }
 
@@ -1248,7 +1259,7 @@ cmd_workspaces() {
 }
 
 case "${1:-help}" in
-  new | add | ls | show | go | run | adopt | state | status | set | notes | dash | review | spike | park | gc | doctor | _exec | _target | _preview | _rows | _pick | _actions | _jump | _menu | _popup | _dev | repos | workspaces)
+  new | add | ls | show | go | run | adopt | state | status | set | notes | dash | review | spike | park | gc | doctor | _exec | _target | _preview | _rows | _pick | _key | _actions | _jump | _menu | _popup | _dev | repos | workspaces)
     cmd=$1
     shift
     "cmd_$cmd" "$@"

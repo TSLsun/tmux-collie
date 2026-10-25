@@ -118,6 +118,15 @@ teardown() { teardown_env; }
   [[ "$output" == *"no agent started by hand"* ]]
 }
 
+@test "_key: menu keys act only while the menu prompt is up" {
+  [ "$(FZF_PROMPT='collie> ' collie _key x r)" = "put(r)" ]
+  [ "$(FZF_PROMPT='collie> ' collie _key x esc)" = abort ]
+  [ "$(FZF_PROMPT='collie> ' collie _key x enter)" = accept ]
+  [[ "$(FZF_PROMPT='key> ' collie _key x r)" == "change-prompt(collie> )+clear-screen+execute("*"_actions 'x' 'r')+reload("*"_rows)" ]]
+  [ "$(FZF_PROMPT='key> ' collie _key x esc)" = "change-prompt(collie> )+clear-screen" ]
+  [ "$(FZF_PROMPT='key> ' collie _key '' r)" = "change-prompt(collie> )+clear-screen" ]
+}
+
 @test "_actions: one key runs an action on the task; done asks first" {
   collie new x --no-window
   collie _actions x r
