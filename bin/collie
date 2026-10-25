@@ -452,6 +452,7 @@ cmd_add() {
   fi
 }
 
+# shellcheck disable=SC2120  # -a comes from the CLI; internal callers pass none
 cmd_ls() {
   local all=0 d id st mark
   [ "${1:-}" != -a ] || all=1
