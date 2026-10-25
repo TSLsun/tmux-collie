@@ -9,6 +9,9 @@ delete an item only when it is covered by a test.
 - [ ] Install through tpm (`set -g @plugin ...` + `prefix I`) on a real tmux config.
 
 ## P1 — Task model
+- [ ] Menu `new task` popup (`display-popup -EE`): prompts, `switch-client`
+  to the new session, popup kept open on failure. Prompt mode itself was
+  checked with `expect`, the popup was not.
 - [ ] `collie go` inside tmux (`switch-client`) and from a bare tty (`exec attach`);
       tests only cover the non-tty path.
 - [ ] bash 5 (Linux / Homebrew bash); tests have only run on macOS `/bin/bash` 3.2.

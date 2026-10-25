@@ -22,9 +22,10 @@ usage() {
 usage: collie <command> [args]
 
 tasks:
-  new <id> [-r repo[:branch]]... [-w workspace] [-t type] [--title text]
-           [--from ref] [--todo] [--edit] [--no-window]
-                      create a task: worktree per repo + tmux session
+  new [<id>] [-r repo[:branch]]... [-w workspace] [-t type] [--title text]
+           [-m objective] [--from ref] [--todo] [--edit] [--no-window]
+                      create a task: worktree per repo + tmux session;
+                      no id on a tty prompts for id, type and objective
   add [<id>] -r repo[:branch]... [--from ref] [--no-window]
                       attach more repos to an existing task
   ls [-a]             list tasks: id, status, priority, session (*|-), agent, repos, next
@@ -172,13 +173,17 @@ log_event() {
   printf '%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$2" "${3:-}" >>"$(task_dir "$1")/events.log"
 }
 
-write_task_md() { # dir id title status
+write_task_md() { # dir id title status [objective]
   local tmpl="$CONFIG_DIR/TASK.md"
   [ -f "$tmpl" ] || tmpl="$PLUGIN_DIR/templates/TASK.md"
   {
     printf -- '---\nid: %s\ntitle: %s\nstatus: %s\npriority: P2\nnext:\ncreated: %s\n---\n' \
       "$2" "$3" "$4" "$(date +%Y-%m-%d)"
-    cat "$tmpl"
+    # objective goes under the template's "## Objective", else at the end
+    OBJ=${5:-} awk 'BEGIN { o = ENVIRON["OBJ"] }
+      { print }
+      o != "" && !done && $0 == "## Objective" { print o; done = 1 }
+      END { if (o != "" && !done) print "\n## Objective\n" o }' "$tmpl"
   } >"$1/TASK.md"
 }
 
@@ -388,10 +393,12 @@ set_state() { # pane state
 
 cmd_new() {
   local id="" specs="" ws="" type=feat title="" from="" status=active edit=0 window=1
+  local goal="" asked=0 t
   while [ $# -gt 0 ]; do
     case $1 in
       -r) specs="$specs${2:?-r needs a repo}"$'\n'; shift ;;
       -w) ws=${2:?-w needs a workspace}; shift ;;
+      -m) goal=${2:?-m needs text}; shift ;;
       -t) type=${2:?-t needs a type}; shift ;;
       --title) title=${2:?--title needs text}; shift ;;
       --from) from=${2:?--from needs a ref}; shift ;;
@@ -403,6 +410,13 @@ cmd_new() {
     esac
     shift
   done
+  # no id on a terminal (e.g. the menu popup): ask for it
+  if [ -z "$id" ] && [ -t 0 ]; then
+    read -r -e -p "task id: " id
+    read -r -e -p "type [$type]: " t && type=${t:-$type}
+    [ -n "$goal" ] || read -r -e -p "objective (optional): " goal
+    asked=1
+  fi
   [ -n "$id" ] || die "usage: collie new <id> [-r repo[:branch]]... [-w workspace] ..."
   valid_id "$id" || die "invalid id '$id' (use [a-z0-9-], max 40, no leading '-')"
   local tdir r
@@ -420,11 +434,14 @@ cmd_new() {
     rm -rf "$tdir"
     exit 1
   fi
-  write_task_md "$tdir" "$id" "${title:-$id}" "$status"
+  write_task_md "$tdir" "$id" "${title:-$id}" "$status" "$goal"
   log_event "$id" task_created "status=$status"
   [ "$edit" -eq 0 ] || "${EDITOR:-vi}" "$tdir/TASK.md"
   printf '%s\n' "$NEW_PATHS" | head -n 1
-  if [ "$window" -eq 1 ] && command -v tmux >/dev/null; then ensure_session "$id"; fi
+  if [ "$window" -eq 1 ] && command -v tmux >/dev/null; then
+    ensure_session "$id"
+    [ "$asked" -eq 0 ] || [ -z "${TMUX:-}" ] || tmux switch-client -t "=$id"
+  fi
 }
 
 cmd_add() {

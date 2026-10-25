@@ -32,6 +32,7 @@ teardown() { teardown_env; }
   tmux run-shell "$COLLIE_ROOT/collie.tmux"
   run tmux list-keys -T prefix h
   [[ "$output" == *display-menu* && "$output" == *"collie dash"* && "$output" == *"status=review"* ]]
+  [[ "$output" == *"-EE"*"collie new"* ]]
   tmux set-option -g @collie-key j
   tmux run-shell "$COLLIE_ROOT/collie.tmux"
   run tmux list-keys -T prefix j
