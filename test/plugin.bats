@@ -62,6 +62,7 @@ stub_tmux() {
   [ "$status" -eq 0 ]
   [[ "$output" == *"collie dash"* && "$output" == *"-not a collie task — use collie new"* ]]
   [[ "$output" == *"-EE"*"collie new"* ]]
+  [[ "$output" == *"terminal t display-popup -E -w 90% -h 85% -d #{pane_current_path} "* ]]
   [[ "$output" != *notes* && "$output" != *"run agent"* ]]
 }
 

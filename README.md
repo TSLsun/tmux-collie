@@ -83,12 +83,12 @@ Dashboard rows start with a status glyph (red `●` an agent waits for you or
 finished its turn, yellow `◐` working, dim `○` no agent) and show a colored
 badge per running agent; rows that need you come first. `enter` goes to the
 task; `?` opens an action menu above the selected row (run agent, adopt agent,
-next action, notes, review, done, new task): press its key, or move with ↑↓ and
+next action, notes, review, terminal, done, new task): press its key, or move with ↑↓ and
 press enter; esc closes it.
 
-`prefix h` opens a menu (dashboard, lazygit, notes, next action, status, new
+`prefix h` opens a menu (dashboard, lazygit, terminal, notes, next action, status, new
 task, run agent, done, jump to alert) for the current session's task; outside a
-task session it keeps only dashboard, lazygit, new task and jump to alert.
+task session it keeps only dashboard, lazygit, terminal, new task and jump to alert.
 `jump to alert` (`j`) switches to the pane of the last agent that notified. `prefix h h` goes straight to the
 dashboard. `new task` (`c`) prompts in a popup, creates the task from the
 current pane's repo and switches to it. A popup whose command fails stays open

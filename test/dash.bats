@@ -139,6 +139,10 @@ teardown() { teardown_env; }
   echo n | collie _actions x d
   [ "$(fm x status)" = active ]
   collie _actions x q
+  printf '#!/bin/sh\npwd >"%s/pwd"\nexit 3\n' "$TMP" >"$TMP/sh"
+  chmod +x "$TMP/sh"
+  SHELL="$TMP/sh" collie _actions x t
+  [ "$(cat "$TMP/pwd")" = "$TMP/repos/A/feat-x" ]
   echo y | collie _actions x d
   [ "$(fm x status)" = done ]
 }
