@@ -814,8 +814,10 @@ cmd__dev() {
   local root
   case ${1:-} in
     load)
-      root=$(git -C "${2:-.}" rev-parse --show-toplevel 2>/dev/null) && [ -f "$root/collie.tmux" ] ||
+      root=$(git -C "${2:-.}" rev-parse --show-toplevel 2>/dev/null) || root=
+      if [ -z "$root" ] || [ ! -f "$root/collie.tmux" ]; then
         die "dev: ${2:-.} is not a tmux-collie checkout"
+      fi
       ;;
     reset)
       root=$(tmux_opt @collie-home)
