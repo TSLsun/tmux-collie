@@ -118,13 +118,18 @@ teardown() { teardown_env; }
   [[ "$output" == *"no agent started by hand"* ]]
 }
 
-@test "_key: menu keys act only while the menu prompt is up" {
+@test "_key: menu keys act only while the menu prompt is up; arrows move the selection" {
   [ "$(FZF_PROMPT='collie> ' collie _key x r)" = "put(r)" ]
   [ "$(FZF_PROMPT='collie> ' collie _key x esc)" = abort ]
   [ "$(FZF_PROMPT='collie> ' collie _key x enter)" = accept ]
-  [[ "$(FZF_PROMPT='key> ' collie _key x r)" == "change-prompt(collie> )+clear-screen+execute("*"_actions 'x' 'r')+reload("*"_rows)" ]]
-  [ "$(FZF_PROMPT='key> ' collie _key x esc)" = "change-prompt(collie> )+clear-screen" ]
-  [ "$(FZF_PROMPT='key> ' collie _key '' r)" = "change-prompt(collie> )+clear-screen" ]
+  [ "$(FZF_PROMPT='collie> ' collie _key x up)" = up ]
+  [[ "$(FZF_PROMPT='▸ run agent ' collie _key x r)" == "change-prompt(collie> )+clear-screen+execute("*"_actions 'x' 'r')+reload("*"_rows)" ]]
+  [ "$(FZF_PROMPT='▸ run agent ' collie _key x down)" = "change-prompt(▸ adopt agent )" ]
+  [ "$(FZF_PROMPT='▸ run agent ' collie _key x up)" = "change-prompt(▸ new task )" ]
+  [ "$(FZF_PROMPT='▸ new task ' collie _key x down)" = "change-prompt(▸ run agent )" ]
+  [[ "$(FZF_PROMPT='▸ review ' collie _key x enter)" == *"_actions 'x' 'v'"* ]]
+  [ "$(FZF_PROMPT='▸ run agent ' collie _key x esc)" = "change-prompt(collie> )+clear-screen" ]
+  [ "$(FZF_PROMPT='▸ new task ' collie _key '' r)" = "change-prompt(collie> )+clear-screen" ]
 }
 
 @test "_actions: one key runs an action on the task; done asks first" {
