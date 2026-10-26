@@ -4,7 +4,14 @@
 set -euo pipefail
 
 VERSION=0.1.0-dev
-PLUGIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# the usual absolute, clean .../bin/collie needs no cd (forks are slow on macOS)
+case ${BASH_SOURCE[0]} in
+  /*/bin/collie) PLUGIN_DIR=${BASH_SOURCE[0]%/bin/collie} ;;
+  *) PLUGIN_DIR= ;;
+esac
+case $PLUGIN_DIR in
+  "" | *//* | */./* | */../* | */. | */..) PLUGIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)" ;;
+esac
 STATE_DIR=${COLLIE_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/collie}
 TASKS_DIR="$STATE_DIR/tasks"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/collie"
