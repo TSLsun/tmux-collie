@@ -17,6 +17,9 @@ TASKS_DIR="$STATE_DIR/tasks"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/collie"
 TAB=$'\t'
 DASH_PROMPT='collie> ' PICK_MARK='▸ '
+# dashboard keys that run an action without the ? menu; printable keys stay
+# for filtering (they take over fzf's ctrl-e end-of-line and ctrl-d delete-char)
+DASH_DIRECT='ctrl-r ctrl-v ctrl-e ctrl-d'
 
 die() {
   printf 'collie: %s\n' "$*" >&2
@@ -1084,7 +1087,7 @@ dash_group() {
 }
 
 dash_header() { # group
-  printf 'enter: go   ?: actions   tab: group by %s' "$1"
+  printf 'enter: go  ^r: run  ^v: review  ^e: edit  ^d: done  ?: more  tab: group by %s' "$1"
 }
 
 # dash_rows for fzf, in groups (DASH_GROUPS; status: needs you, active, todo;
@@ -1190,7 +1193,7 @@ cmd_dash() {
   command -v fzf >/dev/null || die "dash: fzf required"
   local self="'$BASH' '$PLUGIN_DIR/bin/collie'" rows header sel id wid k binds=()
   rows=$(cmd__rows)
-  for k in $(action_items x | cut -c1) esc enter up down; do binds+=(--bind="$k:transform($self _key {1} $k)"); done
+  for k in $(action_items x | cut -c1) $DASH_DIRECT esc enter up down; do binds+=(--bind="$k:transform($self _key {1} $k)"); done
   dash_group
   header=$(dash_header "$GROUP")
   [ -n "$rows" ] || header='no tasks — ?: new task'
@@ -1239,10 +1242,17 @@ pick_draw() { # id sel
 
 # fzf transform for a menu key (an action key, up, down, esc or enter): with
 # the menu open, move the selection, run an action or close; otherwise the
-# key's usual job.
+# key's usual job. A direct key (ctrl-<action key>, see DASH_DIRECT) runs its
+# action on the selected task whether or not the menu is open.
 cmd__key() { # id key
   local self="'$BASH' '$PLUGIN_DIR/bin/collie'" back="change-prompt($DASH_PROMPT)+clear-screen"
   local items n cur k
+  case " $DASH_DIRECT " in
+    *" $2 "*)
+      [ -z "$1" ] || echo "$back+execute($self _actions '$1' '${2#ctrl-}')+reload($self _rows)+refresh-preview"
+      return
+      ;;
+  esac
   case ${FZF_PROMPT:-} in
     "$PICK_MARK"*) ;;
     *)
