@@ -41,6 +41,18 @@ teardown() { teardown_env; }
   [[ "$output" == *"not found"* ]]
 }
 
+@test "run: -s switches the client to the new window; without it the client stays" {
+  collie new x --no-window
+  collie run x -- 300
+  attach_client x
+  c=$(tmux list-clients -F '#{client_name}')
+  w1=$(tmux display-message -c "$c" -p '#{window_id}')
+  collie run x -- 300
+  [ "$(tmux display-message -c "$c" -p '#{window_id}')" = "$w1" ]
+  collie run x -s -c "$c" -- 300
+  [ "$(tmux display-message -c "$c" -p '#{pane_id}')" = "$(run_pane x 3)" ]
+}
+
 @test "run: COLLIE_TASK is the default task" {
   collie new x --no-window
   COLLIE_TASK=x collie run -- 300

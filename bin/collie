@@ -58,9 +58,10 @@ tasks:
   archive [<id>] [--force]  abandon: same cleanup, status archived
 
 agents:
-  run [<id>] [--agent name] [-r repo] [-p prompt] [-- args]
+  run [<id>] [--agent name] [-r repo] [-p prompt] [-s [-c client]] [-- args]
                       start an agent in a new task window (default agent:
-                      $COLLIE_AGENT, @collie-agent, else claude); -p '' = no prompt
+                      $COLLIE_AGENT, @collie-agent, else claude); -p '' = no prompt;
+                      -s: switch the (current or -c) client to the window
   adopt [<id>] [-y]   restart an agent you started by hand in the task's session
                       under collie run, resuming its conversation (claude, omp)
   state <working|waiting|idle|exited>
@@ -861,11 +862,13 @@ leave_session() { # id
 }
 
 cmd_run() {
-  local id="" agent="" repo="" prompt=$DEFAULT_PROMPT extra=()
+  local id="" agent="" repo="" prompt=$DEFAULT_PROMPT extra=() switch=0 client=""
   while [ $# -gt 0 ]; do
     case $1 in
       --agent) agent=${2:?--agent needs a name}; shift ;;
       -r) repo=${2:?-r needs a repo}; shift ;;
+      -s) switch=1 ;;
+      -c) client=${2:?-c needs a client}; shift ;;
       -p) [ $# -ge 2 ] || die "-p needs a prompt"; prompt=$2; shift ;;
       --) shift; extra=("$@"); break ;;
       -*) die "run: unknown option $1" ;;
@@ -914,6 +917,10 @@ cmd_run() {
     set-option -w -t "$wid" @collie_state "$st" \; set-option -w -t "$wid" @collie_run "$run"
   # an instant agent exit may log run_exited first; task_runs is order-free
   log_event "$id" run_started "run=$run agent=$agent repo=$rname window=$wid"
+  # -s: show the new window (menu, dashboard); a script keeps its window
+  if [ "$switch" = 1 ] && { [ -n "$client" ] || [ -n "${TMUX:-}" ]; }; then
+    tmux switch-client ${client:+-c "$client"} -t "$wid" \; select-window -t "$wid" 2>/dev/null || true
+  fi
 }
 
 # Restarts an agent started by hand in the task's session as a `collie run`
@@ -1175,7 +1182,7 @@ cmd__actions() { # id key
   local id=${1:-} k=${2:-} self="'$BASH' '$PLUGIN_DIR/bin/collie'" a
   [ ! -t 1 ] || printf '\033[H\033[2J'
   case ${id:+x}$k in
-    xr) a="$self run '$id'" ;;
+    xr) a="$self run '$id' -s" ;;
     xa) a="$self adopt '$id'" ;;
     xe) a="$self edit '$id'" ;;
     xv) a="$self review '$id' | less -R" ;;
@@ -1209,7 +1216,7 @@ cmd__menu() { # session [client]
     items+=("edit task" e "$popup '$C _popup $C edit $T'"
       review v "$popup '$C _popup \"$C review $T | less -R\"'"
       ""
-      "run agent" r "run-shell '$C run $T'"
+      "run agent" r "run-shell '$C run $T -s${2:+ -c $2}'"
       "done" d "confirm-before -p 'done $T? (y/n)' \"display-popup -E -w 90 -h 12 '$C _popup $C done $T'\"")
   else
     items+=("" "-not a collie task — use collie new" "" "")
