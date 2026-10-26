@@ -475,12 +475,15 @@ task_runs() {
     }' - "$TASKS_DIR/$id/events.log"
 }
 
-# Most urgent run of a task as "state<TAB>window", or "-<TAB>-".
+# Most urgent run of a task as "state<TAB>window<TAB>live agents", or
+# "-<TAB>-<TAB>"; live agents are the distinct agents not exited, each
+# followed by a space.
 task_top() {
   task_runs "$1" | awk -F'\t' '
     BEGIN { n = split("waiting idle working exited unknown", o, " "); for (i = 1; i <= n; i++) r[o[i]] = i; b = n + 1; best = "-"; w = "-" }
     ($3 in r) && r[$3] < b { b = r[$3]; best = $3; w = $4 }
-    END { print best "\t" w }'
+    $3 != "exited" && $3 != "unknown" && !s[$2]++ { ag = ag $2 " " }
+    END { print best "\t" w "\t" ag }'
 }
 
 # Task status: done/archived as written by done/archive/gc, else derived:
@@ -661,8 +664,9 @@ cmd_add() {
 }
 
 # shellcheck disable=SC2120  # -a comes from the CLI; internal callers pass none
+# LS_AGENTS=1 (dash rows) adds a column: the live agents from task_top.
 cmd_ls() {
-  local all=0 d id st top mark repos name _
+  local all=0 d id st top agents mark repos name _
   [ "${1:-}" != -a ] || all=1
   load_tmux_state
   for d in "$TASKS_DIR"/*; do
@@ -673,11 +677,13 @@ cmd_ls() {
     mark=-
     if has_session "$id"; then mark='*'; fi
     top=$(task_top "$id")
+    agents=${top##*"$TAB"}
     top=${top%%"$TAB"*}
     repos=""
     while IFS=$TAB read -r name _ || [ -n "$name" ]; do repos="$repos${repos:+,}$name"; done <"$d/repos.tsv"
-    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$id" "$(task_status "$id" "$top" "$st")" "$(fm_get "$d/TASK.md" priority)" "$mark" \
+    printf '%s\t%s\t%s\t%s\t%s\t%s' "$id" "$(task_status "$id" "$top" "$st")" "$(fm_get "$d/TASK.md" priority)" "$mark" \
       "$top" "$repos"
+    if [ -n "${LS_AGENTS:-}" ]; then printf '\t%s\n' "$agents"; else echo; fi
   done
 }
 
@@ -995,23 +1001,19 @@ dash_rows() {
 # dash_rows for fzf: the id, then the row shown with a status glyph (red ●
 # needs you, yellow ◐ working, dim ○ none) and a colored badge per live agent.
 cmd__rows() {
-  local row
-  dash_rows | while IFS= read -r row; do
-    printf '%s\t%s\n' "$(task_runs "${row%%"$TAB"*}" |
-      awk -F'\t' '$3 != "exited" && $3 != "unknown" && !s[$2]++ { printf "%s ", $2 }')" "$row"
-  done | awk -F'\t' '
+  LS_AGENTS=1 dash_rows | awk -F'\t' '
     BEGIN {
       c["claude"] = "38;5;208"; c["codex"] = "32"; c["gemini"] = "34"; c["omp"] = "35"; c["aider"] = "36"
       e = "\033["
     }
     {
       g = e "2m○"
-      if ($6 == "waiting" || $6 == "idle") g = e "31m●"
-      else if ($6 == "working") g = e "33m◐"
-      n = split($1, a, " "); b = ""
+      if ($5 == "waiting" || $5 == "idle") g = e "31m●"
+      else if ($5 == "working") g = e "33m◐"
+      n = split($7, a, " "); b = ""
       for (i = 1; i <= n; i++) b = b (i > 1 ? " " : "") e "1;" (a[i] in c ? c[a[i]] : "37") "m" a[i] e "0m"
       if (b == "") b = e "2m-" e "0m"
-      print $2 "\t" g e "0m " $2 "\t" $3 "\t" $4 "\t" b "\t" $7
+      print $1 "\t" g e "0m " $1 "\t" $2 "\t" $3 "\t" b "\t" $6
     }'
 }
 
