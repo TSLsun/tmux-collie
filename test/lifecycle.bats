@@ -1,6 +1,7 @@
 #!/usr/bin/env bats
 
 load helper
+bats_require_minimum_version 1.5.0
 
 setup() {
   setup_env
@@ -8,7 +9,11 @@ setup() {
   make_bare_repo A
   cd "$REPO/main"
 }
-teardown() { teardown_env; }
+teardown() {
+  # the fifo writers of attach_client would otherwise keep bats waiting
+  [ -z "${CLIENT_PIDS:-}" ] || kill $CLIENT_PIDS 2>/dev/null || true
+  teardown_env
+}
 
 commit_in() { # dir file
   echo "$2" >"$1/$2"
@@ -104,7 +109,7 @@ squash_upstream() {
   commit_in "$TMP/repos/A/feat-m" m
   commit_in "$TMP/repos/A/feat-u" u
   merge_upstream feat/m
-  run collie gc -n
+  run --separate-stderr collie gc -n
   [ "$status" -eq 0 ]
   [ "$output" = m ]
   [ "$(fm m status)" = active ]
@@ -131,9 +136,10 @@ squash_upstream() {
   commit_in "$TMP/repos/A/feat-m" m
   commit_in "$TMP/repos/A/feat-m" m2
   squash_upstream feat/m
-  run collie gc
+  run --separate-stderr collie gc
   [ "$status" -eq 0 ]
   [ "$output" = "done m" ]
+  [ "$stderr" = "collie: A: fetching origin…"$'\n'"collie: A: fetched (base origin/HEAD @ $(git -C "$REPO" rev-parse --short origin/HEAD))" ]
   [ "$(fm m status)" = done ]
 }
 
@@ -160,6 +166,8 @@ squash_upstream() {
   run collie done m
   [ "$status" -eq 0 ]
   [ "$(fm m status)" = done ]
+  [[ "$output" == *"A: fetching origin…"* ]]
+  [[ "$output" == *"A: fetched (base origin/HEAD @ $(git -C "$REPO" rev-parse --short origin/HEAD))"* ]]
 }
 
 @test "done: a failed fetch is reported, and so is why it refuses" {
@@ -168,8 +176,48 @@ squash_upstream() {
   git -C "$REPO" remote set-url origin "$TMP/nowhere"
   run collie done m
   [ "$status" -ne 0 ]
-  [[ "$output" == *"A: git fetch origin failed"* ]]
+  [[ "$output" == *"A: git fetch origin failed (fatal: "*"); checking against local refs"* ]]
   [[ "$output" == *"unmerged: A has 1 commit(s) on feat/m not in origin/"* ]]
+}
+
+# a control-mode client stands in for a terminal attached to session $1
+attach_client() {
+  mkfifo "$TMP/client-$1"
+  tmux -C attach -t "=$1" <"$TMP/client-$1" >/dev/null 2>&1 3>&- &
+  sleep 600 >"$TMP/client-$1" 2>/dev/null 3>&- & # keeps the client's stdin open
+  CLIENT_PIDS="${CLIENT_PIDS:-} $!"
+  wait_for "[ -n \"\$(tmux list-clients -t '=$1')\" ]"
+}
+client_session() { tmux list-clients -F '#{client_session}'; }
+
+@test "done: a client in the finished task's session moves to another session" {
+  tmux new-session -d -s home
+  tmux new-session -d -s other
+  collie new m
+  attach_client other
+  c=$(tmux list-clients -F '#{client_name}')
+  tmux switch-client -c "$c" -t =m
+  attach_client home # now the most recently used, but not c's last session
+  run collie done m --force
+  [ "$status" -eq 0 ]
+  [ "$(tmux display-message -c "$c" -p '#{client_session}')" = other ]
+}
+
+@test "done: without a last session, the client goes to the most recently used one" {
+  tmux new-session -d -s home
+  collie new m
+  attach_client m
+  run collie done m --force
+  [ "$status" -eq 0 ]
+  [ "$(client_session)" = home ]
+}
+
+@test "done: a client of the only session detaches as before" {
+  collie new m
+  attach_client m
+  run collie done m --force
+  [ "$status" -eq 0 ]
+  ! tmux has-session 2>/dev/null
 }
 
 @test "done: still refuses a squash-merged branch with later work" {
