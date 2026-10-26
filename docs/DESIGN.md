@@ -23,7 +23,7 @@ parallel across several repositories.
 |---|---|---|---|
 | Terminal | Replaces tmux | GUI | Builds on tmux |
 | Unit of work | pane / agent | worktree | **task** (worktrees across repos) |
-| Task contract | — | — | `TASK.md` (goal, constraints, acceptance, next) |
+| Task contract | — | — | `TASK.md` (goal, constraints, acceptance) |
 
 ---
 
@@ -31,10 +31,11 @@ parallel across several repositories.
 
 1. **Thin layer.** git / lazygit own code, tmux owns terminals, agents own
    conversations. collie only tracks *what a task needs, where it lives, who is
-   running, and what's next*.
+   running, and what needs you*.
 2. **Derive state; store only what can't be derived.** Ask git whether a
    worktree exists, ask tmux and the process table whether an agent is alive.
-   Persist only goals, priority, human status and history. If something can't
+   Persist only goals, priority, the final outcome (done/archived) and
+   history; task status is derived too (§3.2). If something can't
    be determined, report `unknown` — never pretend.
 3. **Task ≠ agent run.** An agent exiting doesn't finish a task; switching or
    retrying agents stays within the same task.
@@ -72,16 +73,21 @@ Workspace              (optional named repo set; a shortcut when creating tasks)
 - **Default branch:** `<type>/<id>`, type defaults to `feat` (`-t fix`, …).
 - Per-repo override: `-r repo:branch`.
 
-### 3.2 Task status (mostly human-driven)
+### 3.2 Task status (derived)
 
-| Status | Meaning | Set by |
+| Status | Meaning | Source |
 |---|---|---|
-| `todo` | Registered, not started | `collie new --todo` |
-| `active` | In progress | `new` / `run` |
-| `blocked` | Waiting on an external condition or a decision | manual |
-| `review` | Waiting for you to check | manual, or agent after writing its report |
-| `done` | Accepted; worktrees removed, record kept | `collie done` |
-| `archived` | Abandoned; worktrees removed, record kept | `collie archive` |
+| `todo` | Registered, no agent run yet | no `run_started` in events.log |
+| `active` | In progress | at least one run |
+| `review` | Waiting for you to check | no agent working or waiting, and REPORT.md modified at or after the last `run_started` |
+| `done` | Accepted; worktrees removed, record kept | stored by `collie done` / `gc` |
+| `archived` | Abandoned; worktrees removed, record kept | stored by `collie archive` |
+
+Only `done` / `archived` are written to frontmatter. Other `status:` values in
+older records (`todo`, `blocked`, …) and their `next:` field are ignored.
+There is no manual status: an agent that is stuck says so by waiting, and a
+human-kept "next" or notes file went unused in practice; the agent's REPORT.md
+is the handoff.
 
 ### 3.3 Agent run state (automatic)
 
@@ -93,7 +99,7 @@ Workspace              (optional named repo set; a shortcut when creating tasks)
 | `exited` | agent process no longer in its pane |
 | `unknown` | session gone or state can't be determined |
 
-Dashboard order: `waiting` > `idle` > task `review` > task `blocked` > `working`
+Dashboard order: `waiting` > `idle` > task `review` > `working`
 (the more it needs you, the higher it sorts).
 
 ### 3.4 Files
@@ -102,9 +108,8 @@ Dashboard order: `waiting` > `idle` > task `review` > task `blocked` > `working`
 ~/.config/collie/workspaces          # optional; one per line:  shop: api web infra
 ~/.config/collie/TASK.md             # optional; overrides the TASK.md body template
 ~/.local/state/collie/tasks/<id>/    # task record; survives worktree removal
-  TASK.md        # contract + frontmatter (status, priority, next)
+  TASK.md        # contract + frontmatter (title, priority; status once finished)
   repos.tsv      # machine-owned: name<TAB>git common dir<TAB>branch<TAB>worktree path
-  NOTES.md       # progress notes (P5)
   REPORT.md      # agent's final report (P5)
   events.log     # append-only: ts<TAB>event<TAB>k=v ...
   repos/<repo> -> worktree path (symlink)
@@ -125,9 +130,7 @@ Dashboard order: `waiting` > `idle` > task `review` > task `blocked` > `working`
 ---
 id: deploy-v2
 title: Ship v2 of api and bump it in infra
-status: active
 priority: P2
-next: find where infra reads the api version
 created: 2026-01-01
 ---
 ## Objective
@@ -152,17 +155,15 @@ created: 2026-01-01
 
 | Command | Purpose |
 |---|---|
-| `collie new <id> [-r repo[:branch]]... [-w workspace] [-t type] [--title ..] [--from ref] [--todo] [--edit] [--no-window]` | Create task, worktrees and session; defaults to the current repo |
+| `collie new <id> [-r repo[:branch]]... [-w workspace] [-t type] [--title ..] [--from ref] [--edit] [--no-window]` | Create task, worktrees and session; defaults to the current repo |
 | `collie add [<id>] -r repo[:branch]...` | Pull another repo into an existing task |
-| `collie ls [-a]` | Active tasks: id, status, priority, session, agent, repos, next |
+| `collie ls [-a]` | Active tasks: id, derived status, priority, session, agent, repos |
 | `collie go [<id>]` | Switch to the task session (fzf if no id); recreate it if missing |
 | `collie run [<id>] [--agent X] [-r repo] [-p prompt] [-- args]` | Launch an agent in a new task window; records a run |
 | `collie dash [-n]` | fzf dashboard, most urgent first; enter jumps to the most urgent agent window |
-| `collie set [<id>] status=review next="..."` | Update status, priority, next or title; a bare field reads stdin |
-| `collie notes [<id>]` | Edit the task's `NOTES.md` |
+| `collie set [<id>] priority=P1 title="..."` | Update priority or title; a bare field reads stdin |
 | `collie review [<id>] [-p]` | Per-repo commits, diff stat (`-p` patch), dirty files, then REPORT.md |
 | `collie spike <id>` | New `exp/<id>` task from the current worktree, carrying its uncommitted tracked changes (`git stash create`); source untouched |
-| `collie park [<id>] [-m text]` | Set `next` and append it to NOTES.md |
 | `collie done [<id>] [--force]` | Accept: safety checks, then remove worktrees and session |
 | `collie archive [<id>] [--force]` | Abandon: same cleanup |
 | `collie gc [-n]` | Finish (`done`) tasks whose branches all moved past their start and are contained in base; dirty ones are skipped |
@@ -189,9 +190,8 @@ so nothing has to be memorised:
 prefix h →  ┌ collie ─────────────┐
             │ h  dashboard        │   ← prefix h h: the most used action
             │ g  lazygit          │
-            │ n  notes            │
-            │ N  next action      │
-            │ s  status ▸         │
+            │ t  terminal         │
+            │ c  new task         │
             │ v  review           │
             │ r  run agent        │
             │ d  done             │
@@ -296,8 +296,8 @@ unless marked *manual*.
 
 ### P3 — Dashboard & interaction ✅
 **Goal:** from any pane, reach the agent that needs you in two keystrokes.
-- fzf dashboard (ordering per §3.3; preview shows next, diff stat, NOTES tail).
-- `prefix h` menu, lazygit / NOTES popups, `set`, `notes`, zsh completion
+- fzf dashboard (ordering per §3.3; preview shows status, runs, diff stat).
+- `prefix h` menu, lazygit popup, `set`, zsh completion
   (`completions/_collie`).
 - Docs: terminal key mapping examples.
 - **Acceptance:** dashboard ordering tests; *manual* day-to-day check.
@@ -314,7 +314,6 @@ unless marked *manual*.
 - `review` (multi-repo diff + REPORT), `gc`.
 - `spike`: branch off with uncommitted changes into `exp/*` without touching
   the source worktree (`git stash create`).
-- `park`: write the next action into NOTES and frontmatter.
 - Optional pre-push hook snippet blocking `exp/*`.
 - **Acceptance:** after `spike` the source worktree's `git status` is unchanged;
   `review` shows diffs from two repos.

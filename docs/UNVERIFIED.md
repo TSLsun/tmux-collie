@@ -39,7 +39,7 @@ delete an item only when it is covered by a test.
       `switch-client` must act on the popup's client). Tests cover rows,
       ordering, preview text and target window only.
 - [ ] The `prefix h` menu with a real client: `#{session_name}` expanding in
-      nested items (status submenu, confirm-before), popups sizing, lazygit popup
+      nested items (confirm-before), popups sizing, lazygit popup
       opening in the pane's directory. Tests only check the binding text and
       `run-shell collie done`.
 - [ ] Menu actions on a session that is not a task (should show collie's error).
@@ -70,5 +70,7 @@ delete an item only when it is covered by a test.
 - [ ] `spike` with a merge/rebase in progress, submodules, or renames staged.
 - [ ] `review` popup from the menu (`| less -R`), long outputs and colours.
 - [ ] Agents actually writing `.collie/REPORT.md` from the default prompt.
+- [ ] Derived `review` with a real agent: REPORT.md written, then the agent
+      goes idle (tests drive the hooks and write REPORT.md themselves).
 - [ ] `hooks/pre-push` installed by symlink into a bare repo's `hooks/`
       (tests use `core.hooksPath`).

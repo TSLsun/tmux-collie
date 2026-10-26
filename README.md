@@ -39,7 +39,7 @@ collie new deploy-v2 -r A -r B         # cross-repo task (repos by name or path)
 collie new deploy-v2 -r A -r B:release/v2   # per-repo branch
 collie new checkout-fix -w shop        # all repos of a workspace
 collie add deploy-v2 -r C              # pull another repo in mid-task
-collie ls                              # id  status  priority  session(*|-)  repos  next
+collie ls                              # id  status  priority  session(*|-)  agent  repos
 collie show deploy-v2
 collie go deploy-v2                    # switch/attach (fzf picker if no id)
 collie done deploy-v2                  # accept: remove worktrees + session, keep branches
@@ -62,11 +62,14 @@ collie ls                              # agent column: waiting/idle/working/exit
 ```sh
 collie review deploy-v2                # commits, diff stat, dirty files, REPORT.md
 collie spike try-cache                 # from a dirty worktree: exp/try-cache task with the same changes
-collie park -m "rerun e2e after deploy"   # remember where you stopped
 collie gc                              # finish tasks whose branches were merged
 ```
 
 `collie run`'s default prompt asks the agent to write `.collie/REPORT.md`.
+Task status is derived, never set by hand: `todo` until the first agent run,
+`active` after it, `review` once no agent is working or waiting and REPORT.md
+was written since the last run started; `done` / `archived` come from
+`done`, `gc` and `archive`.
 `done` and `gc` fetch `origin` first, so a PR merged on GitHub counts without
 a manual fetch (progress is reported per repo on stderr), and also recognize
 squash merges with git >= 2.38. A client viewing a finished task's session
@@ -78,20 +81,19 @@ detaching; it detaches only when no other session exists.
 ### Dashboard and menu
 
 ```sh
-collie dash                            # fzf: waiting > idle > review > blocked > working
-collie set deploy-v2 status=review "next=check the infra diff"
-collie notes deploy-v2                 # $EDITOR on NOTES.md
+collie dash                            # fzf: waiting > idle > review > working
+collie set deploy-v2 priority=P1 "title=Ship v2"
 ```
 
 Dashboard rows start with a status glyph (red `●` an agent waits for you or
 finished its turn, yellow `◐` working, dim `○` no agent) and show a colored
 badge per running agent; rows that need you come first. `enter` goes to the
 task; `?` opens an action menu above the selected row (run agent, adopt agent,
-next action, notes, review, terminal, done, new task): press its key, or move with ↑↓ and
+review, terminal, done, new task): press its key, or move with ↑↓ and
 press enter; esc closes it.
 
-`prefix h` opens a menu (dashboard, lazygit, terminal, notes, next action, status, new
-task, run agent, done, jump to alert) for the current session's task; outside a
+`prefix h` opens a menu (dashboard, lazygit, terminal, new
+task, review, run agent, done, jump to alert) for the current session's task; outside a
 task session it keeps only dashboard, lazygit, terminal, new task and jump to alert.
 `jump to alert` (`j`) switches to the pane of the last agent that notified. `prefix h h` goes straight to the
 dashboard. `new task` (`c`) prompts in a popup, creates the task from the
