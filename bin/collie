@@ -54,6 +54,8 @@ tasks:
                       new exp/<id> task from the current worktree, carrying its
                       uncommitted changes (the source is left untouched)
   gc [-n]             finish tasks whose branches are merged into base (-n: list)
+  sync [<id>...] [-n] merge base into active task branches and push them;
+                      conflicts go to the task's idle agent (-n: predict only)
   done [<id>] [--force]     accept: remove worktrees + session, keep branches
   archive [<id>] [--force]  abandon: same cleanup, status archived
 
@@ -1452,6 +1454,111 @@ cmd_gc() {
   done
 }
 
+# Merges base into each active task branch, so PRs stay mergeable after
+# another one lands. Clean merges are committed and pushed (if the branch has
+# an upstream); a conflicting merge is started and handed to the task's agent:
+# typed into it if idle, else a new run if it exited; else left untouched.
+# Tasks with an agent working or waiting are skipped. -n only predicts.
+cmd_sync() {
+  local dry=0 ids="" id d runs busy win agent name c b p bname n files msg out
+  while [ $# -gt 0 ]; do
+    case $1 in
+      -n) dry=1 ;;
+      -*) die "sync: unknown option $1" ;;
+      *) task_id "$1"; ids="$ids$1"$'\n' ;;
+    esac
+    shift
+  done
+  if [ -z "$ids" ]; then
+    for d in "$TASKS_DIR"/*; do
+      [ -f "$d/TASK.md" ] || continue
+      fm_get "$d/TASK.md" status
+      case $FM in done | archived) continue ;; esac
+      ids="$ids${d##*/}"$'\n'
+    done
+  fi
+  load_tmux_state
+  while IFS= read -r id; do
+    [ -n "$id" ] || continue
+    d="$TASKS_DIR/$id"
+    runs=$(task_runs "$id")
+    busy=$(awk -F'\t' '$3 == "working" || $3 == "waiting" { print "busy"; exit }' <<<"$runs")
+    win=$(awk -F'\t' '$3 == "idle" { print $4; exit }' <<<"$runs")
+    agent=$(awk -F'\t' '$2 != "-" { a = $2 } END { print a }' <<<"$runs")
+    while IFS=$TAB read -r name c b p; do
+      [ -d "$p" ] || continue
+      fetch_origin "$c" "$name" || true
+      default_base "$c" || { echo "$id $name: skipped: no base branch"; continue; }
+      bname=$BASE
+      [ "$bname" != origin/HEAD ] || bname=$(git --git-dir="$c" symbolic-ref -q --short refs/remotes/origin/HEAD) || bname=$BASE
+      if ! git --git-dir="$c" show-ref -q --verify "refs/heads/$b"; then
+        echo "$id $name: skipped: no branch $b"
+      elif git --git-dir="$c" merge-base --is-ancestor "$BASE" "refs/heads/$b"; then
+        echo "$id $name: up to date"
+      elif git --git-dir="$c" merge-base --is-ancestor "refs/heads/$b" "$BASE"; then
+        # moving it would make gc take an untouched task for a merged one
+        echo "$id $name: skipped: no commits beyond $bname"
+      elif merged_into "$c" "$b" "$BASE"; then
+        echo "$id $name: skipped: merged into $bname (collie gc)"
+      elif [ "$dry" -eq 0 ] && [ -n "$busy" ]; then
+        echo "$id $name: skipped: agent busy"
+      elif [ "$dry" -eq 0 ] && [ -n "$(git -C "$p" status --porcelain)" ]; then
+        echo "$id $name: skipped: uncommitted changes"
+      elif [ "$dry" -eq 0 ] && [ "$(git -C "$p" symbolic-ref -q --short HEAD)" != "$b" ]; then
+        echo "$id $name: skipped: worktree not on $b"
+      else
+        n=$(git --git-dir="$c" rev-list --count "refs/heads/$b..$BASE")
+        if files=$(git --git-dir="$c" merge-tree --write-tree --name-only --no-messages "$BASE" "refs/heads/$b" 2>/dev/null); then
+          if [ "$dry" -eq 1 ]; then
+            echo "$id $name: would merge $n commit(s) from $bname"
+          elif git -C "$p" merge -q -m "Merge $bname into $b" "$BASE" >/dev/null 2>&1; then
+            msg="merged $n commit(s) from $bname"
+            if git -C "$p" rev-parse -q --verify '@{upstream}' >/dev/null 2>&1; then
+              if out=$(GIT_TERMINAL_PROMPT=0 git -C "$p" push -q </dev/null 2>&1); then
+                msg="$msg, pushed"
+              else
+                msg="$msg; push failed (${out%%$'\n'*})"
+              fi
+            fi
+            log_event "$id" synced "repo=$name base=$(git --git-dir="$c" rev-parse --short "$BASE") commits=$n"
+            echo "$id $name: $msg"
+          else
+            git -C "$p" merge --abort >/dev/null 2>&1 || true
+            echo "$id $name: merge of $bname failed; worktree left as it was"
+          fi
+          continue
+        fi
+        [ -n "$files" ] || { echo "$id $name: skipped: git merge-tree failed (needs git 2.38+)"; continue; }
+        files=$(sed -n '2,$p' <<<"$files" | paste -sd ' ' -)
+        if [ "$dry" -eq 1 ]; then
+          echo "$id $name: conflict in $files"
+          continue
+        fi
+        if [ -z "$win" ] && [ -z "$agent" ]; then
+          echo "$id $name: conflict in $files; no agent to resolve it"
+          continue
+        fi
+        git -C "$p" merge -q -m "Merge $bname into $b" "$BASE" >/dev/null 2>&1 || true
+        msg="collie sync merged $bname into $b in $p and stopped on conflicts in: $files. Resolve them keeping the intent of both sides, run the Verify checks from .collie/TASK.md, commit the merge (do not rebase or abort it), and push if the branch has an upstream."
+        if [ -n "$win" ]; then
+          # a pause before Enter, so agents that detect pastes still submit
+          tmux send-keys -t "$win" -l "$msg"
+          sleep 0.3
+          tmux send-keys -t "$win" Enter
+          out="sent to the agent in $win"
+        elif "$BASH" "$PLUGIN_DIR/bin/collie" run "$id" -r "$name" --agent "$agent" \
+          -p "Your task contract is .collie/TASK.md. $msg" >/dev/null 2>&1; then
+          out="started a $agent run"
+        else
+          out="could not start $agent; resolve it in $p"
+        fi
+        log_event "$id" sync_conflict "repo=$name base=$(git --git-dir="$c" rev-parse --short "$BASE") files=${files// /,}"
+        echo "$id $name: conflict in $files; $out"
+      fi
+    done <"$d/repos.tsv"
+  done <<<"$ids"
+}
+
 cmd_repos() {
   discover
   printf '%s' "$REPOS"
@@ -1464,7 +1571,7 @@ cmd_workspaces() {
 }
 
 case "${1:-help}" in
-  new | add | ls | show | edit | go | run | adopt | state | status | set | dash | review | spike | gc | doctor | _exec | _target | _preview | _rows | _pick | _key | _actions | _jump | _menu | _popup | _dev | repos | workspaces)
+  new | add | ls | show | edit | go | run | adopt | state | status | set | dash | review | spike | gc | sync | doctor | _exec | _target | _preview | _rows | _pick | _key | _actions | _jump | _menu | _popup | _dev | repos | workspaces)
     cmd=$1
     shift
     "cmd_$cmd" "$@"
