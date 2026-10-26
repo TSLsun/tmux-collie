@@ -1,7 +1,7 @@
 # Folder tasks — design draft
 
-> Status: **proposal, not implemented.** Pick a direction (§4) and answer the
-> open questions (§6) before any code is written.
+> Status: **option A chosen and implemented** (decisions in §6). §4 keeps the
+> rejected options for the record.
 
 ## 1. Problem
 
@@ -134,33 +134,27 @@ Option A, plus collie keeps a hidden git repo for the folder
   A can grow into C later without breaking the data model (the shadow repo
   lives in the task dir).
 
-## 5. Proposed shape for A (if chosen)
+## 5. Shape of A (as implemented)
 
 | Area | Behaviour |
 |---|---|
-| Discovery | Folders are given by path (`-r <path>`); not scanned. Optional `@collie-folder-roots` later if picking by name is wanted. `workspaces` file may list paths: `trips: ~/ClaudeHome/Travel\ Planning` (quoting TBD). |
-| Name | Window/row name = slug of the basename (`Tokyo 2027-01` → `tokyo-2027-01`). Paths with spaces stored verbatim in `repos.tsv` (tab-separated, safe). |
-| `.collie` link | Not created in folders (shared folder, no `info/exclude`, would collide between tasks). Agents get the absolute task dir. |
-| `ls` / `dash` | Repo column shows the folder name; a `missing` marker if the path no longer exists. |
-| `go` | Recreates the session with `-c <folder>`; `missing` → error naming the path. |
-| `doctor` | Reports folder rows whose path is missing; skips git checks. |
-| `add` | `-r <path>` adds a folder row to any task. |
+| Discovery | Folders are given by path (`-r <path>`, or the cwd of `new`); not scanned, so a bare name still has to be a repo under `@collie-repo-roots` (a typo'd repo name fails instead of becoming a folder). Workspace entries are whitespace-split, so a folder path with spaces cannot go in `workspaces`. |
+| Name | Row/window name = slug of the basename (`Tokyo 2027-01` → `tokyo-2027-01`). Path stored verbatim in `repos.tsv` (tab-separated, spaces are safe). `-r <folder>:<branch>` is refused. |
+| `.collie` link | Not created in folders (shared, no `info/exclude`, would collide between tasks). The default `run` prompt names `$TASK_DIR/TASK.md` and `REPORT.md` by absolute path; the task dir is already passed to the agent as an extra dir. |
+| Overlap | `new`/`add` warn when another unfinished task has the same folder, a parent or a child of it. |
+| `done` / `archive` | No dirty/merged checks, no removal, no "cd elsewhere" check for folder rows; repo rows in the same task are handled as before. |
+| `gc` | Ignores folder rows; a task needs at least one merged repo, so a folder-only task is never finished by `gc`. |
+| `review` | `== <name>  folder  <path>`, then files modified since the first `run_started` (`find -newermt`), then REPORT.md. |
+| `show` / `dash` preview / `doctor` | Folder rows print as folders; `doctor` reports a missing folder, skips git checks. |
+| `add` | A repo added to a folder-first task gets `feat/<id>`. |
 | Status | Unchanged derivation. |
 
-Estimated size: `new`/`add` path branch, `finish_task` skip, `gc` skip,
-`review` mtime listing, prompt text, `doctor`; plus bats tests for each. No
-new files.
+## 6. Decisions
 
-## 6. Open questions
-
-1. **Direction:** A, A-now-C-later, or B?
-2. **Command shape:** reuse `-r <path>` (auto-detect non-git) or an explicit
-   flag (`--dir <path>`)? Auto-detect is less to learn; explicit avoids
-   silently making a folder task from a typo'd repo name.
-3. **Overlap:** a second active task on the same folder (or a parent/child
-   of it): warn, or refuse unless `--force`?
-4. **`collie new` in a non-git cwd:** default to a folder task on cwd, or keep
-   erroring ("not in a git repo") unless a path is given?
-5. **Task-dir location for folder tasks:** keep the state dir only, or also
-   let the task live inside the folder (e.g. `<folder>/.collie-task/`) so the
-   contract sits next to the notes and syncs with iCloud/Dropbox?
+1. **Direction:** A (in place). C stays possible later without changing the
+   data model.
+2. **Command shape:** auto-detect: `-r <path>` that is not a git repo, and
+   `new` in a non-git cwd, make a folder.
+3. **Overlap:** warn, allow.
+4. **Task dir:** state dir only (`~/.local/state/collie/tasks/<id>/`); the
+   folder stays clean.

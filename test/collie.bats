@@ -95,13 +95,6 @@ two_repos() {
   [ "$(git -C "$REPO/feat-x" rev-parse HEAD)" = "$(git -C "$REPO" rev-parse feat/x)" ]
 }
 
-@test "new: fails outside a repo without -r" {
-  cd "$TMP"
-  run collie new x
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"not inside a git repository"* ]]
-}
-
 # --- new: multi repo --------------------------------------------------------
 
 @test "new -r: two repos by name get worktrees and one tmux session with a window each" {
