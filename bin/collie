@@ -488,7 +488,7 @@ task_runs() {
     wins=$(win_states -t "=$id" | awk -F'\t' '{ print $3 "\t" $4 "\t" $5 "\t" $2 }'; manual_runs "=$id" | cut -f1-4)
   fi
   [ -z "$wins" ] || printf '%s\n' "$wins"
-  printf '%s\n' "$wins" | awk -F'\t' -v fb="$fallback" '
+  awk -F'\t' -v fb="$fallback" '
     function kv(k,  a, i, n) {
       n = split($3, a, " ")
       for (i = 1; i <= n; i++) if (index(a[i], k "=") == 1) return substr(a[i], length(k) + 2)
@@ -501,7 +501,7 @@ task_runs() {
         r = order[i]
         if (!(r in ended) && !(r in seen)) print r "\t" agent[r] "\t" fb "\t-"
       }
-    }' - "$TASKS_DIR/$id/events.log"
+    }' - "$TASKS_DIR/$id/events.log" <<<"$wins"
 }
 
 # Most urgent run of a task as "state<TAB>window<TAB>live agents", or
@@ -973,7 +973,7 @@ ancestor_pane() {
   panes=$(tmux list-panes -a -F '#{pane_pid} #{pane_id}' 2>/dev/null) || return 0
   for i in 1 2 3 4 5 6 7 8 9 10; do
     case $pid in "" | 0 | 1) return 0 ;; esac
-    if printf '%s\n' "$panes" | awk -v p="$pid" '$1 == p { print $2; f = 1; exit } END { exit !f }'; then
+    if awk -v p="$pid" '$1 == p { print $2; f = 1; exit } END { exit !f }' <<<"$panes"; then
       return 0
     fi
     pid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')
@@ -1279,7 +1279,7 @@ cmd_doctor() {
   doc_line ok "bash $BASH_VERSION"
   if v=$(git --version 2>/dev/null); then doc_line ok "$v"; else doc_line FAIL "git not found"; fail=1; fi
   if v=$(tmux -V 2>/dev/null); then
-    if printf '%s\n' "$v" | awk '{ split($2, n, /[^0-9]+/); exit !(n[1] > 3 || (n[1] == 3 && n[2] >= 2)) }'; then
+    if awk '{ split($2, n, /[^0-9]+/); exit !(n[1] > 3 || (n[1] == 3 && n[2] >= 2)) }' <<<"$v"; then
       doc_line ok "$v"
     else
       doc_line FAIL "$v (need 3.2+ for popups and new-session -e)"
@@ -1410,10 +1410,13 @@ cmd_gc() {
         }
         END { print s }' "$d/events.log")
       tip=$(git --git-dir="$c" rev-parse -q --verify "refs/heads/$b") || { merged=0; break; }
-      if ! printf '%s\n' "$fetched" | grep -qxF "$c"; then
-        fetch_origin "$c" "$name" || true
-        fetched="$fetched$c"$'\n'
-      fi
+      case $'\n'$fetched in
+        *$'\n'"$c"$'\n'*) ;;
+        *)
+          fetch_origin "$c" "$name" || true
+          fetched="$fetched$c"$'\n'
+          ;;
+      esac
       if [ -z "$start" ] || [ "$tip" = "$start" ] || ! { default_base "$c" || true; merged_into "$c" "$b" "$BASE"; }; then
         merged=0
         break
