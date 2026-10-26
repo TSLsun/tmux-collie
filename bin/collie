@@ -17,6 +17,8 @@ TASKS_DIR="$STATE_DIR/tasks"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/collie"
 TAB=$'\t'
 DASH_PROMPT='collie> ' PICK_MARK='▸ '
+# a pull/merge request URL, as agents put it in REPORT.md
+PR_RE='https?://[^ )>]*/(pull|merge_requests)/[0-9]+'
 
 die() {
   printf 'collie: %s\n' "$*" >&2
@@ -583,14 +585,19 @@ repo_commits() { # dir name common branch
   git --git-dir="$3" diff --stat "$from" "$tip"
 }
 
-# A task's commits: the snapshot done/archive took, else read from its branches.
+# A task's commits: the snapshot done/archive took, else read from its
+# branches; with neither, a pointer to the PR named in REPORT.md.
 task_commits() { # id
-  local d="$TASKS_DIR/$1" name c b _
+  local d="$TASKS_DIR/$1" name c b out _
   if [ -f "$d/commits.txt" ]; then
-    cat "$d/commits.txt"
-    return
+    out=$(cat "$d/commits.txt")
+  else
+    out=$(while IFS=$TAB read -r name c b _; do repo_commits "$d" "$name" "$c" "$b"; done <"$d/repos.tsv")
   fi
-  while IFS=$TAB read -r name c b _; do repo_commits "$d" "$name" "$c" "$b"; done <"$d/repos.tsv"
+  if [ -z "$out" ] && [ -f "$d/REPORT.md" ]; then
+    out=$(grep -oE -m1 "$PR_RE" "$d/REPORT.md") && out="(branches gone; see $out)"
+  fi
+  [ -z "$out" ] || printf '%s\n' "$out"
 }
 
 # @collie-notify / $COLLIE_NOTIFY: on (default), off, or a command that gets
@@ -840,9 +847,9 @@ history_rows() { # [pattern]
     while IFS=$TAB read -r name _ b _ || [ -n "$name" ]; do bs="$bs${bs:+,}$b"; done <"$d/repos.tsv"
     rep=""
     [ ! -f "$d/REPORT.md" ] || rep="$d/REPORT.md"
-    fin=$(awk -F'\t' '
+    fin=$(awk -F'\t' -v re="$PR_RE" '
       FNR == NR { if ($2 == "task_done" || $2 == "task_archived") t = substr($1, 1, 10); next }
-      pr == "" && match($0, /https?:\/\/[^ )>]*\/(pull|merge_requests)\/[0-9]+/) {
+      pr == "" && match($0, re) {
         pr = substr($0, RSTART, RLENGTH); sub(/.*\//, "#", pr)
       }
       END { print (t == "" ? "-" : t) "\t" (pr == "" ? "-" : pr) }' "$d/events.log" ${rep:+"$rep"})

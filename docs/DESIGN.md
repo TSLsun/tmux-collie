@@ -177,7 +177,7 @@ created: 2026-01-01
 
 | Command | Purpose |
 |---|---|
-| `collie show [<id>]` | Full task info, the TASK.md body, runs + recent events; finished tasks add finish time, commits (`commits.txt`, else the live branch) and REPORT.md |
+| `collie show [<id>]` | Full task info, the TASK.md body, runs + recent events; finished tasks add finish time, commits (`commits.txt`, else the live branch, else the PR URL from REPORT.md) and REPORT.md |
 | `collie state <working\|waiting\|idle\|exited>` | Endpoint called by agent hooks; no-op outside a collie window |
 | `collie status` | Agent counts for the status bar (`#{collie_status}`) |
 | `collie doctor` | Dependencies, installed agents, task/git/tmux reconciliation; exits 1 on failures |
