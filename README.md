@@ -20,7 +20,7 @@ all of these.
 With [tpm](https://github.com/tmux-plugins/tpm):
 
 ```tmux
-set -g @plugin 'TSLsun/tmux-collie'          # or 'TSLsun/tmux-collie#v0.1.0' to pin
+set -g @plugin 'TSLsun/tmux-collie'          # or 'TSLsun/tmux-collie#v0.2.0' to pin
 ```
 
 Then `prefix + I`. The plugin prepends its `bin/` to tmux's global `PATH`, so
