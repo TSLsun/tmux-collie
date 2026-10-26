@@ -40,7 +40,8 @@ collie new deploy-v2 -r A -r B:release/v2   # per-repo branch
 collie new checkout-fix -w shop        # all repos of a workspace
 collie add deploy-v2 -r C              # pull another repo in mid-task
 collie ls                              # id  status  priority  session(*|-)  agent  repos
-collie show deploy-v2
+collie show deploy-v2                  # fields, TASK.md contract, repos, runs, events
+collie edit deploy-v2                  # adjust TASK.md in $EDITOR (also: dash ? e, prefix h e)
 collie go deploy-v2                    # switch/attach (fzf picker if no id)
 collie done deploy-v2                  # accept: remove worktrees + session, keep branches
 collie archive deploy-v2               # abandon: same cleanup
@@ -89,11 +90,11 @@ Dashboard rows start with a status glyph (red `●` an agent waits for you or
 finished its turn, yellow `◐` working, dim `○` no agent) and show a colored
 badge per running agent; rows that need you come first. `enter` goes to the
 task; `?` opens an action menu above the selected row (run agent, adopt agent,
-review, terminal, done, new task): press its key, or move with ↑↓ and
-press enter; esc closes it.
+edit task, review, terminal, done, new task): press its key, or move with ↑↓ and
+press enter; esc closes it. The preview shows the start of TASK.md's Objective.
 
 `prefix h` opens a menu (dashboard, lazygit, terminal, new
-task, review, run agent, done, jump to alert) for the current session's task; outside a
+task, edit task, review, run agent, done, jump to alert) for the current session's task; outside a
 task session it keeps only dashboard, lazygit, terminal, new task and jump to alert.
 `jump to alert` (`j`) switches to the pane of the last agent that notified. `prefix h h` goes straight to the
 dashboard. `new task` (`c`) prompts in a popup, creates the task from the
@@ -176,8 +177,9 @@ set -g @collie-ship 'on'                       # default for new tasks ($COLLIE_
 ```
 
 `collie new --ship` / `--no-ship` overrides it per task, and the new-task popup
-asks. The rules live in the task's TASK.md, so you can read or edit them before
-`collie run`; replace them for all tasks with `~/.config/collie/SHIP.md`.
+asks. The rules live in the task's TASK.md, so you can read (`collie show`) or
+edit (`collie edit`) them before `collie run`; replace them for all tasks with
+`~/.config/collie/SHIP.md`.
 
 ### Repository layouts
 
