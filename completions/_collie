@@ -59,7 +59,7 @@ _collie() {
     state) compadd working waiting idle exited ;;
     set) compadd -S '=' priority title; _collie_tasks ;;
     ls) compadd -- -a ;;
-    new) compadd -- -r -w -t -m --title --from --edit --no-window --ship --no-ship ;;
+    new) compadd -- -r -w -t -m --title --from --edit --no-window --ship --no-ship --run --agent -p ;;
     gc) compadd -- -n ;;
     add | show | edit | go | run | adopt | review | done | archive) _collie_tasks ;;
   esac
