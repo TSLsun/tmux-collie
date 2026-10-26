@@ -360,7 +360,24 @@ rollback() {
 
 # --- tmux -------------------------------------------------------------------
 
-has_session() { tmux has-session -t "=$1" 2>/dev/null; }
+has_session() {
+  if [ -n "${SESSIONS+x}" ]; then
+    case $SESSIONS in *$'\n'"$1"$'\n'*) return 0 ;; esac
+    return 1
+  fi
+  tmux has-session -t "=$1" 2>/dev/null
+}
+
+# For read-only commands that look at every task: the session names (used
+# by has_session) and @collie-silence (win_states, manual_runs), queried once.
+load_tmux_state() {
+  local s
+  SESSIONS=$'\n'$(tmux list-sessions -F '#{session_name}' 2>/dev/null || true)$'\n'
+  if [ -z "${COLLIE_SILENCE:-}" ]; then
+    s=$(tmux_opt @collie-silence)
+    COLLIE_SILENCE=${s:-30}
+  fi
+}
 
 open_window() { # id name path
   local wid
@@ -470,10 +487,10 @@ task_top() {
 # todo (no run yet), review (no agent working or waiting, and REPORT.md
 # written since the last run started), else active. Other stored values
 # (old records: todo, blocked, ...) are ignored.
-task_status() { # id top_state
+task_status() { # id top_state [stored_status]
   local d st last
   d="$TASKS_DIR/$1"
-  st=$(fm_get "$d/TASK.md" status)
+  if [ $# -ge 3 ]; then st=$3; else st=$(fm_get "$d/TASK.md" status); fi
   case $st in done | archived) echo "$st"; return ;; esac
   last=$(awk -F'\t' '$2 == "run_started" { t = $1 } END { print t }' "$d/events.log")
   if [ -z "$last" ]; then
@@ -645,17 +662,22 @@ cmd_add() {
 
 # shellcheck disable=SC2120  # -a comes from the CLI; internal callers pass none
 cmd_ls() {
-  local all=0 d id top mark
+  local all=0 d id st top mark repos name _
   [ "${1:-}" != -a ] || all=1
+  load_tmux_state
   for d in "$TASKS_DIR"/*; do
     [ -f "$d/TASK.md" ] || continue
     id=${d##*/}
-    case $(fm_get "$d/TASK.md" status) in done | archived) [ "$all" -eq 1 ] || continue ;; esac
+    st=$(fm_get "$d/TASK.md" status)
+    case $st in done | archived) [ "$all" -eq 1 ] || continue ;; esac
     mark=-
     if has_session "$id"; then mark='*'; fi
-    top=$(task_top "$id" | cut -f1)
-    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$id" "$(task_status "$id" "$top")" "$(fm_get "$d/TASK.md" priority)" "$mark" \
-      "$top" "$(cut -f1 "$d/repos.tsv" | paste -s -d, -)"
+    top=$(task_top "$id")
+    top=${top%%"$TAB"*}
+    repos=""
+    while IFS=$TAB read -r name _ || [ -n "$name" ]; do repos="$repos${repos:+,}$name"; done <"$d/repos.tsv"
+    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$id" "$(task_status "$id" "$top" "$st")" "$(fm_get "$d/TASK.md" priority)" "$mark" \
+      "$top" "$repos"
   done
 }
 
