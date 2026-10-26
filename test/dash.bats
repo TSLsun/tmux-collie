@@ -190,7 +190,7 @@ EOF
   [ "$(FZF_PROMPT='▸ new task ' collie _key '' r)" = "change-prompt(collie> )+clear-screen" ]
 }
 
-@test "_actions: one key runs an action on the task; done asks first" {
+@test "_actions: one key runs an action on the task; done and archive ask first" {
   collie new x --no-window
   collie _actions x r
   [ -n "$(run_pane x)" ]
@@ -201,6 +201,14 @@ EOF
   chmod +x "$TMP/sh"
   SHELL="$TMP/sh" collie _actions x t
   [ "$(cat "$TMP/pwd")" = "$TMP/repos/A/feat-x" ]
+  echo n | collie _actions x x
+  [ -z "$(fm x status)" ]
+  echo y | collie _actions x x
+  [ "$(fm x status)" = archived ]
+}
+
+@test "_actions: done after confirm" {
+  collie new x --no-window
   echo y | collie _actions x d
   [ "$(fm x status)" = done ]
 }

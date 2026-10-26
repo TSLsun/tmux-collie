@@ -1166,11 +1166,12 @@ rule() { local s="" i; for ((i = 0; i < $1; i++)); do s="$s$2"; done; printf '%s
 
 # "<key>  <label>" lines of the dashboard actions for a task (or none).
 action_items() { # [id]
-  [ -z "$1" ] || printf '%s\n' 'r  run agent' 'a  adopt agent' 'e  edit task' 'v  review' 't  terminal' 'd  done'
+  [ -z "$1" ] || printf '%s\n' 'r  run agent' 'a  adopt agent' 'e  edit task' 'v  review' 't  terminal' 'd  done' 'x  archive'
   printf '%s\n' 'c  new task'
 }
 
-# Runs the dashboard action for a key (see action_items); done asks first.
+# Runs the dashboard action for a key (see action_items); done and archive ask
+# first.
 cmd__actions() { # id key
   local id=${1:-} k=${2:-} self="'$BASH' '$PLUGIN_DIR/bin/collie'" a
   [ ! -t 1 ] || printf '\033[H\033[2J'
@@ -1186,10 +1187,12 @@ cmd__actions() { # id key
       (cd "$a" && "${SHELL:-sh}") || true
       return 0
       ;;
-    xd)
-      read -r -p "done $id? (y/n) " k || return 0
+    xd | xx)
+      a="done"
+      [ "$k" = d ] || a=archive
+      read -r -p "$a $id? (y/n) " k || return 0
       [ "$k" = y ] || return 0
-      a="$self done '$id'"
+      a="$self $a '$id'"
       ;;
     c | xc) a="$self new" ;;
     *) return 0 ;;
@@ -1210,7 +1213,9 @@ cmd__menu() { # session [client]
       review v "$popup '$C _popup \"$C review $T | less -R\"'"
       ""
       "run agent" r "run-shell '$C run $T'"
-      "done" d "confirm-before -p 'done $T? (y/n)' \"display-popup -E -w 90 -h 12 '$C _popup $C done $T'\"")
+      "adopt agent" a "display-popup -E -w 90 -h 12 '$C _popup $C adopt $T'"
+      "done" d "confirm-before -p 'done $T? (y/n)' \"display-popup -E -w 90 -h 12 '$C _popup $C done $T'\""
+      archive x "confirm-before -p 'archive $T? (y/n)' \"display-popup -E -w 90 -h 12 '$C _popup $C archive $T'\"")
   else
     items+=("" "-not a collie task — use collie new" "" "")
   fi
