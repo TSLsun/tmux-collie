@@ -38,6 +38,33 @@ teardown() { teardown_env; }
   [ "$(fm x title)" = "Write the migration" ]
 }
 
+# --- edit -------------------------------------------------------------------
+
+@test "edit: opens TASK.md in \$EDITOR; COLLIE_TASK is the default; unknown task fails" {
+  collie new x --no-window
+  printf '#!/bin/sh\necho "- keep it small" >>"$1"\n' >"$TMP/ed"
+  chmod +x "$TMP/ed"
+  EDITOR="$TMP/ed" collie edit x
+  [ "$(tail -n 1 "$(task_dir x)/TASK.md")" = "- keep it small" ]
+  EDITOR="$TMP/ed" COLLIE_TASK=x collie edit
+  [ "$(grep -c 'keep it small' "$(task_dir x)/TASK.md")" -eq 2 ]
+  run env EDITOR="$TMP/ed" bash "$COLLIE_ROOT/bin/collie" edit nope
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"no task 'nope'"* ]]
+}
+
+@test "edit: a hand-written status: line does not change the derived status" {
+  collie new x --no-window
+  cat >"$TMP/ed" <<'EOF'
+#!/bin/sh
+awk 'NR == 2 { print "status: blocked" } { print }' "$1" >"$1.tmp" && mv "$1.tmp" "$1"
+EOF
+  chmod +x "$TMP/ed"
+  EDITOR="$TMP/ed" collie edit x
+  [ "$(fm x status)" = blocked ]
+  [ "$(collie ls | cut -f2)" = todo ]
+}
+
 @test "notes, park: removed" {
   collie new x --no-window
   run collie notes x
@@ -82,6 +109,17 @@ teardown() { teardown_env; }
   [ -z "$output" ]
   [ "$(FZF_PROMPT='collie> ' collie _key x N)" = "put(N)" ]
   [[ "$(collie _pick x 2>/dev/null)" != *notes* ]]
+}
+
+@test "dash actions: e edits the task's TASK.md" {
+  collie new x --no-window
+  [ "$(FZF_PROMPT='▸ adopt agent ' collie _key x down)" = "change-prompt(▸ edit task )" ]
+  [[ "$(FZF_PROMPT='▸ run agent ' collie _key x e)" == *"_actions 'x' 'e')+reload("*"_rows)+refresh-preview" ]]
+  [ "$(FZF_PROMPT='▸ new task ' collie _key '' e)" = "change-prompt(collie> )+clear-screen" ]
+  printf '#!/bin/sh\necho edited >>"$1"\n' >"$TMP/ed"
+  chmod +x "$TMP/ed"
+  EDITOR="$TMP/ed" collie _actions x e
+  [ "$(tail -n 1 "$(task_dir x)/TASK.md")" = edited ]
 }
 
 @test "_rows: id first, then status glyph and live agent badge; attention first" {
@@ -138,7 +176,7 @@ teardown() { teardown_env; }
   [ "$(FZF_PROMPT='collie> ' collie _key x esc)" = abort ]
   [ "$(FZF_PROMPT='collie> ' collie _key x enter)" = accept ]
   [ "$(FZF_PROMPT='collie> ' collie _key x up)" = up ]
-  [[ "$(FZF_PROMPT='▸ run agent ' collie _key x r)" == "change-prompt(collie> )+clear-screen+execute("*"_actions 'x' 'r')+reload("*"_rows)" ]]
+  [[ "$(FZF_PROMPT='▸ run agent ' collie _key x r)" == "change-prompt(collie> )+clear-screen+execute("*"_actions 'x' 'r')+reload("*"_rows)+refresh-preview" ]]
   [ "$(FZF_PROMPT='▸ run agent ' collie _key x down)" = "change-prompt(▸ adopt agent )" ]
   [ "$(FZF_PROMPT='▸ run agent ' collie _key x up)" = "change-prompt(▸ new task )" ]
   [ "$(FZF_PROMPT='▸ new task ' collie _key x down)" = "change-prompt(▸ run agent )" ]
@@ -186,6 +224,17 @@ teardown() { teardown_env; }
   [[ "$output" == *"Ship it"* ]]
   [[ "$output" == *"Ship it  [todo P2]"* ]]
   [[ "$output" == *"A  feat/x  1 ahead, 1 dirty"* ]]
+}
+
+@test "_preview: the start of TASK.md's Objective" {
+  collie new x --no-window -m "Add OAuth login"
+  run collie _preview x
+  [ "$status" -eq 0 ]
+  [[ "$output" == *$'objective:\n  Add OAuth login\n'* ]]
+  [[ "$output" != *"## Context"* ]]
+  collie new y --no-window
+  run collie _preview y
+  [[ "$output" == *$'objective:\n  (empty)\n'* ]]
 }
 
 @test "_target: window of the most urgent run (where dash jumps to)" {
