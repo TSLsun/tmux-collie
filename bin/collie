@@ -178,8 +178,11 @@ merged_into() { # common branch base
 
 # Updates origin's refs so merges done on the remote count; no-op without an
 # origin remote. Never prompts for credentials. Reports progress on stderr.
+# Once per repo and command: tasks of one repo share its refs.
 fetch_origin() { # common name
   local out base
+  case $'\n'${FETCHED:-} in *$'\n'"$1"$'\n'*) return 0 ;; esac
+  FETCHED="${FETCHED:-}$1"$'\n'
   git --git-dir="$1" remote get-url origin >/dev/null 2>&1 || return 0
   warn "$2: fetching origin…"
   if ! out=$(GIT_TERMINAL_PROMPT=0 git --git-dir="$1" fetch -q origin </dev/null 2>&1); then
@@ -1417,7 +1420,7 @@ cmd_spike() {
 # A task is merged when every branch moved past where its worktree started
 # and that tip is merged into the base branch (see merged_into).
 cmd_gc() {
-  local dry=0 d id name c b p start tip merged fetched=""
+  local dry=0 d id name c b p start tip merged
   [ "${1:-}" != -n ] || dry=1
   for d in "$TASKS_DIR"/*; do
     [ -f "$d/TASK.md" ] || continue
@@ -1432,13 +1435,7 @@ cmd_gc() {
         }
         END { print s }' "$d/events.log")
       tip=$(git --git-dir="$c" rev-parse -q --verify "refs/heads/$b") || { merged=0; break; }
-      case $'\n'$fetched in
-        *$'\n'"$c"$'\n'*) ;;
-        *)
-          fetch_origin "$c" "$name" || true
-          fetched="$fetched$c"$'\n'
-          ;;
-      esac
+      fetch_origin "$c" "$name" || true
       if [ -z "$start" ] || [ "$tip" = "$start" ] || ! { default_base "$c" || true; merged_into "$c" "$b" "$BASE"; }; then
         merged=0
         break
