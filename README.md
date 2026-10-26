@@ -70,7 +70,9 @@ collie gc                              # finish tasks whose branches were merged
 Task status is derived, never set by hand: `todo` until the first agent run,
 `active` after it, `review` once no agent is working or waiting and REPORT.md
 was written since the last run started; `done` / `archived` come from
-`done`, `gc` and `archive`.
+`done`, `gc` and `archive`. If the agents are quiet but the last run left no
+REPORT.md, the task stays `active` and `show` and the dashboard preview say
+`no REPORT.md since run N`.
 `done` and `gc` fetch `origin` first, so a PR merged on GitHub counts without
 a manual fetch (progress is reported per repo on stderr), and also recognize
 squash merges with git >= 2.38. A client viewing a finished task's session

@@ -89,6 +89,14 @@ There is no manual status: an agent that is stuck says so by waiting, and a
 human-kept "next" or notes file went unused in practice; the agent's REPORT.md
 is the handoff.
 
+`review` needs REPORT.md, not just quiet agents: an idle agent may have ended
+its turn with a question in plain text, and agents commit as they go, so new
+commits don't mean finished either (checking them would also cost a git call
+per task on every dashboard refresh). An agent that skips REPORT.md leaves the
+task `active`; when no agent is working or waiting, `show` and the dashboard
+preview add `no REPORT.md since run N` so the task doesn't look stuck for no
+reason. Ask the agent for the report, or `collie review` it anyway.
+
 ### 3.3 Agent run state (automatic)
 
 | State | Source |
