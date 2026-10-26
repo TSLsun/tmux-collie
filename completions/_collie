@@ -27,6 +27,7 @@ _collie() {
     'add:attach repos to a task'
     'ls:list tasks'
     'show:show a task'
+    'edit:edit TASK.md in $EDITOR'
     'go:switch to a task session'
     'dash:dashboard'
     'set:set priority or title'
@@ -60,7 +61,7 @@ _collie() {
     ls) compadd -- -a ;;
     new) compadd -- -r -w -t -m --title --from --edit --no-window --ship --no-ship ;;
     gc) compadd -- -n ;;
-    add | show | go | run | adopt | review | done | archive) _collie_tasks ;;
+    add | show | edit | go | run | adopt | review | done | archive) _collie_tasks ;;
   esac
 }
 

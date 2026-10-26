@@ -42,7 +42,8 @@ tasks:
   ls [-a]             list tasks: id, status, priority, session (*|-), agent, repos;
                       status is todo (no run yet), active, review (agent done,
                       REPORT.md written since its run started), done, archived
-  show [<id>]         task fields, repos, agent runs and recent events
+  show [<id>]         task fields, TASK.md body, repos, agent runs and recent events
+  edit [<id>]         open the task's TASK.md in $EDITOR
   go [<id>]           switch to the task session (fzf picker if omitted);
                       outside tmux and not a tty, print the primary worktree path
   dash [-n]           fzf dashboard, most urgent first; -n prints the rows
@@ -667,7 +668,7 @@ cmd_new() {
   fi
   write_task_md "$tdir" "$id" "${title:-$id}" "$goal" "$ship"
   log_event "$id" task_created
-  [ "$edit" -eq 0 ] || "${EDITOR:-vi}" "$tdir/TASK.md"
+  [ "$edit" -eq 0 ] || cmd_edit "$id"
   printf '%s\n' "${NEW_PATHS%%$'\n'*}"
   if [ "$window" -eq 1 ] && command -v tmux >/dev/null; then
     ensure_session "$id"
@@ -736,6 +737,12 @@ cmd_show() {
   task_status "$id" "${top%%"$TAB"*}"
   printf 'status: %s\n' "$STATUS"
   echo
+  # the contract: TASK.md after its frontmatter
+  awk 'NR == 1 && $0 == "---" { f = 1; next }
+    f == 1 { if ($0 == "---") f = 2; next }
+    !s && !NF { next }
+    { s = 1; print }' "$d/TASK.md"
+  echo
   echo "repos:"
   while IFS=$TAB read -r name c b p; do
     mark=""
@@ -748,6 +755,12 @@ cmd_show() {
   echo
   echo "events:"
   tail -n 5 "$d/events.log" | sed 's/^/  /'
+}
+
+cmd_edit() {
+  local id
+  task_id "${1:-}"
+  "${EDITOR:-vi}" "$TASKS_DIR/$id/TASK.md"
 }
 
 cmd_go() {
@@ -1142,7 +1155,7 @@ cmd__key() { # id key
     *) k=$(printf '%s\n' "$items" | cut -c1 | grep -xF -- "$2" || true) ;;
   esac
   if [ -n "$k" ]; then
-    echo "$back+execute($self _actions '$1' '$k')+reload($self _rows)"
+    echo "$back+execute($self _actions '$1' '$k')+reload($self _rows)+refresh-preview"
   else
     echo "$back"
   fi
@@ -1152,7 +1165,7 @@ rule() { local s="" i; for ((i = 0; i < $1; i++)); do s="$s$2"; done; printf '%s
 
 # "<key>  <label>" lines of the dashboard actions for a task (or none).
 action_items() { # [id]
-  [ -z "$1" ] || printf '%s\n' 'r  run agent' 'a  adopt agent' 'v  review' 't  terminal' 'd  done'
+  [ -z "$1" ] || printf '%s\n' 'r  run agent' 'a  adopt agent' 'e  edit task' 'v  review' 't  terminal' 'd  done'
   printf '%s\n' 'c  new task'
 }
 
@@ -1163,6 +1176,7 @@ cmd__actions() { # id key
   case ${id:+x}$k in
     xr) a="$self run '$id'" ;;
     xa) a="$self adopt '$id'" ;;
+    xe) a="$self edit '$id'" ;;
     xv) a="$self review '$id' | less -R" ;;
     xt)
       # a shell in the task's first worktree; its exit status is not a failure
@@ -1191,7 +1205,8 @@ cmd__menu() { # session [client]
     terminal t "$popup -d '#{pane_current_path}'"
     "new task" c "display-popup -EE -w 70 -h 15 -d '#{pane_current_path}' '$C new'")
   if valid_id "$T" && [ -f "$TASKS_DIR/$T/TASK.md" ]; then
-    items+=(review v "$popup '$C _popup \"$C review $T | less -R\"'"
+    items+=("edit task" e "$popup '$C _popup $C edit $T'"
+      review v "$popup '$C _popup \"$C review $T | less -R\"'"
       ""
       "run agent" r "run-shell '$C run $T'"
       "done" d "confirm-before -p 'done $T? (y/n)' \"display-popup -E -w 90 -h 12 '$C _popup $C done $T'\"")
@@ -1254,6 +1269,12 @@ cmd__preview() {
   task_status "$id" "${top%%"$TAB"*}"
   fm_get "$d/TASK.md" priority
   printf '%s  [%s %s]\n' "$title" "$STATUS" "$FM"
+  echo
+  echo "objective:"
+  awk '$0 == "## Objective" { f = 1; next }
+    f && /^## / { exit }
+    f && NF && n++ < 5 { print "  " $0 }
+    END { if (!n) print "  (empty)" }' "$d/TASK.md"
   echo
   echo "runs:"
   task_runs "$id" | sed 's/^/  /'
@@ -1445,7 +1466,7 @@ cmd_workspaces() {
 }
 
 case "${1:-help}" in
-  new | add | ls | show | go | run | adopt | state | status | set | dash | review | spike | gc | doctor | _exec | _target | _preview | _rows | _pick | _key | _actions | _jump | _menu | _popup | _dev | repos | workspaces)
+  new | add | ls | show | edit | go | run | adopt | state | status | set | dash | review | spike | gc | doctor | _exec | _target | _preview | _rows | _pick | _key | _actions | _jump | _menu | _popup | _dev | repos | workspaces)
     cmd=$1
     shift
     "cmd_$cmd" "$@"
