@@ -263,6 +263,11 @@ client_session() { tmux list-clients -F '#{client_session}'; }
   [ "$status" -eq 0 ]
   [[ "$output" == *$'[archived P2]\nfinished 20'* ]]
   [[ "$output" == *"A  feat/m  (removed)"* && "$output" == *"pull/7"* ]]
+  # a task finished before snapshots, its branch since deleted: point at the PR
+  rm "$(task_dir m)/commits.txt"
+  git -C "$REPO" branch -q -D feat/m
+  run collie show m
+  [[ "$output" == *$'commits:\n  (branches gone; see https://github.com/o/r/pull/7)\n'* ]]
 }
 
 @test "history -n: finished tasks newest first with branch and PR; a pattern searches TASK.md and REPORT.md" {
