@@ -24,7 +24,7 @@ usage: collie <command> [args]
 
 tasks:
   new [<id>] [-r repo[:branch]]... [-w workspace] [-t type] [--title text]
-           [-m objective] [--from ref] [--todo] [--edit] [--no-window]
+           [-m objective] [--from ref] [--edit] [--no-window]
            [--ship|--no-ship]
                       create a task: worktree per repo + tmux session;
                       no id on a tty prompts for id, type, objective, ship;
@@ -32,19 +32,19 @@ tasks:
                       (default: $COLLIE_SHIP, @collie-ship, else off)
   add [<id>] -r repo[:branch]... [--from ref] [--no-window]
                       attach more repos to an existing task
-  ls [-a]             list tasks: id, status, priority, session (*|-), agent, repos, next
+  ls [-a]             list tasks: id, status, priority, session (*|-), agent, repos;
+                      status is todo (no run yet), active, review (agent done,
+                      REPORT.md written since its run started), done, archived
   show [<id>]         task fields, repos, agent runs and recent events
   go [<id>]           switch to the task session (fzf picker if omitted);
                       outside tmux and not a tty, print the primary worktree path
   dash [-n]           fzf dashboard, most urgent first; -n prints the rows
-  set [<id>] field=value...   status (todo|active|blocked|review), priority
-                      (P0..P3), next, title; a bare field name reads stdin
-  notes [<id>]        edit the task's NOTES.md in $EDITOR
+  set [<id>] field=value...   priority (P0..P3), title; a bare field name
+                      reads stdin
   review [<id>] [-p]  per-repo commits, diff stat (-p: patch), dirty files, REPORT.md
   spike <id> [--title text] [--no-window]
                       new exp/<id> task from the current worktree, carrying its
                       uncommitted changes (the source is left untouched)
-  park [<id>] [-m text]     set the next action (stdin without -m), log it in NOTES.md
   gc [-n]             finish tasks whose branches are merged into base (-n: list)
   done [<id>] [--force]     accept: remove worktrees + session, keep branches
   archive [<id>] [--force]  abandon: same cleanup, status archived
@@ -210,20 +210,20 @@ log_event() {
   printf '%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$2" "${3:-}" >>"$(task_dir "$1")/events.log"
 }
 
-write_task_md() { # dir id title status [objective] [ship]
+write_task_md() { # dir id title [objective] [ship]
   local tmpl="$CONFIG_DIR/TASK.md" ship="$CONFIG_DIR/SHIP.md"
   [ -f "$tmpl" ] || tmpl="$PLUGIN_DIR/templates/TASK.md"
   [ -f "$ship" ] || ship="$PLUGIN_DIR/templates/SHIP.md"
   {
-    printf -- '---\nid: %s\ntitle: %s\nstatus: %s\npriority: P2\nnext:\ncreated: %s\n---\n' \
-      "$2" "$3" "$4" "$(date +%Y-%m-%d)"
+    printf -- '---\nid: %s\ntitle: %s\npriority: P2\ncreated: %s\n---\n' \
+      "$2" "$3" "$(date +%Y-%m-%d)"
     # objective goes under the template's "## Objective", else at the end
-    OBJ=${5:-} awk 'BEGIN { o = ENVIRON["OBJ"] }
+    OBJ=${4:-} awk 'BEGIN { o = ENVIRON["OBJ"] }
       { print }
       o != "" && !done && $0 == "## Objective" { print o; done = 1 }
       END { if (o != "" && !done) print "\n## Objective\n" o }' "$tmpl"
     # ship on: the commit/push/PR/CI rules go at the end
-    [ "${6:-0}" = 0 ] || cat "$ship"
+    [ "${5:-0}" = 0 ] || cat "$ship"
   } >"$1/TASK.md"
 }
 
@@ -428,6 +428,26 @@ task_top() {
     END { print best "\t" w }'
 }
 
+# Task status: done/archived as written by done/archive/gc, else derived:
+# todo (no run yet), review (no agent working or waiting, and REPORT.md
+# written since the last run started), else active. Other stored values
+# (old records: todo, blocked, ...) are ignored.
+task_status() { # id top_state
+  local d st last
+  d=$(task_dir "$1")
+  st=$(fm_get "$d/TASK.md" status)
+  case $st in done | archived) echo "$st"; return ;; esac
+  last=$(awk -F'\t' '$2 == "run_started" { t = $1 } END { print t }' "$d/events.log")
+  if [ -z "$last" ]; then
+    echo todo
+  elif [ "$2" != working ] && [ "$2" != waiting ] && [ -f "$d/REPORT.md" ] &&
+    ! [[ $(date -u -r "$d/REPORT.md" +%Y-%m-%dT%H:%M:%SZ) < $last ]]; then
+    echo review
+  else
+    echo active
+  fi
+}
+
 # @collie-notify / $COLLIE_NOTIFY: on (default), off, or a command that gets
 # title and body as arguments.
 # With terminal-notifier installed and a pane given, clicking the notification
@@ -487,7 +507,7 @@ cmd__jump() { # [pane|-] [client]
 # --- commands ---------------------------------------------------------------
 
 cmd_new() {
-  local id="" specs="" ws="" type=feat title="" from="" status=active edit=0 window=1
+  local id="" specs="" ws="" type=feat title="" from="" edit=0 window=1
   local goal="" asked=0 t ship=${COLLIE_SHIP-$(tmux_opt @collie-ship)}
   case $ship in on | 1 | yes | true) ship=1 ;; *) ship=0 ;; esac
   while [ $# -gt 0 ]; do
@@ -498,7 +518,6 @@ cmd_new() {
       -t) type=${2:?-t needs a type}; shift ;;
       --title) title=${2:?--title needs text}; shift ;;
       --from) from=${2:?--from needs a ref}; shift ;;
-      --todo) status=todo ;;
       --edit) edit=1 ;;
       --no-window) window=0 ;;
       --ship) ship=1 ;;
@@ -551,8 +570,8 @@ cmd_new() {
     rm -rf "$tdir"
     exit 1
   fi
-  write_task_md "$tdir" "$id" "${title:-$id}" "$status" "$goal" "$ship"
-  log_event "$id" task_created "status=$status"
+  write_task_md "$tdir" "$id" "${title:-$id}" "$goal" "$ship"
+  log_event "$id" task_created
   [ "$edit" -eq 0 ] || "${EDITOR:-vi}" "$tdir/TASK.md"
   printf '%s\n' "$NEW_PATHS" | head -n 1
   if [ "$window" -eq 1 ] && command -v tmux >/dev/null; then
@@ -588,17 +607,17 @@ cmd_add() {
 
 # shellcheck disable=SC2120  # -a comes from the CLI; internal callers pass none
 cmd_ls() {
-  local all=0 d id st mark
+  local all=0 d id top mark
   [ "${1:-}" != -a ] || all=1
   for d in "$TASKS_DIR"/*; do
     [ -f "$d/TASK.md" ] || continue
     id=$(basename "$d")
-    st=$(fm_get "$d/TASK.md" status)
-    case $st in done | archived) [ "$all" -eq 1 ] || continue ;; esac
+    case $(fm_get "$d/TASK.md" status) in done | archived) [ "$all" -eq 1 ] || continue ;; esac
     mark=-
     if has_session "$id"; then mark='*'; fi
-    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$id" "$st" "$(fm_get "$d/TASK.md" priority)" "$mark" \
-      "$(task_top "$id" | cut -f1)" "$(cut -f1 "$d/repos.tsv" | paste -s -d, -)" "$(fm_get "$d/TASK.md" next)"
+    top=$(task_top "$id" | cut -f1)
+    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$id" "$(task_status "$id" "$top")" "$(fm_get "$d/TASK.md" priority)" "$mark" \
+      "$top" "$(cut -f1 "$d/repos.tsv" | paste -s -d, -)"
   done
 }
 
@@ -606,7 +625,8 @@ cmd_show() {
   local id d name c b p mark
   id=$(task_id "${1:-}")
   d=$(task_dir "$id")
-  awk 'NR == 1 { next } $0 == "---" { exit } { print }' "$d/TASK.md"
+  awk 'NR == 1 { next } $0 == "---" { exit } /^(status|next):/ { next } { print }' "$d/TASK.md"
+  printf 'status: %s\n' "$(task_status "$id" "$(task_top "$id" | cut -f1)")"
   echo
   echo "repos:"
   while IFS=$TAB read -r name c b p; do
@@ -770,10 +790,6 @@ cmd_run() {
   done
   # an instant agent exit may log run_exited first; task_runs is order-free
   log_event "$id" run_started "run=$run agent=$agent repo=$rname window=$wid"
-  if [ "$(fm_get "$d/TASK.md" status)" = todo ]; then
-    fm_set "$d/TASK.md" status active
-    log_event "$id" status_changed "status=active"
-  fi
 }
 
 # Restarts an agent started by hand in the task's session as a `collie run`
@@ -869,18 +885,18 @@ cmd_set() {
   local id="" a keys=() vals=() k v i re='^P[0-3]$'
   for a in "$@"; do
     case $a in
-      *=* | status | priority | next | title) keys+=("${a%%=*}") ;;
+      *=* | priority | title) keys+=("${a%%=*}") ;;
       *) [ -z "$id" ] || die "set: too many arguments"; id=$a ;;
     esac
   done
   id=$(task_id "$id")
-  [ ${#keys[@]} -gt 0 ] || die "usage: collie set [<id>] field=value... (status, priority, next, title)"
+  [ ${#keys[@]} -gt 0 ] || die "usage: collie set [<id>] field=value... (priority, title)"
   # validate everything before writing anything
   i=0
   for a in "$@"; do
     case $a in
       *=*) v=${a#*=} ;;
-      status | priority | next | title)
+      priority | title)
         [ ! -t 0 ] || printf '%s: ' "$a" >&2
         IFS= read -r v || true
         ;;
@@ -888,10 +904,9 @@ cmd_set() {
     esac
     k=${keys[$i]}
     case $k in
-      status) case $v in todo | active | blocked | review) ;; *) die "status must be todo, active, blocked or review (finish with done/archive)" ;; esac ;;
       priority) [[ $v =~ $re ]] || die "priority must be P0..P3" ;;
-      next | title) ;;
-      *) die "set: unknown field '$k' (status, priority, next, title)" ;;
+      title) ;;
+      *) die "set: unknown field '$k' (priority, title)" ;;
     esac
     case $v in *$'\n'*) die "set: $k must be a single line" ;; esac
     vals+=("$v")
@@ -903,24 +918,15 @@ cmd_set() {
   done
 }
 
-cmd_notes() {
-  local id f
-  id=$(task_id "${1:-}")
-  f="$(task_dir "$id")/NOTES.md"
-  [ -f "$f" ] || printf '# %s\n\n' "$id" >"$f"
-  "${EDITOR:-vi}" "$f"
-}
-
 # Active tasks in `ls` format, most urgent first (see DESIGN §3.3), then by
 # priority and id.
 dash_rows() {
   cmd_ls | awk -F'\t' '{
-      r = 6
+      r = 5
       if ($5 == "waiting") r = 1
       else if ($5 == "idle") r = 2
       else if ($2 == "review") r = 3
-      else if ($2 == "blocked") r = 4
-      else if ($5 == "working") r = 5
+      else if ($5 == "working") r = 4
       print r "\t" $0
     }' | sort -t "$TAB" -k1,1n -k4,4 -k2,2 | cut -f2-
 }
@@ -944,7 +950,7 @@ cmd__rows() {
       n = split($1, a, " "); b = ""
       for (i = 1; i <= n; i++) b = b (i > 1 ? " " : "") e "1;" (a[i] in c ? c[a[i]] : "37") "m" a[i] e "0m"
       if (b == "") b = e "2m-" e "0m"
-      print $2 "\t" g e "0m " $2 "\t" $3 "\t" $4 "\t" b "\t" $7 "\t" $8
+      print $2 "\t" g e "0m " $2 "\t" $3 "\t" $4 "\t" b "\t" $7
     }'
 }
 
@@ -1040,7 +1046,7 @@ rule() { local s="" i; for ((i = 0; i < $1; i++)); do s="$s$2"; done; printf '%s
 
 # "<key>  <label>" lines of the dashboard actions for a task (or none).
 action_items() { # [id]
-  [ -z "$1" ] || printf '%s\n' 'r  run agent' 'a  adopt agent' 'N  next action' 'e  notes' 'v  review' 't  terminal' 'd  done'
+  [ -z "$1" ] || printf '%s\n' 'r  run agent' 'a  adopt agent' 'v  review' 't  terminal' 'd  done'
   printf '%s\n' 'c  new task'
 }
 
@@ -1051,8 +1057,6 @@ cmd__actions() { # id key
   case ${id:+x}$k in
     xr) a="$self run '$id'" ;;
     xa) a="$self adopt '$id'" ;;
-    xN) a="$self set '$id' next" ;;
-    xe) a="$self notes '$id'" ;;
     xv) a="$self review '$id' | less -R" ;;
     xt)
       # a shell in the task's first worktree; its exit status is not a failure
@@ -1075,20 +1079,13 @@ cmd__actions() { # id key
 # Menu for prefix <@collie-key>, built per session: task actions only inside a
 # task's session (see collie.tmux).
 cmd__menu() { # session [client]
-  local C="$PLUGIN_DIR/bin/collie" T=$1 popup="display-popup -E -w 90% -h 85%" st s items
+  local C="$PLUGIN_DIR/bin/collie" T=$1 popup="display-popup -E -w 90% -h 85%" items
   items=(dashboard h "$popup '$C _popup $C dash'"
     lazygit g "$popup -d '#{pane_current_path}' '$C _popup lazygit'"
     terminal t "$popup -d '#{pane_current_path}'"
     "new task" c "display-popup -EE -w 70 -h 15 -d '#{pane_current_path}' '$C new'")
   if valid_id "$T" && [ -f "$(task_dir "$T")/TASK.md" ]; then
-    st="display-menu -T status"
-    for s in active blocked review todo; do
-      st="$st $s ${s:0:1} \"run-shell '$C set $T status=$s'\""
-    done
-    items+=(notes n "$popup '$C _popup $C notes $T'"
-      "next action" N "display-popup -E -w 70 -h 3 '$C _popup $C set $T next'"
-      status s "$st"
-      review v "$popup '$C _popup \"$C review $T | less -R\"'"
+    items+=(review v "$popup '$C _popup \"$C review $T | less -R\"'"
       ""
       "run agent" r "run-shell '$C run $T'"
       "done" d "confirm-before -p 'done $T? (y/n)' \"display-popup -E -w 90 -h 12 '$C _popup $C done $T'\"")
@@ -1138,12 +1135,10 @@ cmd__popup() {
 cmd__target() { task_top "$(task_id "${1:-}")" | cut -f2; }
 
 cmd__preview() {
-  local id d name c b p base next
+  local id d name c b p base
   id=$(task_id "${1:-}")
   d=$(task_dir "$id")
-  printf '%s  [%s %s]\n' "$(fm_get "$d/TASK.md" title)" "$(fm_get "$d/TASK.md" status)" "$(fm_get "$d/TASK.md" priority)"
-  next=$(fm_get "$d/TASK.md" next)
-  [ -z "$next" ] || printf 'next: %s\n' "$next"
+  printf '%s  [%s %s]\n' "$(fm_get "$d/TASK.md" title)" "$(task_status "$id" "$(task_top "$id" | cut -f1)")" "$(fm_get "$d/TASK.md" priority)"
   echo
   echo "runs:"
   task_runs "$id" | sed 's/^/  /'
@@ -1160,11 +1155,6 @@ cmd__preview() {
       "$(git -C "$p" status --porcelain | wc -l | tr -d ' ')" \
       "$(git -C "$p" diff --shortstat "$base" 2>/dev/null)"
   done <"$d/repos.tsv"
-  if [ -f "$d/NOTES.md" ]; then
-    echo
-    echo "notes:"
-    tail -n 15 "$d/NOTES.md" | sed 's/^/  /'
-  fi
 }
 
 cmd_doctor() {
@@ -1283,29 +1273,6 @@ cmd_spike() {
   log_event "$id" spiked_from "task=${owner:--} path=$src head=$head"
 }
 
-cmd_park() {
-  local id="" msg="" have=0 d
-  while [ $# -gt 0 ]; do
-    case $1 in
-      -m) msg=${2?-m needs text}; have=1; shift ;;
-      -*) die "park: unknown option $1" ;;
-      *) [ -z "$id" ] || die "park: too many arguments"; id=$1 ;;
-    esac
-    shift
-  done
-  id=$(task_id "$id")
-  if [ "$have" -eq 0 ]; then
-    [ ! -t 0 ] || printf 'next: ' >&2
-    IFS= read -r msg || true
-  fi
-  [ -n "$msg" ] || die "park: empty next action"
-  d=$(task_dir "$id")
-  fm_set "$d/TASK.md" next "$msg"
-  [ -f "$d/NOTES.md" ] || printf '# %s\n' "$id" >"$d/NOTES.md"
-  printf '\n## %s\n- parked: %s\n' "$(date '+%Y-%m-%d %H:%M')" "$msg" >>"$d/NOTES.md"
-  log_event "$id" task_parked ""
-}
-
 # A task is merged when every branch moved past where its worktree started
 # and that tip is merged into the base branch (see merged_into).
 cmd_gc() {
@@ -1352,7 +1319,7 @@ cmd_workspaces() {
 }
 
 case "${1:-help}" in
-  new | add | ls | show | go | run | adopt | state | status | set | notes | dash | review | spike | park | gc | doctor | _exec | _target | _preview | _rows | _pick | _key | _actions | _jump | _menu | _popup | _dev | repos | workspaces)
+  new | add | ls | show | go | run | adopt | state | status | set | dash | review | spike | gc | doctor | _exec | _target | _preview | _rows | _pick | _key | _actions | _jump | _menu | _popup | _dev | repos | workspaces)
     cmd=$1
     shift
     "cmd_$cmd" "$@"
