@@ -159,8 +159,9 @@ Task data lives in `~/.local/state/collie/tasks/<id>/` (`TASK.md`, `repos.tsv`,
 `events.log`) and survives worktree removal. Each worktree gets a `.collie`
 symlink to it, excluded via the repo's `info/exclude`.
 
-`done`/`archive` refuse dirty worktrees or commits not in the base branch
-(`--force` overrides; branches are always kept). `new` is all-or-nothing:
+`done` refuses dirty worktrees or commits not in the base branch; `archive`
+refuses only dirty worktrees, since abandoned work is unmerged by definition
+(`--force` overrides and discards uncommitted changes; branches are always kept). `new` is all-or-nothing:
 a failure rolls back worktrees and branches it already created.
 
 ### Ship workflow
