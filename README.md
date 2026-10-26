@@ -64,6 +64,8 @@ collie ls                              # agent column: waiting/idle/working/exit
 collie review deploy-v2                # commits, diff stat, dirty files, REPORT.md
 collie spike try-cache                 # from a dirty worktree: exp/try-cache task with the same changes
 collie gc                              # finish tasks whose branches were merged
+collie history                         # finished tasks, newest first; fzf picker, enter: show
+collie history -n oauth                # rows of finished tasks whose TASK.md/REPORT.md mention oauth
 ```
 
 `collie run`'s default prompt asks the agent to write `.collie/REPORT.md`.

@@ -112,6 +112,7 @@ Dashboard order: `waiting` > `idle` > task `review` > `working`
   repos.tsv      # machine-owned: name<TAB>git common dir<TAB>branch<TAB>worktree path
   REPORT.md      # agent's final report (P5)
   events.log     # append-only: ts<TAB>event<TAB>k=v ...
+  commits.txt    # written by done/archive: per repo, branch commits + diff stat
   repos/<repo> -> worktree path (symlink)
 
 <repo worktree>/.collie -> ~/.local/state/collie/tasks/<id>
@@ -169,13 +170,14 @@ created: 2026-01-01
 | `collie spike <id>` | New `exp/<id>` task from the current worktree, carrying its uncommitted tracked changes (`git stash create`); source untouched |
 | `collie done [<id>] [--force]` | Accept: safety checks, then remove worktrees and session |
 | `collie archive [<id>] [--force]` | Abandon: same cleanup |
+| `collie history [-n] [pattern]` | Finished tasks, newest first: date, status, id, title, branches, PR (from REPORT.md); pattern greps TASK.md/REPORT.md; fzf picker with preview, enter pages `show` |
 | `collie gc [-n]` | Finish (`done`) tasks whose branches all moved past their start and are contained in base; dirty ones are skipped |
 
 ### Admin
 
 | Command | Purpose |
 |---|---|
-| `collie show [<id>]` | Full task info, the TASK.md body, runs + recent events |
+| `collie show [<id>]` | Full task info, the TASK.md body, runs + recent events; finished tasks add finish time, commits (`commits.txt`, else the live branch) and REPORT.md |
 | `collie state <working\|waiting\|idle\|exited>` | Endpoint called by agent hooks; no-op outside a collie window |
 | `collie status` | Agent counts for the status bar (`#{collie_status}`) |
 | `collie doctor` | Dependencies, installed agents, task/git/tmux reconciliation; exits 1 on failures |
