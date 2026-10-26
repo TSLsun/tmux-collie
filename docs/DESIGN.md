@@ -83,7 +83,8 @@ Workspace              (optional named repo set; a shortcut when creating tasks)
 | `done` | Accepted; worktrees removed, record kept | stored by `collie done` / `gc` |
 | `archived` | Abandoned; worktrees removed, record kept | stored by `collie archive` |
 
-Only `done` / `archived` are written to frontmatter. Other `status:` values in
+Only `done` / `archived` are written to frontmatter (`collie reopen` removes
+them again). Other `status:` values in
 older records (`todo`, `blocked`, …) and their `next:` field are ignored.
 There is no manual status: an agent that is stuck says so by waiting, and a
 human-kept "next" or notes file went unused in practice; the agent's REPORT.md
@@ -169,6 +170,7 @@ created: 2026-01-01
 | `collie spike <id>` | New `exp/<id>` task from the current worktree, carrying its uncommitted tracked changes (`git stash create`); source untouched |
 | `collie done [<id>] [--force]` | Accept: safety checks, then remove worktrees and session |
 | `collie archive [<id>] [--force]` | Abandon: same cleanup |
+| `collie reopen [<id>] [--no-window]` | Undo done/archive/gc: worktrees back on the kept branches, stored status cleared, session rebuilt; refuses a deleted or checked-out branch |
 | `collie gc [-n]` | Finish (`done`) tasks whose branches all moved past their start and are contained in base; dirty ones are skipped |
 
 ### Admin
