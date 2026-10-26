@@ -48,6 +48,11 @@ teardown() { teardown_env; }
   [ "$(tail -n 1 "$(task_dir x)/TASK.md")" = "- keep it small" ]
   EDITOR="$TMP/ed" COLLIE_TASK=x collie edit
   [ "$(grep -c 'keep it small' "$(task_dir x)/TASK.md")" -eq 2 ]
+  # an editor with arguments, like EDITOR='code --wait'
+  printf '#!/bin/sh\necho "$1" >>"$2"\n' >"$TMP/ed2"
+  chmod +x "$TMP/ed2"
+  EDITOR="$TMP/ed2 --wait" collie edit x
+  [ "$(tail -n 1 "$(task_dir x)/TASK.md")" = "--wait" ]
   run env EDITOR="$TMP/ed" bash "$COLLIE_ROOT/bin/collie" edit nope
   [ "$status" -ne 0 ]
   [[ "$output" == *"no task 'nope'"* ]]

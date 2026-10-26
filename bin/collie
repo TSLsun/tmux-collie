@@ -757,10 +757,11 @@ cmd_show() {
   tail -n 5 "$d/events.log" | sed 's/^/  /'
 }
 
+# $EDITOR may carry arguments (EDITOR='code --wait'); like git, let sh split it.
 cmd_edit() {
   local id
   task_id "${1:-}"
-  "${EDITOR:-vi}" "$TASKS_DIR/$id/TASK.md"
+  sh -c "${EDITOR:-vi} \"\$1\"" "${EDITOR:-vi}" "$TASKS_DIR/$id/TASK.md"
 }
 
 cmd_go() {
