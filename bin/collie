@@ -376,7 +376,8 @@ create_repos() { # id default_branch from specs
 
   local name c b p created=""
   while IFS=$TAB read -r name c b p; do
-    [ -n "$name" ] && [ "$c" != - ] || continue
+    [ -n "$name" ] || continue
+    [ "$c" != - ] || continue
     if ! add_worktree "$c" "$p" "$b" "$from"; then
       rollback "$created"
       return 1
@@ -838,7 +839,8 @@ finish_task() { # final_status args...
 
   # folders are used in place: nothing to check or remove
   while IFS=$TAB read -r name c b p; do
-    [ -d "$p" ] && [ "$c" != - ] || continue
+    [ -d "$p" ] || continue
+    [ "$c" != - ] || continue
     if [ -e "$p/.collie" ] && [ ! -L "$p/.collie" ]; then
       die "refusing to $final '$id': $p/.collie is not a symlink to the task dir; move it aside first"
     fi
@@ -866,7 +868,8 @@ finish_task() { # final_status args...
 
   while IFS=$TAB read -r name c b p; do
     rm -f "$d/repos/$name"
-    [ -d "$p" ] && [ "$c" != - ] || continue
+    [ -d "$p" ] || continue
+    [ "$c" != - ] || continue
     rm -f "$p/.collie"
     if [ "$force" -eq 1 ]; then
       git --git-dir="$c" worktree remove --force "$p"
