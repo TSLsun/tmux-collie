@@ -19,7 +19,7 @@ two_repos() {
   [ "$status" -eq 0 ]
   d=$(task_dir x)
   [ -f "$d/TASK.md" ] && [ -f "$d/events.log" ]
-  [ "$(fm x id)" = x ] && [ "$(fm x title)" = x ] && [ "$(fm x status)" = active ]
+  [ "$(fm x id)" = x ] && [ "$(fm x title)" = x ] && [ -z "$(fm x status)" ]
   [ "$(git -C "$REPO/feat-x" branch --show-current)" = feat/x ]
   [ "$(git -C "$REPO/feat-x" rev-parse HEAD)" = "$(git -C "$REPO" rev-parse main)" ]
   [ "$(cd "$REPO/feat-x/.collie" && pwd -P)" = "$d" ]
@@ -36,14 +36,16 @@ two_repos() {
   [ "$(git -C "$TMP/repos/B.worktrees/feat-x" branch --show-current)" = feat/x ]
 }
 
-@test "new: -t sets branch type, --title and --todo set frontmatter" {
+@test "new: -t sets branch type, --title sets frontmatter; no stored status or next" {
   make_bare_repo A
   cd "$REPO/main"
-  run collie new y -t fix --title "fix: a & b / c" --todo --no-window
+  run collie new y -t fix --title "fix: a & b / c" --no-window
   [ "$status" -eq 0 ]
   [ "$(git -C "$REPO/fix-y" branch --show-current)" = fix/y ]
   [ "$(fm y title)" = "fix: a & b / c" ]
-  [ "$(fm y status)" = todo ]
+  ! grep -qE '^(status|next):' "$(task_dir y)/TASK.md"
+  run collie new w --todo --no-window
+  [ "$status" -ne 0 ]
 }
 
 @test "new: -m writes the objective into TASK.md" {
@@ -189,16 +191,51 @@ two_repos() {
   two_repos
   cd "$TMP"
   collie new x -r A -r B
-  collie new y -r A --todo --no-window
+  collie new y -r A --no-window
   collie new z -r B --no-window
   collie archive z
   run collie ls
   [ "$status" -eq 0 ]
   [ "${#lines[@]}" -eq 2 ]
-  [[ "${lines[0]}" == "x	active	P2	*	-	A,B	" ]]
-  [[ "${lines[1]}" == "y	todo	P2	-	-	A	" ]]
+  [[ "${lines[0]}" == "x	todo	P2	*	-	A,B" ]]
+  [[ "${lines[1]}" == "y	todo	P2	-	-	A" ]]
   run collie ls -a
   [ "${#lines[@]}" -eq 3 ]
+  [[ "${lines[2]}" == "z	archived	P2	-	-	B" ]]
+}
+
+# run 1 of a task, started in 2020 and exited (no session)
+past_run() {
+  printf '2020-01-01T00:00:00Z\trun_started\trun=1 agent=sleep repo=A\n2020-01-01T00:00:01Z\trun_exited\trun=1 code=0\n' >>"$(task_dir "$1")/events.log"
+}
+
+@test "ls: status is derived: todo (no run), active (run), review (fresh REPORT.md)" {
+  make_bare_repo A
+  cd "$REPO/main"
+  for t in a r s t; do collie new "$t" --no-window; done
+  past_run a
+  past_run r
+  echo "All green." >"$(task_dir r)/REPORT.md"
+  past_run s
+  echo "old" >"$(task_dir s)/REPORT.md"
+  touch -t 201901010000 "$(task_dir s)/REPORT.md"
+  run collie ls
+  [ "$status" -eq 0 ]
+  [ "$(printf '%s\n' "$output" | cut -f1,2 | paste -s -d' ' -)" = "a	active r	review s	active t	todo" ]
+}
+
+@test "ls/show: old records with next: and status: blocked still list" {
+  make_bare_repo A
+  cd "$REPO/main"
+  collie new x --no-window
+  f="$(task_dir x)/TASK.md"
+  awk 'NR == 2 { print "status: blocked"; print "next: ask about retries" } { print }' "$f" >"$f.tmp" && mv "$f.tmp" "$f"
+  run collie ls
+  [ "$status" -eq 0 ]
+  [ "$output" = "x	todo	P2	-	-	A" ]
+  run collie show x
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"status: todo"* && "$output" != *blocked* && "$output" != *"next:"* ]]
 }
 
 @test "show: prints task fields, repos and recent events" {
@@ -267,7 +304,7 @@ two_repos() {
   [ "$status" -ne 0 ]
   [[ "$output" == *unmerged* && "$output" == *dirty* ]]
   [ -d "$TMP/repos/A/feat-x" ] && [ -d "$TMP/repos/B.worktrees/feat-x" ]
-  [ "$(fm x status)" = active ]
+  [ -z "$(fm x status)" ]
   run collie done x --force
   [ "$status" -eq 0 ]
   [ ! -e "$TMP/repos/A/feat-x" ]
