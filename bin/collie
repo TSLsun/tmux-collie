@@ -4,7 +4,14 @@
 set -euo pipefail
 
 VERSION=0.1.0-dev
-PLUGIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# the usual absolute, clean .../bin/collie needs no cd (forks are slow on macOS)
+case ${BASH_SOURCE[0]} in
+  /*/bin/collie) PLUGIN_DIR=${BASH_SOURCE[0]%/bin/collie} ;;
+  *) PLUGIN_DIR= ;;
+esac
+case $PLUGIN_DIR in
+  "" | *//* | */./* | */../* | */. | */..) PLUGIN_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)" ;;
+esac
 STATE_DIR=${COLLIE_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/collie}
 TASKS_DIR="$STATE_DIR/tasks"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/collie"
@@ -74,49 +81,60 @@ EOF
 # --- repos ------------------------------------------------------------------
 
 # Sets R_COMMON (git common dir), R_ROOT (worktree parent), R_NAME for a dir.
+# The last dir is remembered: `new` resolves the current repo twice.
 repo_at() {
+  local dir=$1
+  [ "$dir" != . ] || dir=$PWD
+  [ "$dir" != "${R_AT:-}" ] || return 0
+  R_AT=""
   R_COMMON=$(git -C "$1" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 1
   if [ "$(git config --file "$R_COMMON/config" --bool core.bare 2>/dev/null)" = true ]; then
-    R_ROOT=$(dirname "$R_COMMON")
-    R_NAME=$(basename "$R_ROOT")
+    R_ROOT=${R_COMMON%/*}
+    R_NAME=${R_ROOT##*/}
   else
     local main
-    main=$(dirname "$R_COMMON")
-    R_NAME=$(basename "$main")
-    R_ROOT="$(dirname "$main")/$R_NAME.worktrees"
+    main=${R_COMMON%/*}
+    R_NAME=${main##*/}
+    R_ROOT="${main%/*}/$R_NAME.worktrees"
   fi
+  R_AT=$dir
 }
 
-repo_roots() {
-  if [ -n "${COLLIE_REPO_ROOTS+x}" ]; then
-    printf '%s' "$COLLIE_REPO_ROOTS"
-  else
-    tmux show-options -gqv @collie-repo-roots 2>/dev/null || true
-  fi
-}
-
-# Prints "name<TAB>dir" for every repo matching the root globs (':'-separated).
+# Sets REPOS to "name<TAB>dir" lines for every repo matching the root globs
+# (':'-separated).
 discover() {
-  local IFS=: pat d roots
-  roots=$(repo_roots)
+  local IFS=: pat d n roots
+  if [ -n "${COLLIE_REPO_ROOTS+x}" ]; then
+    roots=$COLLIE_REPO_ROOTS
+  else
+    roots=$(tmux_opt @collie-repo-roots)
+  fi
+  REPOS=""
   for pat in $roots; do
     pat=${pat/#\~/$HOME}
     for d in $pat; do
       [ -d "$d/.bare" ] || [ -d "$d/.git" ] || continue
-      printf '%s\t%s\n' "$(basename "$d")" "$d"
+      n=${d%/}
+      REPOS="$REPOS${n##*/}$TAB$d"$'\n'
     done
   done
 }
 
 # Resolves "repo[:branch]" into R_* plus SPEC_BRANCH.
 resolve_spec() {
-  local ref=${1%%:*} dir
+  local ref=${1%%:*} dir="" n d
   SPEC_BRANCH=""
   [ "$ref" = "$1" ] || SPEC_BRANCH=${1#*:}
   case $ref in
     */* | .* | "~"*) dir=${ref/#\~/$HOME} ;;
     *)
-      dir=$(discover | awk -F'\t' -v n="$ref" '$1 == n { print $2; exit }')
+      discover
+      while IFS=$TAB read -r n d; do
+        if [ "$n" = "$ref" ]; then
+          dir=$d
+          break
+        fi
+      done <<<"$REPOS"
       [ -n "$dir" ] || die "unknown repo '$ref' (check @collie-repo-roots)"
       ;;
   esac
@@ -131,19 +149,20 @@ workspace_repos() {
   printf '%s\n' "$hit"
 }
 
-# origin/HEAD, else origin's copy of the HEAD branch (git < 2.48 fetch does not
-# create origin/HEAD), else the HEAD branch.
+# Sets BASE: origin/HEAD, else origin's copy of the HEAD branch (git < 2.48
+# fetch does not create origin/HEAD), else the HEAD branch.
 default_base() {
   local head
+  BASE=""
   if git --git-dir="$1" rev-parse -q --verify refs/remotes/origin/HEAD >/dev/null; then
-    echo origin/HEAD
+    BASE=origin/HEAD
     return
   fi
   head=$(git --git-dir="$1" symbolic-ref -q HEAD) || return 1
   if git --git-dir="$1" rev-parse -q --verify "refs/remotes/origin/${head#refs/heads/}" >/dev/null; then
-    echo "origin/${head#refs/heads/}"
+    BASE="origin/${head#refs/heads/}"
   else
-    echo "$head"
+    BASE=$head
   fi
 }
 
@@ -166,34 +185,44 @@ fetch_origin() { # common name
     warn "$2: git fetch origin failed (${out%%$'\n'*}); checking against local refs"
     return 1
   fi
-  base=$(default_base "$1") || base=HEAD
+  default_base "$1" || BASE=HEAD
+  base=$BASE
   warn "$2: fetched (base ${base#refs/heads/} @ $(git --git-dir="$1" rev-parse --short "$base" 2>/dev/null))"
 }
 
-slug() { printf '%s' "${1//\//-}"; }
-
 # --- task files -------------------------------------------------------------
-
-task_dir() { printf '%s/%s' "$TASKS_DIR" "$1"; }
 
 valid_id() {
   local re='^[a-z0-9][a-z0-9-]{0,39}$'
   [[ $1 =~ $re ]]
 }
 
-# Task id from argument, else $COLLIE_TASK; must exist.
+# Sets the caller's id: the argument, else $COLLIE_TASK; must exist.
 task_id() {
-  local id=${1:-${COLLIE_TASK:-}}
+  id=${1:-${COLLIE_TASK:-}}
   [ -n "$id" ] || die "no task given (and \$COLLIE_TASK unset)"
-  [ -f "$(task_dir "$id")/TASK.md" ] || die "no task '$id'"
-  printf '%s' "$id"
+  [ -f "$TASKS_DIR/$id/TASK.md" ] || die "no task '$id'"
 }
 
-fm_get() {
-  awk -v k="$2" '
-    NR == 1 && $0 == "---" { f = 1; next }
-    f && $0 == "---" { exit }
-    f && index($0, k ":") == 1 { v = substr($0, length(k) + 2); sub(/^ /, "", v); print v; exit }' "$1"
+# Sets FM to a frontmatter value ("" if unset). Sets a variable and reads in
+# bash: an awk in a command substitution per field was two processes.
+fm_get() { # file key
+  local l n=0
+  FM=""
+  while IFS= read -r l || [ -n "$l" ]; do
+    n=$((n + 1))
+    if [ "$n" -eq 1 ]; then
+      [ "$l" = --- ] || return 0
+      continue
+    fi
+    [ "$l" != --- ] || return 0
+    case $l in "$2:"*)
+      l=${l#"$2:"}
+      FM=${l# }
+      return 0
+      ;;
+    esac
+  done <"$1"
 }
 
 fm_set() {
@@ -206,17 +235,29 @@ fm_set() {
   mv "$1.tmp" "$1"
 }
 
+# NOW: the current time in a strftime format (stamp_utc: in UTC). bash 4.2+
+# formats it without forking date; bash 3.2 still runs date.
+if [ $((BASH_VERSINFO[0] * 100 + BASH_VERSINFO[1])) -ge 402 ]; then
+  stamp() { printf -v NOW "%($1)T" -1; }
+  stamp_utc() { TZ=UTC0 printf -v NOW "%($1)T" -1; }
+else
+  stamp() { NOW=$(date +"$1"); }
+  stamp_utc() { NOW=$(date -u +"$1"); }
+fi
+
 log_event() {
-  printf '%s\t%s\t%s\n' "$(date -u +%Y-%m-%dT%H:%M:%SZ)" "$2" "${3:-}" >>"$(task_dir "$1")/events.log"
+  stamp_utc %Y-%m-%dT%H:%M:%SZ
+  printf '%s\t%s\t%s\n' "$NOW" "$2" "${3:-}" >>"$TASKS_DIR/$1/events.log"
 }
 
 write_task_md() { # dir id title [objective] [ship]
   local tmpl="$CONFIG_DIR/TASK.md" ship="$CONFIG_DIR/SHIP.md"
   [ -f "$tmpl" ] || tmpl="$PLUGIN_DIR/templates/TASK.md"
   [ -f "$ship" ] || ship="$PLUGIN_DIR/templates/SHIP.md"
+  stamp %Y-%m-%d
   {
     printf -- '---\nid: %s\ntitle: %s\npriority: P2\ncreated: %s\n---\n' \
-      "$2" "$3" "$(date +%Y-%m-%d)"
+      "$2" "$3" "$NOW"
     # objective goes under the template's "## Objective", else at the end
     OBJ=${4:-} awk 'BEGIN { o = ENVIRON["OBJ"] }
       { print }
@@ -233,7 +274,8 @@ task_owning() {
   for f in "$TASKS_DIR"/*/repos.tsv; do
     [ -f "$f" ] || continue
     if awk -F'\t' -v p="$1" '$4 == p { found = 1 } END { exit !found }' "$f"; then
-      basename "$(dirname "$f")"
+      f=${f%/*}
+      printf '%s\n' "${f##*/}"
       return
     fi
   done
@@ -245,7 +287,7 @@ task_owning() {
 add_worktree() { # common path branch from
   local c=$1 p=$2 b=$3 from=$4 base
   CREATED_BRANCH=0
-  mkdir -p "$(dirname "$p")" || return 1
+  [ -d "${p%/*}" ] || mkdir -p "${p%/*}" || return 1
   if git --git-dir="$c" show-ref -q --verify "refs/heads/$b"; then
     [ -z "$from" ] || { warn "branch '$b' already exists; --from not applicable"; return 1; }
     git --git-dir="$c" worktree add -q "$p" "$b" </dev/null || return 1
@@ -253,7 +295,14 @@ add_worktree() { # common path branch from
     git --git-dir="$c" worktree add -q --track -b "$b" "$p" "origin/$b" </dev/null || return 1
     CREATED_BRANCH=1
   else
-    base=${from:-$(default_base "$c")} || { warn "cannot determine default branch; use --from"; return 1; }
+    if [ -n "$from" ]; then
+      base=$from
+    elif default_base "$c"; then
+      base=$BASE
+    else
+      warn "cannot determine default branch; use --from"
+      return 1
+    fi
     git --git-dir="$c" worktree add -q --no-track -b "$b" "$p" "$base" </dev/null || return 1
     CREATED_BRANCH=1
   fi
@@ -262,20 +311,28 @@ add_worktree() { # common path branch from
 # Plans, preflights and creates worktrees for SPECS (newline-separated) into
 # task <id>; all-or-nothing. Appends to repos.tsv and links on success.
 create_repos() { # id default_branch from specs
-  local id=$1 default_branch=$2 from=$3 specs=$4 tdir plan="" spec branch path line
-  tdir=$(task_dir "$id")
+  local id=$1 default_branch=$2 from=$3 specs=$4 tdir plan="" spec branch path line dup n wt
+  tdir="$TASKS_DIR/$id"
 
   while IFS= read -r spec; do
     [ -n "$spec" ] || continue
     resolve_spec "$spec"
     branch=${SPEC_BRANCH:-$default_branch}
-    path="$R_ROOT/$(slug "$branch")"
-    if printf '%s\n' "$plan" | cut -f1 | grep -qxF "$R_NAME" ||
-      { [ -f "$tdir/repos.tsv" ] && cut -f1 "$tdir/repos.tsv" | grep -qxF "$R_NAME"; }; then
-      die "repo '$R_NAME' is already part of task '$id'"
+    path="$R_ROOT/${branch//\//-}"
+    dup=0
+    case $'\n'$plan in *$'\n'"$R_NAME$TAB"*) dup=1 ;; esac
+    if [ -f "$tdir/repos.tsv" ]; then
+      while IFS=$TAB read -r n _; do [ "$n" != "$R_NAME" ] || dup=1; done <"$tdir/repos.tsv"
     fi
-    line=$(git --git-dir="$R_COMMON" worktree list --porcelain |
-      awk -v b="refs/heads/$branch" '/^worktree / { p = substr($0, 10) } $0 == "branch " b { print p; exit }')
+    [ "$dup" -eq 0 ] || die "repo '$R_NAME' is already part of task '$id'"
+    # worktree path that has the branch checked out
+    line="" wt=""
+    while IFS= read -r n; do
+      case $n in
+        "worktree "*) wt=${n#worktree } ;;
+        "branch refs/heads/$branch") line=$wt; break ;;
+      esac
+    done <<<"$(git --git-dir="$R_COMMON" worktree list --porcelain)"
     if [ -n "$line" ]; then
       local owner
       owner=$(task_owning "$line")
@@ -297,16 +354,25 @@ create_repos() { # id default_branch from specs
   done <<<"$plan"
 
   mkdir -p "$tdir/repos"
+  NEW_PATHS=""
   while IFS=$TAB read -r name c b p; do
     [ -n "$name" ] || continue
+    NEW_PATHS="$NEW_PATHS${NEW_PATHS:+$'\n'}$p"
     printf '%s\t%s\t%s\t%s\n' "$name" "$c" "$b" "$p" >>"$tdir/repos.tsv"
     ln -s "$p" "$tdir/repos/$name"
     ln -s "$tdir" "$p/.collie"
-    mkdir -p "$c/info"
-    grep -qxF '/.collie' "$c/info/exclude" 2>/dev/null || echo '/.collie' >>"$c/info/exclude"
+    [ -d "$c/info" ] || mkdir -p "$c/info"
+    excluded "$c/info/exclude" || echo '/.collie' >>"$c/info/exclude"
     log_event "$id" worktree_created "repo=$name branch=$b path=$p start=$(git -C "$p" rev-parse HEAD)"
   done <<<"$plan"
-  NEW_PATHS=$(printf '%s' "$plan" | cut -f4)
+}
+
+# Whether an info/exclude file has the /.collie line.
+excluded() {
+  local l
+  [ -f "$1" ] || return 1
+  while IFS= read -r l || [ -n "$l" ]; do [ "$l" != /.collie ] || return 0; done <"$1"
+  return 1
 }
 
 rollback() {
@@ -315,13 +381,30 @@ rollback() {
     [ -n "$c" ] || continue
     git --git-dir="$c" worktree remove --force "$p" 2>/dev/null || true
     [ "$cb" != 1 ] || git --git-dir="$c" branch -q -D "$b" 2>/dev/null || true
-    rmdir "$(dirname "$p")" 2>/dev/null || true
+    rmdir "${p%/*}" 2>/dev/null || true
   done <<<"$1"
 }
 
 # --- tmux -------------------------------------------------------------------
 
-has_session() { tmux has-session -t "=$1" 2>/dev/null; }
+has_session() {
+  if [ -n "${SESSIONS+x}" ]; then
+    case $SESSIONS in *$'\n'"$1"$'\n'*) return 0 ;; esac
+    return 1
+  fi
+  tmux has-session -t "=$1" 2>/dev/null
+}
+
+# For read-only commands that look at every task: the session names (used
+# by has_session) and @collie-silence (win_states, manual_runs), queried once.
+load_tmux_state() {
+  local s
+  SESSIONS=$'\n'$(tmux list-sessions -F '#{session_name}' 2>/dev/null || true)$'\n'
+  if [ -z "${COLLIE_SILENCE:-}" ]; then
+    s=$(tmux_opt @collie-silence)
+    COLLIE_SILENCE=${s:-30}
+  fi
+}
 
 open_window() { # id name path
   local wid
@@ -329,10 +412,9 @@ open_window() { # id name path
     wid=$(tmux new-window -d -P -F '#{window_id}' -t "=$1:" -n "$2" -c "$3" </dev/null)
   else
     wid=$(tmux new-session -d -P -F '#{window_id}' -s "$1" -n "$2" -c "$3" \
-      -e "COLLIE_TASK=$1" -e "COLLIE_TASK_DIR=$(task_dir "$1")" </dev/null)
+      -e "COLLIE_TASK=$1" -e "COLLIE_TASK_DIR=$TASKS_DIR/$1" </dev/null)
   fi
-  tmux set-option -w -t "$wid" @collie_path "$3"
-  tmux set-option -w -t "$wid" @collie_task "$1"
+  tmux set-option -w -t "$wid" @collie_path "$3" \; set-option -w -t "$wid" @collie_task "$1"
 }
 
 ensure_session() {
@@ -340,7 +422,7 @@ ensure_session() {
   has_session "$id" && return 0
   while IFS=$TAB read -r name c b p; do
     if [ -d "$p" ]; then open_window "$id" "$name" "$p"; else warn "missing worktree $p"; fi
-  done <"$(task_dir "$id")/repos.tsv"
+  done <"$TASKS_DIR/$id/repos.tsv"
 }
 
 tmux_opt() { tmux show-options -gqv "$1" 2>/dev/null || true; }
@@ -353,8 +435,9 @@ DEFAULT_PROMPT='Your task contract is .collie/TASK.md. Read it first; if its Obj
 # without hooks count as idle after @collie-silence seconds (30) of no output.
 win_states() { # list-windows target args
   local silence=${COLLIE_SILENCE:-$(tmux_opt @collie-silence)}
+  stamp %s
   { tmux list-windows "$@" -F '#{session_name}|#{window_id}|#{@collie_run}|#{@collie_agent}|#{@collie_state}|#{@collie_hooks}|#{window_activity}' 2>/dev/null || true; } |
-    awk -F'|' -v now="$(date +%s)" -v s="${silence:-30}" '
+    awk -F'|' -v now="$NOW" -v s="${silence:-30}" '
       $5 == "" { next }
       { st = $5 }
       st == "working" && $6 == "0" && now - $7 >= s { st = "idle" }
@@ -368,7 +451,8 @@ win_states() { # list-windows target args
 # @collie-silence seconds without output, then idle.
 manual_runs() { # session
   local silence=${COLLIE_SILENCE:-$(tmux_opt @collie-silence)}
-  awk -v now="$(date +%s)" -v s="${silence:-30}" '
+  stamp %s
+  awk -v now="$NOW" -v s="${silence:-30}" '
     function base(p) { sub(/.*\//, "", p); sub(/\.(js|mjs|ts)$/, "", p); return p }
     BEGIN { n = split("claude codex gemini omp aider", k, " "); for (i = 1; i <= n; i++) known[k[i]] = 1 }
     FNR == NR {
@@ -404,7 +488,7 @@ task_runs() {
     wins=$(win_states -t "=$id" | awk -F'\t' '{ print $3 "\t" $4 "\t" $5 "\t" $2 }'; manual_runs "=$id" | cut -f1-4)
   fi
   [ -z "$wins" ] || printf '%s\n' "$wins"
-  printf '%s\n' "$wins" | awk -F'\t' -v fb="$fallback" '
+  awk -F'\t' -v fb="$fallback" '
     function kv(k,  a, i, n) {
       n = split($3, a, " ")
       for (i = 1; i <= n; i++) if (index(a[i], k "=") == 1) return substr(a[i], length(k) + 2)
@@ -417,34 +501,42 @@ task_runs() {
         r = order[i]
         if (!(r in ended) && !(r in seen)) print r "\t" agent[r] "\t" fb "\t-"
       }
-    }' - "$(task_dir "$id")/events.log"
+    }' - "$TASKS_DIR/$id/events.log" <<<"$wins"
 }
 
-# Most urgent run of a task as "state<TAB>window", or "-<TAB>-".
+# Most urgent run of a task as "state<TAB>window<TAB>live agents", or
+# "-<TAB>-<TAB>"; live agents are the distinct agents not exited, each
+# followed by a space.
 task_top() {
   task_runs "$1" | awk -F'\t' '
     BEGIN { n = split("waiting idle working exited unknown", o, " "); for (i = 1; i <= n; i++) r[o[i]] = i; b = n + 1; best = "-"; w = "-" }
     ($3 in r) && r[$3] < b { b = r[$3]; best = $3; w = $4 }
-    END { print best "\t" w }'
+    $3 != "exited" && $3 != "unknown" && !s[$2]++ { ag = ag $2 " " }
+    END { print best "\t" w "\t" ag }'
 }
 
 # Task status: done/archived as written by done/archive/gc, else derived:
 # todo (no run yet), review (no agent working or waiting, and REPORT.md
 # written since the last run started), else active. Other stored values
-# (old records: todo, blocked, ...) are ignored.
-task_status() { # id top_state
+# (old records: todo, blocked, ...) are ignored. Sets STATUS.
+task_status() { # id top_state [stored_status]
   local d st last
-  d=$(task_dir "$1")
-  st=$(fm_get "$d/TASK.md" status)
-  case $st in done | archived) echo "$st"; return ;; esac
+  d="$TASKS_DIR/$1"
+  if [ $# -ge 3 ]; then
+    st=$3
+  else
+    fm_get "$d/TASK.md" status
+    st=$FM
+  fi
+  case $st in done | archived) STATUS=$st; return ;; esac
   last=$(awk -F'\t' '$2 == "run_started" { t = $1 } END { print t }' "$d/events.log")
   if [ -z "$last" ]; then
-    echo todo
+    STATUS=todo
   elif [ "$2" != working ] && [ "$2" != waiting ] && [ -f "$d/REPORT.md" ] &&
     ! [[ $(date -u -r "$d/REPORT.md" +%Y-%m-%dT%H:%M:%SZ) < $last ]]; then
-    echo review
+    STATUS=review
   else
-    echo active
+    STATUS=active
   fi
 }
 
@@ -477,7 +569,7 @@ set_state() { # pane state
   local info id run old wid agent active attached msg
   info=$(tmux display-message -p -t "$1" '#{@collie_task}|#{@collie_run}|#{@collie_state}|#{window_id}|#{@collie_agent}|#{window_active}|#{session_attached}' 2>/dev/null) || return 0
   IFS='|' read -r id run old wid agent active attached <<<"$info"
-  [ -n "$id" ] && [ -f "$(task_dir "$id")/TASK.md" ] || return 0
+  [ -n "$id" ] && [ -f "$TASKS_DIR/$id/TASK.md" ] || return 0
   [ "$2" != "$old" ] || return 0
   tmux set-option -w -t "$wid" @collie_state "$2" 2>/dev/null || return 0
   log_event "$id" agent_state "run=${run:--} state=$2"
@@ -537,7 +629,10 @@ cmd_new() {
     else
       repo_at . || die "not inside a git repository (use -r or -w)"
       where="$R_NAME (current pane)"
-      [ -n "$base" ] || base=$(git --git-dir="$R_COMMON" rev-parse --abbrev-ref "$(default_base "$R_COMMON")" 2>/dev/null) || true
+      if [ -z "$base" ]; then
+        default_base "$R_COMMON" || true
+        base=$(git --git-dir="$R_COMMON" rev-parse --abbrev-ref "$BASE" 2>/dev/null) || true
+      fi
     fi
     printf 'new task in %s\n' "$where"
     printf '  %-10s %-12s %s\n' branch '<type>/<id>' "from ${base:-the default branch}" \
@@ -556,7 +651,7 @@ cmd_new() {
   [ -n "$id" ] || die "usage: collie new <id> [-r repo[:branch]]... [-w workspace] ..."
   valid_id "$id" || die "invalid id '$id' (use [a-z0-9-], max 40, no leading '-')"
   local tdir r
-  tdir=$(task_dir "$id")
+  tdir="$TASKS_DIR/$id"
   [ ! -e "$tdir" ] || die "task '$id' already exists"
   if [ -n "$ws" ]; then
     for r in $(workspace_repos "$ws"); do specs="$specs$r"$'\n'; done
@@ -573,7 +668,7 @@ cmd_new() {
   write_task_md "$tdir" "$id" "${title:-$id}" "$goal" "$ship"
   log_event "$id" task_created
   [ "$edit" -eq 0 ] || "${EDITOR:-vi}" "$tdir/TASK.md"
-  printf '%s\n' "$NEW_PATHS" | head -n 1
+  printf '%s\n' "${NEW_PATHS%%$'\n'*}"
   if [ "$window" -eq 1 ] && command -v tmux >/dev/null; then
     ensure_session "$id"
     [ "$asked" -eq 0 ] || [ -z "${TMUX:-}" ] || tmux switch-client -t "=$id"
@@ -592,41 +687,54 @@ cmd_add() {
     esac
     shift
   done
-  id=$(task_id "$id")
+  task_id "$id"
   [ -n "$specs" ] || die "usage: collie add [<id>] -r repo[:branch]..."
   local branch
-  branch=$(head -n 1 "$(task_dir "$id")/repos.tsv" | cut -f3)
+  IFS=$TAB read -r _ _ branch _ <"$TASKS_DIR/$id/repos.tsv"
   create_repos "$id" "$branch" "$from" "$specs"
   if [ "$window" -eq 1 ] && has_session "$id"; then
     local name c b p
     while IFS=$TAB read -r name c b p; do
-      printf '%s\n' "$NEW_PATHS" | grep -qxF "$p" && open_window "$id" "$name" "$p"
-    done <"$(task_dir "$id")/repos.tsv"
+      case $'\n'$NEW_PATHS$'\n' in *$'\n'"$p"$'\n'*) open_window "$id" "$name" "$p" ;; esac
+    done <"$TASKS_DIR/$id/repos.tsv"
   fi
 }
 
 # shellcheck disable=SC2120  # -a comes from the CLI; internal callers pass none
+# LS_AGENTS=1 (dash rows) adds a column: the live agents from task_top.
 cmd_ls() {
-  local all=0 d id top mark
+  local all=0 d id st top agents mark repos name _
   [ "${1:-}" != -a ] || all=1
+  load_tmux_state
   for d in "$TASKS_DIR"/*; do
     [ -f "$d/TASK.md" ] || continue
-    id=$(basename "$d")
-    case $(fm_get "$d/TASK.md" status) in done | archived) [ "$all" -eq 1 ] || continue ;; esac
+    id=${d##*/}
+    fm_get "$d/TASK.md" status
+    st=$FM
+    case $st in done | archived) [ "$all" -eq 1 ] || continue ;; esac
     mark=-
     if has_session "$id"; then mark='*'; fi
-    top=$(task_top "$id" | cut -f1)
-    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$id" "$(task_status "$id" "$top")" "$(fm_get "$d/TASK.md" priority)" "$mark" \
-      "$top" "$(cut -f1 "$d/repos.tsv" | paste -s -d, -)"
+    top=$(task_top "$id")
+    agents=${top##*"$TAB"}
+    top=${top%%"$TAB"*}
+    repos=""
+    while IFS=$TAB read -r name _ || [ -n "$name" ]; do repos="$repos${repos:+,}$name"; done <"$d/repos.tsv"
+    task_status "$id" "$top" "$st"
+    fm_get "$d/TASK.md" priority
+    printf '%s\t%s\t%s\t%s\t%s\t%s' "$id" "$STATUS" "$FM" "$mark" \
+      "$top" "$repos"
+    if [ -n "${LS_AGENTS:-}" ]; then printf '\t%s\n' "$agents"; else echo; fi
   done
 }
 
 cmd_show() {
-  local id d name c b p mark
-  id=$(task_id "${1:-}")
-  d=$(task_dir "$id")
+  local id d name c b p mark top
+  task_id "${1:-}"
+  d="$TASKS_DIR/$id"
   awk 'NR == 1 { next } $0 == "---" { exit } /^(status|next):/ { next } { print }' "$d/TASK.md"
-  printf 'status: %s\n' "$(task_status "$id" "$(task_top "$id" | cut -f1)")"
+  top=$(task_top "$id")
+  task_status "$id" "${top%%"$TAB"*}"
+  printf 'status: %s\n' "$STATUS"
   echo
   echo "repos:"
   while IFS=$TAB read -r name c b p; do
@@ -649,14 +757,16 @@ cmd_go() {
     id=$(cmd_ls | fzf --delimiter='\t' --prompt='task> ' | cut -f1)
     [ -n "$id" ] || exit 1
   fi
-  id=$(task_id "$id")
+  task_id "$id"
   ensure_session "$id"
   if [ -n "${TMUX:-}" ]; then
     tmux switch-client -t "=$id"
   elif [ -t 1 ]; then
     exec tmux attach-session -t "=$id"
   else
-    head -n 1 "$(task_dir "$id")/repos.tsv" | cut -f4
+    local p
+    IFS=$TAB read -r _ _ _ p <"$TASKS_DIR/$id/repos.tsv"
+    printf '%s\n' "$p"
   fi
 }
 
@@ -672,9 +782,9 @@ finish_task() { # final_status args...
     esac
     shift
   done
-  id=$(task_id "$id")
+  task_id "$id"
   local d name c b p problems="" n base here own=0
-  d=$(task_dir "$id")
+  d="$TASKS_DIR/$id"
 
   while IFS=$TAB read -r name c b p; do
     [ -d "$p" ] || continue
@@ -683,7 +793,8 @@ finish_task() { # final_status args...
     fi
     [ -z "$(git -C "$p" status --porcelain)" ] || problems="$problems  dirty: $name ($p)"$'\n'
     fetch_origin "$c" "$name" || true
-    base=$(default_base "$c")
+    default_base "$c"
+    base=$BASE
     if git --git-dir="$c" show-ref -q --verify "refs/heads/$b" && ! merged_into "$c" "$b" "$base"; then
       n=$(git --git-dir="$c" rev-list --count "$base..refs/heads/$b")
       problems="$problems  unmerged: $name has $n commit(s) on $b not in ${base#refs/heads/}"$'\n'
@@ -748,13 +859,13 @@ cmd_run() {
     esac
     shift
   done
-  id=$(task_id "$id")
+  task_id "$id"
   command -v tmux >/dev/null || die "run: tmux required"
   agent=${agent:-${COLLIE_AGENT:-$(tmux_opt @collie-agent)}}
   agent=${agent:-claude}
 
   local d name c b p rname="" path=""
-  d=$(task_dir "$id")
+  d="$TASKS_DIR/$id"
   while IFS=$TAB read -r name c b p; do
     if [ -z "$rname" ] && { [ -z "$repo" ] || [ "$name" = "$repo" ]; }; then rname=$name path=$p; fi
   done <"$d/repos.tsv"
@@ -777,17 +888,16 @@ cmd_run() {
   command -v "$agent" >/dev/null || die "agent command '$agent' not found"
 
   # an agent with hooks and no prompt sits at its input box
-  local st=working run wid o
+  local st=working run wid
   [ "$AGENT_HOOKS" = 0 ] || [ -n "$prompt" ] || st=idle
   run=$(($(awk -F'\t' '$2 == "run_started" { n++ } END { print n + 0 }' "$d/events.log") + 1))
   ensure_session "$id"
   wid=$(tmux new-window -d -P -F '#{window_id}' -t "=$id:" -n "$agent" -c "$path" \
     "$BASH" "$PLUGIN_DIR/bin/collie" _exec "$id" "$run" "${AGENT_ARGV[@]}" ${extra[@]+"${extra[@]}"} </dev/null)
   # @collie_run last: the wrapper starts the agent once it is set
-  for o in "@collie_task=$id" "@collie_path=$path" "@collie_agent=$agent" \
-    "@collie_hooks=$AGENT_HOOKS" "@collie_state=$st" "@collie_run=$run"; do
-    tmux set-option -w -t "$wid" "${o%%=*}" "${o#*=}"
-  done
+  tmux set-option -w -t "$wid" @collie_task "$id" \; set-option -w -t "$wid" @collie_path "$path" \; \
+    set-option -w -t "$wid" @collie_agent "$agent" \; set-option -w -t "$wid" @collie_hooks "$AGENT_HOOKS" \; \
+    set-option -w -t "$wid" @collie_state "$st" \; set-option -w -t "$wid" @collie_run "$run"
   # an instant agent exit may log run_exited first; task_runs is order-free
   log_event "$id" run_started "run=$run agent=$agent repo=$rname window=$wid"
 }
@@ -804,7 +914,7 @@ cmd_adopt() {
     esac
     shift
   done
-  id=$(task_id "$id")
+  task_id "$id"
   has_session "$id" || die "adopt: task '$id' has no session"
   info=$(manual_runs "=$id" | head -n 1)
   [ -n "$info" ] || die "adopt: no agent started by hand in task '$id'"
@@ -813,7 +923,7 @@ cmd_adopt() {
   # shellcheck source=/dev/null
   [ ! -f "$PLUGIN_DIR/agents/$agent.sh" ] || . "$PLUGIN_DIR/agents/$agent.sh"
   [ ${#AGENT_RESUME[@]} -gt 0 ] || die "adopt: collie cannot resume $agent sessions"
-  repo=$(awk -F'\t' -v p="$path" '$4 == p || index(p, $4 "/") == 1 { print $1; exit }' "$(task_dir "$id")/repos.tsv")
+  repo=$(awk -F'\t' -v p="$path" '$4 == p || index(p, $4 "/") == 1 { print $1; exit }' "$TASKS_DIR/$id/repos.tsv")
   [ -n "$repo" ] || die "adopt: $agent in $pane runs outside the task's worktrees ($path)"
   if [ "$yes" -eq 0 ]; then
     [ -t 0 ] || die "adopt: confirm with -y"
@@ -821,7 +931,7 @@ cmd_adopt() {
     [ "$a" = y ] || exit 1
   fi
   kill -TERM "$pid" 2>/dev/null || die "adopt: cannot stop $agent (pid $pid)"
-  for i in $(seq 1 100); do
+  for ((i = 1; i <= 100; i++)); do
     kill -0 "$pid" 2>/dev/null || break
     sleep 0.1
   done
@@ -835,7 +945,7 @@ cmd__exec() { # id run argv...
   local id=$1 run=$2 code=0 i
   shift 2
   # wait until `collie run` has tagged the window, so early hooks land
-  for i in $(seq 1 40); do
+  for ((i = 1; i <= 40; i++)); do
     [ -z "$(tmux display-message -p -t "${TMUX_PANE:-}" '#{@collie_run}' 2>/dev/null)" ] || break
     sleep 0.05
   done
@@ -863,7 +973,7 @@ ancestor_pane() {
   panes=$(tmux list-panes -a -F '#{pane_pid} #{pane_id}' 2>/dev/null) || return 0
   for i in 1 2 3 4 5 6 7 8 9 10; do
     case $pid in "" | 0 | 1) return 0 ;; esac
-    if printf '%s\n' "$panes" | awk -v p="$pid" '$1 == p { print $2; f = 1; exit } END { exit !f }'; then
+    if awk -v p="$pid" '$1 == p { print $2; f = 1; exit } END { exit !f }' <<<"$panes"; then
       return 0
     fi
     pid=$(ps -o ppid= -p "$pid" 2>/dev/null | tr -d ' ')
@@ -889,7 +999,7 @@ cmd_set() {
       *) [ -z "$id" ] || die "set: too many arguments"; id=$a ;;
     esac
   done
-  id=$(task_id "$id")
+  task_id "$id"
   [ ${#keys[@]} -gt 0 ] || die "usage: collie set [<id>] field=value... (priority, title)"
   # validate everything before writing anything
   i=0
@@ -913,7 +1023,7 @@ cmd_set() {
     i=$((i + 1))
   done
   for i in "${!keys[@]}"; do
-    fm_set "$(task_dir "$id")/TASK.md" "${keys[$i]}" "${vals[$i]}"
+    fm_set "$TASKS_DIR/$id/TASK.md" "${keys[$i]}" "${vals[$i]}"
     log_event "$id" field_set "${keys[$i]}=${vals[$i]}"
   done
 }
@@ -934,23 +1044,19 @@ dash_rows() {
 # dash_rows for fzf: the id, then the row shown with a status glyph (red ●
 # needs you, yellow ◐ working, dim ○ none) and a colored badge per live agent.
 cmd__rows() {
-  local row
-  dash_rows | while IFS= read -r row; do
-    printf '%s\t%s\n' "$(task_runs "${row%%"$TAB"*}" |
-      awk -F'\t' '$3 != "exited" && $3 != "unknown" && !s[$2]++ { printf "%s ", $2 }')" "$row"
-  done | awk -F'\t' '
+  LS_AGENTS=1 dash_rows | awk -F'\t' '
     BEGIN {
       c["claude"] = "38;5;208"; c["codex"] = "32"; c["gemini"] = "34"; c["omp"] = "35"; c["aider"] = "36"
       e = "\033["
     }
     {
       g = e "2m○"
-      if ($6 == "waiting" || $6 == "idle") g = e "31m●"
-      else if ($6 == "working") g = e "33m◐"
-      n = split($1, a, " "); b = ""
+      if ($5 == "waiting" || $5 == "idle") g = e "31m●"
+      else if ($5 == "working") g = e "33m◐"
+      n = split($7, a, " "); b = ""
       for (i = 1; i <= n; i++) b = b (i > 1 ? " " : "") e "1;" (a[i] in c ? c[a[i]] : "37") "m" a[i] e "0m"
       if (b == "") b = e "2m-" e "0m"
-      print $2 "\t" g e "0m " $2 "\t" $3 "\t" $4 "\t" b "\t" $7
+      print $1 "\t" g e "0m " $1 "\t" $2 "\t" $3 "\t" b "\t" $6
     }'
 }
 
@@ -1060,8 +1166,8 @@ cmd__actions() { # id key
     xv) a="$self review '$id' | less -R" ;;
     xt)
       # a shell in the task's first worktree; its exit status is not a failure
-      a=$(awk -F'\t' 'NR == 1 { print $4 }' "$(task_dir "$id")/repos.tsv" 2>/dev/null)
-      [ -d "$a" ] || a=$(task_dir "$id")
+      a=$(awk -F'\t' 'NR == 1 { print $4 }' "$TASKS_DIR/$id/repos.tsv" 2>/dev/null)
+      [ -d "$a" ] || a="$TASKS_DIR/$id"
       (cd "$a" && "${SHELL:-sh}") || true
       return 0
       ;;
@@ -1084,7 +1190,7 @@ cmd__menu() { # session [client]
     lazygit g "$popup -d '#{pane_current_path}' '$C _popup lazygit'"
     terminal t "$popup -d '#{pane_current_path}'"
     "new task" c "display-popup -EE -w 70 -h 15 -d '#{pane_current_path}' '$C new'")
-  if valid_id "$T" && [ -f "$(task_dir "$T")/TASK.md" ]; then
+  if valid_id "$T" && [ -f "$TASKS_DIR/$T/TASK.md" ]; then
     items+=(review v "$popup '$C _popup \"$C review $T | less -R\"'"
       ""
       "run agent" r "run-shell '$C run $T'"
@@ -1132,13 +1238,22 @@ cmd__popup() {
 }
 
 # Window of the task's most urgent run, or "-".
-cmd__target() { task_top "$(task_id "${1:-}")" | cut -f2; }
+cmd__target() {
+  local id
+  task_id "${1:-}"
+  task_top "$id" | cut -f2
+}
 
 cmd__preview() {
-  local id d name c b p base
-  id=$(task_id "${1:-}")
-  d=$(task_dir "$id")
-  printf '%s  [%s %s]\n' "$(fm_get "$d/TASK.md" title)" "$(task_status "$id" "$(task_top "$id" | cut -f1)")" "$(fm_get "$d/TASK.md" priority)"
+  local id d name c b p base top title
+  task_id "${1:-}"
+  d="$TASKS_DIR/$id"
+  fm_get "$d/TASK.md" title
+  title=$FM
+  top=$(task_top "$id")
+  task_status "$id" "${top%%"$TAB"*}"
+  fm_get "$d/TASK.md" priority
+  printf '%s  [%s %s]\n' "$title" "$STATUS" "$FM"
   echo
   echo "runs:"
   task_runs "$id" | sed 's/^/  /'
@@ -1149,7 +1264,8 @@ cmd__preview() {
       printf '  %s  %s  (missing)\n' "$name" "$b"
       continue
     fi
-    base=$(default_base "$c")
+    default_base "$c"
+    base=$BASE
     printf '  %s  %s  %s ahead, %s dirty  %s\n' "$name" "$b" \
       "$(git --git-dir="$c" rev-list --count "$base..refs/heads/$b" 2>/dev/null || echo '?')" \
       "$(git -C "$p" status --porcelain | wc -l | tr -d ' ')" \
@@ -1163,7 +1279,7 @@ cmd_doctor() {
   doc_line ok "bash $BASH_VERSION"
   if v=$(git --version 2>/dev/null); then doc_line ok "$v"; else doc_line FAIL "git not found"; fail=1; fi
   if v=$(tmux -V 2>/dev/null); then
-    if printf '%s\n' "$v" | awk '{ split($2, n, /[^0-9]+/); exit !(n[1] > 3 || (n[1] == 3 && n[2] >= 2)) }'; then
+    if awk '{ split($2, n, /[^0-9]+/); exit !(n[1] > 3 || (n[1] == 3 && n[2] >= 2)) }' <<<"$v"; then
       doc_line ok "$v"
     else
       doc_line FAIL "$v (need 3.2+ for popups and new-session -e)"
@@ -1178,7 +1294,8 @@ cmd_doctor() {
 
   echo "agents:"
   for a in "$PLUGIN_DIR"/agents/*.sh; do
-    a=$(basename "$a" .sh)
+    a=${a##*/}
+    a=${a%.sh}
     if command -v "$a" >/dev/null; then
       doc_line ok "$a $("$a" --version 2>/dev/null | head -n 1)"
       [ "$a" != codex ] || doc_line note "codex: trust collie's hooks once via /hooks"
@@ -1193,8 +1310,9 @@ cmd_doctor() {
   echo "tasks:"
   for d in "$TASKS_DIR"/*; do
     [ -f "$d/TASK.md" ] || continue
-    case $(fm_get "$d/TASK.md" status) in done | archived) continue ;; esac
-    id=$(basename "$d")
+    fm_get "$d/TASK.md" status
+    case $FM in done | archived) continue ;; esac
+    id=${d##*/}
     while IFS=$TAB read -r name c b p; do
       if [ ! -d "$p" ]; then
         doc_line FAIL "$id: $name worktree missing: $p"
@@ -1223,10 +1341,11 @@ cmd_review() {
     esac
     shift
   done
-  id=$(task_id "$id")
-  d=$(task_dir "$id")
+  task_id "$id"
+  d="$TASKS_DIR/$id"
   while IFS=$TAB read -r name c b p; do
-    base=$(default_base "$c")
+    default_base "$c"
+    base=$BASE
     printf '== %s  %s  %s ahead of %s\n' "$name" "$b" \
       "$(git --git-dir="$c" rev-list --count "$base..refs/heads/$b")" "${base#refs/heads/}"
     git --git-dir="$c" log --oneline "$base..refs/heads/$b"
@@ -1266,7 +1385,7 @@ cmd_spike() {
   fi
   owner=$(task_owning "$src")
   cmd_new "$id" -t exp -r "$src" --from "$head" ${args[@]+"${args[@]}"}
-  path=$(printf '%s\n' "$NEW_PATHS" | head -n 1)
+  path=${NEW_PATHS%%$'\n'*}
   if [ -n "$stash" ]; then
     git -C "$path" stash apply -q --index "$stash" || warn "could not apply changes in $path (stash $stash)"
   fi
@@ -1280,8 +1399,9 @@ cmd_gc() {
   [ "${1:-}" != -n ] || dry=1
   for d in "$TASKS_DIR"/*; do
     [ -f "$d/TASK.md" ] || continue
-    case $(fm_get "$d/TASK.md" status) in done | archived) continue ;; esac
-    id=$(basename "$d")
+    fm_get "$d/TASK.md" status
+    case $FM in done | archived) continue ;; esac
+    id=${d##*/}
     merged=1
     while IFS=$TAB read -r name c b p; do
       start=$(awk -F'\t' -v n="repo=$name " '
@@ -1290,11 +1410,14 @@ cmd_gc() {
         }
         END { print s }' "$d/events.log")
       tip=$(git --git-dir="$c" rev-parse -q --verify "refs/heads/$b") || { merged=0; break; }
-      if ! printf '%s\n' "$fetched" | grep -qxF "$c"; then
-        fetch_origin "$c" "$name" || true
-        fetched="$fetched$c"$'\n'
-      fi
-      if [ -z "$start" ] || [ "$tip" = "$start" ] || ! merged_into "$c" "$b" "$(default_base "$c")"; then
+      case $'\n'$fetched in
+        *$'\n'"$c"$'\n'*) ;;
+        *)
+          fetch_origin "$c" "$name" || true
+          fetched="$fetched$c"$'\n'
+          ;;
+      esac
+      if [ -z "$start" ] || [ "$tip" = "$start" ] || ! { default_base "$c" || true; merged_into "$c" "$b" "$BASE"; }; then
         merged=0
         break
       fi
@@ -1310,7 +1433,10 @@ cmd_gc() {
   done
 }
 
-cmd_repos() { discover; }
+cmd_repos() {
+  discover
+  printf '%s' "$REPOS"
+}
 
 cmd_workspaces() {
   local file="$CONFIG_DIR/workspaces"
