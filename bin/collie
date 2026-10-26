@@ -145,19 +145,20 @@ workspace_repos() {
   printf '%s\n' "$hit"
 }
 
-# origin/HEAD, else origin's copy of the HEAD branch (git < 2.48 fetch does not
-# create origin/HEAD), else the HEAD branch.
+# Sets BASE: origin/HEAD, else origin's copy of the HEAD branch (git < 2.48
+# fetch does not create origin/HEAD), else the HEAD branch.
 default_base() {
   local head
+  BASE=""
   if git --git-dir="$1" rev-parse -q --verify refs/remotes/origin/HEAD >/dev/null; then
-    echo origin/HEAD
+    BASE=origin/HEAD
     return
   fi
   head=$(git --git-dir="$1" symbolic-ref -q HEAD) || return 1
   if git --git-dir="$1" rev-parse -q --verify "refs/remotes/origin/${head#refs/heads/}" >/dev/null; then
-    echo "origin/${head#refs/heads/}"
+    BASE="origin/${head#refs/heads/}"
   else
-    echo "$head"
+    BASE=$head
   fi
 }
 
@@ -180,7 +181,8 @@ fetch_origin() { # common name
     warn "$2: git fetch origin failed (${out%%$'\n'*}); checking against local refs"
     return 1
   fi
-  base=$(default_base "$1") || base=HEAD
+  default_base "$1" || BASE=HEAD
+  base=$BASE
   warn "$2: fetched (base ${base#refs/heads/} @ $(git --git-dir="$1" rev-parse --short "$base" 2>/dev/null))"
 }
 
@@ -289,7 +291,14 @@ add_worktree() { # common path branch from
     git --git-dir="$c" worktree add -q --track -b "$b" "$p" "origin/$b" </dev/null || return 1
     CREATED_BRANCH=1
   else
-    base=${from:-$(default_base "$c")} || { warn "cannot determine default branch; use --from"; return 1; }
+    if [ -n "$from" ]; then
+      base=$from
+    elif default_base "$c"; then
+      base=$BASE
+    else
+      warn "cannot determine default branch; use --from"
+      return 1
+    fi
     git --git-dir="$c" worktree add -q --no-track -b "$b" "$p" "$base" </dev/null || return 1
     CREATED_BRANCH=1
   fi
@@ -616,7 +625,10 @@ cmd_new() {
     else
       repo_at . || die "not inside a git repository (use -r or -w)"
       where="$R_NAME (current pane)"
-      [ -n "$base" ] || base=$(git --git-dir="$R_COMMON" rev-parse --abbrev-ref "$(default_base "$R_COMMON")" 2>/dev/null) || true
+      if [ -z "$base" ]; then
+        default_base "$R_COMMON" || true
+        base=$(git --git-dir="$R_COMMON" rev-parse --abbrev-ref "$BASE" 2>/dev/null) || true
+      fi
     fi
     printf 'new task in %s\n' "$where"
     printf '  %-10s %-12s %s\n' branch '<type>/<id>' "from ${base:-the default branch}" \
@@ -777,7 +789,8 @@ finish_task() { # final_status args...
     fi
     [ -z "$(git -C "$p" status --porcelain)" ] || problems="$problems  dirty: $name ($p)"$'\n'
     fetch_origin "$c" "$name" || true
-    base=$(default_base "$c")
+    default_base "$c"
+    base=$BASE
     if git --git-dir="$c" show-ref -q --verify "refs/heads/$b" && ! merged_into "$c" "$b" "$base"; then
       n=$(git --git-dir="$c" rev-list --count "$base..refs/heads/$b")
       problems="$problems  unmerged: $name has $n commit(s) on $b not in ${base#refs/heads/}"$'\n'
@@ -1247,7 +1260,8 @@ cmd__preview() {
       printf '  %s  %s  (missing)\n' "$name" "$b"
       continue
     fi
-    base=$(default_base "$c")
+    default_base "$c"
+    base=$BASE
     printf '  %s  %s  %s ahead, %s dirty  %s\n' "$name" "$b" \
       "$(git --git-dir="$c" rev-list --count "$base..refs/heads/$b" 2>/dev/null || echo '?')" \
       "$(git -C "$p" status --porcelain | wc -l | tr -d ' ')" \
@@ -1326,7 +1340,8 @@ cmd_review() {
   task_id "$id"
   d="$TASKS_DIR/$id"
   while IFS=$TAB read -r name c b p; do
-    base=$(default_base "$c")
+    default_base "$c"
+    base=$BASE
     printf '== %s  %s  %s ahead of %s\n' "$name" "$b" \
       "$(git --git-dir="$c" rev-list --count "$base..refs/heads/$b")" "${base#refs/heads/}"
     git --git-dir="$c" log --oneline "$base..refs/heads/$b"
@@ -1395,7 +1410,7 @@ cmd_gc() {
         fetch_origin "$c" "$name" || true
         fetched="$fetched$c"$'\n'
       fi
-      if [ -z "$start" ] || [ "$tip" = "$start" ] || ! merged_into "$c" "$b" "$(default_base "$c")"; then
+      if [ -z "$start" ] || [ "$tip" = "$start" ] || ! { default_base "$c" || true; merged_into "$c" "$b" "$BASE"; }; then
         merged=0
         break
       fi
