@@ -247,6 +247,16 @@ past_run() {
   [[ "$output" == *"Hello"* && "$output" == *"feat/x"* && "$output" == *task_created* ]]
 }
 
+@test "show: prints the TASK.md body after the fields" {
+  make_bare_repo A
+  cd "$REPO/main"
+  collie new x -m "Add OAuth login" --no-window
+  run collie show x
+  [ "$status" -eq 0 ]
+  [[ "$output" == *$'status: todo\n\n## Objective\nAdd OAuth login\n'*"## Verify"*"repos:"* ]]
+  [[ "$output" != *$'---\n'* ]]
+}
+
 @test "repos and workspaces list what collie can see" {
   two_repos
   mkdir -p "$XDG_CONFIG_HOME/collie"

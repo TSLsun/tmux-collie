@@ -43,6 +43,11 @@ delete an item only when it is covered by a test.
       opening in the pane's directory. Tests only check the binding text and
       `run-shell collie done`.
 - [ ] Menu actions on a session that is not a task (should show collie's error).
+- [x] `edit task` popups (menu `prefix h e`, dash `?` `e`) open `$EDITOR`, close on
+      save, and the dash preview shows the change. Checked 2026-10-26 with vi on
+      `tmux -L collie-test` (tmux 3.8), driving a real client from an outer tmux.
+- [ ] `$EDITOR` inside the menu popup comes from the tmux server environment;
+      an `EDITOR` exported only in a later shell does not reach it (falls back to vi).
 - [ ] zsh completion in an interactive shell (only `zsh -n` is checked).
 - [ ] Alacritty `chars = "\u0002hh"` example in README.
 

@@ -82,8 +82,9 @@ teardown() { teardown_env; }
   collie new x --no-window
   collie run x -- 300
   pid=$(tmux display -p -t "$(run_pane x)" '#{pane_pid}')
-  wait_for 'pgrep -P "$pid" -f "sleep 300" >/dev/null'
-  pkill -P "$pid" -f "sleep 300"
+  # anchored: _exec's own subshells carry "... _exec x 1 sleep 300" as argv
+  wait_for 'pgrep -P "$pid" -f "^sleep 300$" >/dev/null'
+  pkill -P "$pid" -f "^sleep 300$"
   wait_for '[ "$(agent_of x)" = exited ]'
   grep -q "run_exited	run=1" "$(task_dir x)/events.log"
   [ -n "$(run_pane x)" ]

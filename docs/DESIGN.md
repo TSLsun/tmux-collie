@@ -144,7 +144,9 @@ created: 2026-01-01
 - The repo list lives in `repos.tsv`, not frontmatter: humans edit `TASK.md`,
   the tool reads `repos.tsv`, and neither can break the other.
 - **Lightweight by default:** only frontmatter is required. `collie new` doesn't
-  open an editor and fills `title` with the id; `--edit` opens the full contract.
+  open an editor and fills `title` with the id; `--edit` opens the full contract,
+  and `collie edit` reopens it later (`show` and the dash preview print it).
+  A hand-edited `status:` line is ignored unless it is `done`/`archived`.
   An agent that finds an empty Objective should ask before starting.
 
 ---
@@ -162,6 +164,7 @@ created: 2026-01-01
 | `collie run [<id>] [--agent X] [-r repo] [-p prompt] [-- args]` | Launch an agent in a new task window; records a run |
 | `collie dash [-n]` | fzf dashboard, most urgent first; enter jumps to the most urgent agent window |
 | `collie set [<id>] priority=P1 title="..."` | Update priority or title; a bare field reads stdin |
+| `collie edit [<id>]` | Open TASK.md in `$EDITOR` (also `new --edit`, dash `e`, menu `e`) |
 | `collie review [<id>] [-p]` | Per-repo commits, diff stat (`-p` patch), dirty files, then REPORT.md |
 | `collie spike <id>` | New `exp/<id>` task from the current worktree, carrying its uncommitted tracked changes (`git stash create`); source untouched |
 | `collie done [<id>] [--force]` | Accept: safety checks, then remove worktrees and session |
@@ -172,7 +175,7 @@ created: 2026-01-01
 
 | Command | Purpose |
 |---|---|
-| `collie show [<id>]` | Full task info + recent events |
+| `collie show [<id>]` | Full task info, the TASK.md body, runs + recent events |
 | `collie state <working\|waiting\|idle\|exited>` | Endpoint called by agent hooks; no-op outside a collie window |
 | `collie status` | Agent counts for the status bar (`#{collie_status}`) |
 | `collie doctor` | Dependencies, installed agents, task/git/tmux reconciliation; exits 1 on failures |
@@ -192,6 +195,7 @@ prefix h →  ┌ collie ─────────────┐
             │ g  lazygit          │
             │ t  terminal         │
             │ c  new task         │
+            │ e  edit task        │
             │ v  review           │
             │ r  run agent        │
             │ d  done             │
