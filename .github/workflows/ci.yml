@@ -29,4 +29,17 @@ jobs:
           HOMEBREW_NO_INSTALL_CLEANUP: 1
           HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: 1
         run: brew install bats-core parallel tmux
-      - run: make ${{ runner.os == 'Linux' && 'check' || 'test' }}
+      - name: env probe
+        run: |
+          command -v bash; bash --version | head -1; /bin/bash --version | head -1
+          head -1 "$(command -v bats)"; readlink -f "$(command -v bats)" || true
+          nproc 2>/dev/null || sysctl -n hw.ncpu
+          time (for i in $(seq 200); do /usr/bin/true; done)
+          time (for i in $(seq 50); do git --version >/dev/null; done)
+          time (for i in $(seq 20); do tmux -L probe new -d -s x && tmux -L probe kill-server; done)
+      - name: timing serial
+        run: bats -T test/ | tee serial.tap
+      - name: slowest serial
+        run: sed -nE 's/^ok ([0-9]+) (.*) in ([0-9]+)ms$/\3\t\2/p' serial.tap | sort -rn | head -15; awk '/ in [0-9]+ms$/{gsub(/ms/,"",$NF); t+=$NF} END{print "sum ms", t}' serial.tap
+      - name: timing jobs 8
+        run: time bats -T --jobs 8 test/ >/dev/null
