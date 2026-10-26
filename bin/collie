@@ -198,11 +198,23 @@ task_id() {
   [ -f "$TASKS_DIR/$id/TASK.md" ] || die "no task '$id'"
 }
 
-fm_get() {
-  awk -v k="$2" '
-    NR == 1 && $0 == "---" { f = 1; next }
-    f && $0 == "---" { exit }
-    f && index($0, k ":") == 1 { v = substr($0, length(k) + 2); sub(/^ /, "", v); print v; exit }' "$1"
+# Frontmatter value of a key (read loop: an awk per field was a fork each).
+fm_get() { # file key
+  local l n=0
+  while IFS= read -r l || [ -n "$l" ]; do
+    n=$((n + 1))
+    if [ "$n" -eq 1 ]; then
+      [ "$l" = --- ] || return 0
+      continue
+    fi
+    [ "$l" != --- ] || return 0
+    case $l in "$2:"*)
+      l=${l#"$2:"}
+      printf '%s\n' "${l# }"
+      return 0
+      ;;
+    esac
+  done <"$1"
 }
 
 fm_set() {
