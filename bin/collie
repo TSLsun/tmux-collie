@@ -347,6 +347,7 @@ create_repos() { # id default_branch from specs
   local name c b p created=""
   while IFS=$TAB read -r name c b p; do
     [ -n "$name" ] || continue
+    fetch_origin "$c" "$name" || true
     if ! add_worktree "$c" "$p" "$b" "$from"; then
       rollback "$created"
       return 1

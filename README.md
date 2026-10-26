@@ -192,7 +192,9 @@ edit (`collie edit`) them before `collie run`; replace them for all tasks with
 Windows are tagged with `@collie_path` / `@collie_task`; sessions export
 `COLLIE_TASK` and `COLLIE_TASK_DIR`.
 
-`collie new` does not fetch; run `git fetch` first if you want a fresh base.
+`collie new` and `collie add` fetch `origin` before creating worktrees, so a
+new branch starts from origin's latest default branch. Offline, they warn and
+start from local refs.
 
 ## Development
 
