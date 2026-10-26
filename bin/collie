@@ -914,7 +914,7 @@ cmd_adopt() {
     [ "$a" = y ] || exit 1
   fi
   kill -TERM "$pid" 2>/dev/null || die "adopt: cannot stop $agent (pid $pid)"
-  for i in $(seq 1 100); do
+  for ((i = 1; i <= 100; i++)); do
     kill -0 "$pid" 2>/dev/null || break
     sleep 0.1
   done
@@ -928,7 +928,7 @@ cmd__exec() { # id run argv...
   local id=$1 run=$2 code=0 i
   shift 2
   # wait until `collie run` has tagged the window, so early hooks land
-  for i in $(seq 1 40); do
+  for ((i = 1; i <= 40; i++)); do
     [ -z "$(tmux display-message -p -t "${TMUX_PANE:-}" '#{@collie_run}' 2>/dev/null)" ] || break
     sleep 0.05
   done
