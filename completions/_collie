@@ -29,13 +29,11 @@ _collie() {
     'show:show a task'
     'go:switch to a task session'
     'dash:dashboard'
-    'set:set status, priority, next or title'
-    'notes:edit NOTES.md'
+    'set:set priority or title'
     'run:start an agent'
     'adopt:restart an agent started by hand under collie run'
     'review:per-repo commits and diffs'
     'spike:branch the current worktree into an exp/ task'
-    'park:record the next action'
     'gc:finish merged tasks'
     'doctor:check dependencies and tasks'
     'done:accept and clean up a task'
@@ -58,11 +56,11 @@ _collie() {
   esac
   case ${words[2]} in
     state) compadd working waiting idle exited ;;
-    set) compadd -S '=' status priority next title; _collie_tasks ;;
+    set) compadd -S '=' priority title; _collie_tasks ;;
     ls) compadd -- -a ;;
-    new) compadd -- -r -w -t -m --title --from --todo --edit --no-window --ship --no-ship ;;
+    new) compadd -- -r -w -t -m --title --from --edit --no-window --ship --no-ship ;;
     gc) compadd -- -n ;;
-    add | show | go | notes | run | adopt | review | park | done | archive) _collie_tasks ;;
+    add | show | go | run | adopt | review | done | archive) _collie_tasks ;;
   esac
 }
 

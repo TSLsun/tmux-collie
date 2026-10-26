@@ -89,19 +89,6 @@ squash_upstream() {
   [ -z "$(git -C "$TMP/repos/A/exp-try-y" status --porcelain)" ]
 }
 
-# --- park -------------------------------------------------------------------
-
-@test "park: sets next and appends it to NOTES.md (-m or stdin)" {
-  collie new x --no-window
-  collie park x -m "rerun the flaky test"
-  [ "$(fm x next)" = "rerun the flaky test" ]
-  grep -q "^- parked: rerun the flaky test$" "$(task_dir x)/NOTES.md"
-  echo "ask about schema" | COLLIE_TASK=x collie park
-  [ "$(fm x next)" = "ask about schema" ]
-  [ "$(grep -c '^- parked:' "$(task_dir x)/NOTES.md")" -eq 2 ]
-  grep -q "task_parked" "$(task_dir x)/events.log"
-}
-
 # --- gc ---------------------------------------------------------------------
 
 @test "gc: finishes tasks whose branches were merged; leaves new and unmerged ones" {
@@ -112,13 +99,13 @@ squash_upstream() {
   run --separate-stderr collie gc -n
   [ "$status" -eq 0 ]
   [ "$output" = m ]
-  [ "$(fm m status)" = active ]
+  [ -z "$(fm m status)" ]
   run collie gc
   [ "$status" -eq 0 ]
   [ "$(fm m status)" = done ]
   [ ! -d "$TMP/repos/A/feat-m" ]
-  [ "$(fm u status)" = active ]
-  [ "$(fm n status)" = active ]
+  [ -z "$(fm u status)" ]
+  [ -z "$(fm n status)" ]
 }
 
 @test "gc: skips a merged task with uncommitted changes" {
@@ -128,7 +115,7 @@ squash_upstream() {
   echo dirty >"$TMP/repos/A/feat-m/d"
   run collie gc
   [[ "$output" == *"skipped m"* ]]
-  [ "$(fm m status)" = active ]
+  [ -z "$(fm m status)" ]
 }
 
 @test "gc: finishes squash-merged tasks" {
@@ -242,7 +229,7 @@ client_session() { tmux list-clients -F '#{client_session}'; }
   [[ "$output" == *".collie"* ]]
   [ -f "$p/.collie/f" ]
   [ -L "$(task_dir m)/repos/A" ]
-  [ "$(fm m status)" = active ]
+  [ -z "$(fm m status)" ]
 }
 
 # --- pre-push ---------------------------------------------------------------

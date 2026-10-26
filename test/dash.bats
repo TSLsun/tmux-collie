@@ -12,47 +12,43 @@ teardown() { teardown_env; }
 
 # --- set --------------------------------------------------------------------
 
-@test "set: updates status, priority, next and title; logs each change" {
+@test "set: updates priority and title; logs each change" {
   collie new x --no-window
-  run collie set x status=review priority=P1 "next=ask about retries" "title=Retry: v2"
+  run collie set x priority=P1 "title=Retry: v2"
   [ "$status" -eq 0 ]
-  [ "$(fm x status)" = review ]
   [ "$(fm x priority)" = P1 ]
-  [ "$(fm x next)" = "ask about retries" ]
   [ "$(fm x title)" = "Retry: v2" ]
-  grep -q "field_set	next=ask about retries" "$(task_dir x)/events.log"
+  grep -q "field_set	title=Retry: v2" "$(task_dir x)/events.log"
 }
 
 @test "set: rejects bad fields and values without writing anything" {
   collie new x --no-window
-  for bad in status=done status=bogus priority=P9 colour=red; do
-    run collie set x next=keep "$bad"
+  for bad in status=review next=later priority=P9 colour=red; do
+    run collie set x title=keep "$bad"
     [ "$status" -ne 0 ]
   done
-  [ -z "$(fm x next)" ]
+  [ "$(fm x title)" = x ]
   run collie set x
   [ "$status" -ne 0 ]
 }
 
 @test "set: a field without a value is read from stdin; COLLIE_TASK is the default" {
   collie new x --no-window
-  echo "write the migration" | COLLIE_TASK=x collie set next
-  [ "$(fm x next)" = "write the migration" ]
+  echo "Write the migration" | COLLIE_TASK=x collie set title
+  [ "$(fm x title)" = "Write the migration" ]
 }
 
-# --- notes ------------------------------------------------------------------
-
-@test "notes: creates NOTES.md and opens it in \$EDITOR" {
+@test "notes, park: removed" {
   collie new x --no-window
-  printf '#!/bin/sh\necho edited >>"$1"\n' >"$TMP/ed"
-  chmod +x "$TMP/ed"
-  EDITOR="$TMP/ed" collie notes x
-  [ "$(cat "$(task_dir x)/NOTES.md")" = "$(printf '# x\n\nedited')" ]
+  run collie notes x
+  [ "$status" -ne 0 ]
+  run collie park x -m later
+  [ "$status" -ne 0 ]
 }
 
 # --- dashboard --------------------------------------------------------------
 
-@test "dash -n: waiting > idle > review > blocked > working > rest (by priority, id)" {
+@test "dash -n: waiting > idle > review > working > rest (by priority, id)" {
   for t in a b c d e f g; do collie new "$t" --no-window; done
   collie new z --no-window
   collie archive z
@@ -61,12 +57,31 @@ teardown() { teardown_env; }
   collie run c -- 300
   hook b waiting
   hook c idle
-  collie set d status=review
-  collie set e status=blocked
+  # d: a past run (no session) that wrote its report
+  printf '2020-01-01T00:00:00Z\trun_started\trun=1 agent=sleep repo=A\n' >>"$(task_dir d)/events.log"
+  echo done >"$(task_dir d)/REPORT.md"
   collie set g priority=P0
   run collie dash -n
   [ "$status" -eq 0 ]
-  [ "$(printf '%s\n' "$output" | cut -f1 | paste -s -d' ' -)" = "b c d e a g f" ]
+  [ "$(printf '%s\n' "$output" | cut -f1 | paste -s -d' ' -)" = "b c d a g e f" ]
+}
+
+@test "status: review once the agent is idle and REPORT.md is fresh; working stays active" {
+  collie new x --no-window
+  collie run x -- 300
+  echo "All green." >"$(task_dir x)/REPORT.md"
+  [ "$(collie ls | cut -f2)" = active ]
+  hook x idle
+  [ "$(collie ls | cut -f2)" = review ]
+  hook x working
+  [ "$(collie ls | cut -f2)" = active ]
+}
+
+@test "dash actions: no next/notes keys" {
+  run collie _actions x N
+  [ -z "$output" ]
+  [ "$(FZF_PROMPT='collie> ' collie _key x N)" = "put(N)" ]
+  [[ "$(collie _pick x 2>/dev/null)" != *notes* ]]
 }
 
 @test "_rows: id first, then status glyph and live agent badge; attention first" {
@@ -78,9 +93,9 @@ teardown() { teardown_env; }
   [ "$status" -eq 0 ]
   [ "$(printf '%s\n' "$output" | cut -f1 | paste -s -d' ' -)" = "b a c" ]
   plain=$(printf '%s\n' "$output" | sed $'s/\033\\[[0-9;]*m//g')
-  [[ "$(printf '%s\n' "$plain" | sed -n 1p)" == "b	● b	active	P2	sleep	A	"* ]]
-  [[ "$(printf '%s\n' "$plain" | sed -n 2p)" == "a	◐ a	active	P2	sleep	A	"* ]]
-  [[ "$(printf '%s\n' "$plain" | sed -n 3p)" == "c	○ c	active	P2	-	A	"* ]]
+  [[ "$(printf '%s\n' "$plain" | sed -n 1p)" == "b	● b	active	P2	sleep	A" ]]
+  [[ "$(printf '%s\n' "$plain" | sed -n 2p)" == "a	◐ a	active	P2	sleep	A" ]]
+  [[ "$(printf '%s\n' "$plain" | sed -n 3p)" == "c	○ c	todo	P2	-	A" ]]
   [[ "$output" == *$'\033[31m●'* && "$output" == *$'\033[33m◐'* ]]
 }
 
@@ -137,7 +152,7 @@ teardown() { teardown_env; }
   collie _actions x r
   [ -n "$(run_pane x)" ]
   echo n | collie _actions x d
-  [ "$(fm x status)" = active ]
+  [ -z "$(fm x status)" ]
   collie _actions x q
   printf '#!/bin/sh\npwd >"%s/pwd"\nexit 3\n' "$TMP" >"$TMP/sh"
   chmod +x "$TMP/sh"
@@ -159,21 +174,18 @@ teardown() { teardown_env; }
   [ "$(tmux show-options -gqv @collie-last-pane)" = "$(run_pane x)" ]
 }
 
-@test "_preview: title, next, runs, per-repo ahead/dirty and notes tail" {
+@test "_preview: title, derived status, runs, per-repo ahead/dirty" {
   collie new x --no-window --title "Ship it"
-  collie set x "next=open the PR"
   wt="$TMP/repos/A/feat-x"
   echo hi >"$wt/f"
   git -C "$wt" add f
   git -C "$wt" commit -q -m f
   echo dirty >"$wt/g"
-  printf '# x\n\nlast note\n' >"$(task_dir x)/NOTES.md"
   run collie _preview x
   [ "$status" -eq 0 ]
   [[ "$output" == *"Ship it"* ]]
-  [[ "$output" == *"next: open the PR"* ]]
+  [[ "$output" == *"Ship it  [todo P2]"* ]]
   [[ "$output" == *"A  feat/x  1 ahead, 1 dirty"* ]]
-  [[ "$output" == *"last note"* ]]
 }
 
 @test "_target: window of the most urgent run (where dash jumps to)" {

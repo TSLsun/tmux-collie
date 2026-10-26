@@ -15,14 +15,15 @@ teardown() { teardown_env; }
 # --- run --------------------------------------------------------------------
 
 @test "run: launches the agent in a task window and records the run" {
-  collie new x --todo --no-window
+  collie new x --no-window
+  [ "$(collie ls | cut -f2)" = todo ]
   run collie run x -- 300
   [ "$status" -eq 0 ]
   p=$(run_pane x)
   [ "$(tmux display -p -t "$p" '#{@collie_task} #{@collie_agent} #{@collie_state}')" = "x sleep working" ]
   [ "$(tmux display -p -t "$p" '#{pane_current_path}')" = "$TMP/repos/A/feat-x" ]
   grep -q "run_started	run=1 agent=sleep repo=A" "$(task_dir x)/events.log"
-  [ "$(fm x status)" = active ]
+  [ "$(collie ls | cut -f2)" = active ]
   [ "$(agent_of x)" = working ]
 }
 

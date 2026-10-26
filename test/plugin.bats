@@ -51,9 +51,9 @@ stub_tmux() {
   stub_tmux
   PATH="$TMP/stub:$PATH" run collie _menu x cl
   [ "$status" -eq 0 ]
-  [[ "$output" == *"display-menu"* && "$output" == *"collie dash"* && "$output" == *"status=review"* && "$output" == *"_popup "*"done x"* ]]
+  [[ "$output" == *"display-menu"* && "$output" == *"collie dash"* && "$output" == *"review x"* && "$output" == *"_popup "*"done x"* ]]
   [[ "$output" == *"jump to alert"*"_jump - cl"* ]]
-  [[ "$output" != *"not a collie task"* ]]
+  [[ "$output" != *"not a collie task"* && "$output" != *notes* && "$output" != *"next action"* && "$output" != *"status="* ]]
 }
 
 @test "_menu: non-task session gets a hint instead of task actions" {
