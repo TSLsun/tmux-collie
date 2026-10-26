@@ -116,14 +116,16 @@ zsh completion: `fpath+=(~/.tmux/plugins/tmux-collie/completions)` before
 `collie run` points the agent at `.collie/TASK.md` (`-p ''` for no prompt).
 Claude Code, Codex and Gemini CLI report their state through hooks that
 collie passes per run (`--settings`, `-c hooks...`, a generated system
-settings file); nothing to install. Codex asks you to trust the hooks once
-in `/hooks`. Other agents count as idle after 30s without output
-(`@collie-silence`).
+settings file); omp through an extension loaded with `-e agents/omp.ts`
+(tool approvals and the `ask` tool count as waiting); nothing to install.
+Codex asks you to trust the hooks once in `/hooks`. Other agents count as
+idle after 30s without output (`@collie-silence`).
 Agents you start by hand in a task's session (`claude`, `codex`, `gemini`,
 `omp`, `aider`) are found by process and show up the same way, but without
 hooks they are only working or idle (by output silence) and do not notify.
-`collie adopt` (dashboard `?` → `a`) stops such a Claude and restarts it with
-`collie run … -- --continue`: same conversation, now with hooks.
+`collie adopt` (dashboard `?` → `a`) stops such a Claude or omp and restarts
+it with `collie run … -- --continue` (omp: `-c`): same conversation, now with
+hooks.
 
 ```tmux
 set -g status-right '#{collie_status} %H:%M'   # ●waiting ●idle ●working counts
