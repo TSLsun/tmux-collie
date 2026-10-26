@@ -84,13 +84,13 @@ EOF
 repo_at() {
   R_COMMON=$(git -C "$1" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 1
   if [ "$(git config --file "$R_COMMON/config" --bool core.bare 2>/dev/null)" = true ]; then
-    R_ROOT=$(dirname "$R_COMMON")
-    R_NAME=$(basename "$R_ROOT")
+    R_ROOT=${R_COMMON%/*}
+    R_NAME=${R_ROOT##*/}
   else
     local main
-    main=$(dirname "$R_COMMON")
-    R_NAME=$(basename "$main")
-    R_ROOT="$(dirname "$main")/$R_NAME.worktrees"
+    main=${R_COMMON%/*}
+    R_NAME=${main##*/}
+    R_ROOT="${main%/*}/$R_NAME.worktrees"
   fi
 }
 
@@ -104,13 +104,14 @@ repo_roots() {
 
 # Prints "name<TAB>dir" for every repo matching the root globs (':'-separated).
 discover() {
-  local IFS=: pat d roots
+  local IFS=: pat d n roots
   roots=$(repo_roots)
   for pat in $roots; do
     pat=${pat/#\~/$HOME}
     for d in $pat; do
       [ -d "$d/.bare" ] || [ -d "$d/.git" ] || continue
-      printf '%s\t%s\n' "$(basename "$d")" "$d"
+      n=${d%/}
+      printf '%s\t%s\n' "${n##*/}" "$d"
     done
   done
 }
@@ -237,7 +238,8 @@ task_owning() {
   for f in "$TASKS_DIR"/*/repos.tsv; do
     [ -f "$f" ] || continue
     if awk -F'\t' -v p="$1" '$4 == p { found = 1 } END { exit !found }' "$f"; then
-      basename "$(dirname "$f")"
+      f=${f%/*}
+      printf '%s\n' "${f##*/}"
       return
     fi
   done
@@ -249,7 +251,7 @@ task_owning() {
 add_worktree() { # common path branch from
   local c=$1 p=$2 b=$3 from=$4 base
   CREATED_BRANCH=0
-  mkdir -p "$(dirname "$p")" || return 1
+  mkdir -p "${p%/*}" || return 1
   if git --git-dir="$c" show-ref -q --verify "refs/heads/$b"; then
     [ -z "$from" ] || { warn "branch '$b' already exists; --from not applicable"; return 1; }
     git --git-dir="$c" worktree add -q "$p" "$b" </dev/null || return 1
@@ -319,7 +321,7 @@ rollback() {
     [ -n "$c" ] || continue
     git --git-dir="$c" worktree remove --force "$p" 2>/dev/null || true
     [ "$cb" != 1 ] || git --git-dir="$c" branch -q -D "$b" 2>/dev/null || true
-    rmdir "$(dirname "$p")" 2>/dev/null || true
+    rmdir "${p%/*}" 2>/dev/null || true
   done <<<"$1"
 }
 
@@ -615,7 +617,7 @@ cmd_ls() {
   [ "${1:-}" != -a ] || all=1
   for d in "$TASKS_DIR"/*; do
     [ -f "$d/TASK.md" ] || continue
-    id=$(basename "$d")
+    id=${d##*/}
     case $(fm_get "$d/TASK.md" status) in done | archived) [ "$all" -eq 1 ] || continue ;; esac
     mark=-
     if has_session "$id"; then mark='*'; fi
@@ -1186,7 +1188,8 @@ cmd_doctor() {
 
   echo "agents:"
   for a in "$PLUGIN_DIR"/agents/*.sh; do
-    a=$(basename "$a" .sh)
+    a=${a##*/}
+    a=${a%.sh}
     if command -v "$a" >/dev/null; then
       doc_line ok "$a $("$a" --version 2>/dev/null | head -n 1)"
       [ "$a" != codex ] || doc_line note "codex: trust collie's hooks once via /hooks"
@@ -1202,7 +1205,7 @@ cmd_doctor() {
   for d in "$TASKS_DIR"/*; do
     [ -f "$d/TASK.md" ] || continue
     case $(fm_get "$d/TASK.md" status) in done | archived) continue ;; esac
-    id=$(basename "$d")
+    id=${d##*/}
     while IFS=$TAB read -r name c b p; do
       if [ ! -d "$p" ]; then
         doc_line FAIL "$id: $name worktree missing: $p"
@@ -1289,7 +1292,7 @@ cmd_gc() {
   for d in "$TASKS_DIR"/*; do
     [ -f "$d/TASK.md" ] || continue
     case $(fm_get "$d/TASK.md" status) in done | archived) continue ;; esac
-    id=$(basename "$d")
+    id=${d##*/}
     merged=1
     while IFS=$TAB read -r name c b p; do
       start=$(awk -F'\t' -v n="repo=$name " '
