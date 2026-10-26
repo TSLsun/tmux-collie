@@ -47,6 +47,60 @@ teardown() { teardown_env; }
   [ -n "$(run_pane x)" ]
 }
 
+# --- new --run --------------------------------------------------------------
+
+@test "new --run: starts the agent in the new session; --agent, -p and -- pass through" {
+  collie new x --run -- 300
+  [ -n "$(run_pane x)" ]
+  [ "$(tmux display -p -t "$(run_pane x)" '#{pane_current_path}')" = "$TMP/repos/A/feat-x" ]
+  grep -q "run_started	run=1 agent=sleep repo=A" "$(task_dir x)/events.log"
+  # --agent implies --run; '' as prompt passes through to run
+  collie new y --agent sleep -p '' -- 300
+  [ "$(tmux display -p -t "$(run_pane y)" '#{@collie_agent}')" = sleep ]
+  # no --run: no agent
+  collie new z
+  [ -z "$(run_pane z)" ]
+}
+
+@test "new --run: rejects --no-window; a failed run keeps the task" {
+  run collie new x --run --no-window
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"--run needs a session"* ]]
+  [ ! -e "$(task_dir x)" ]
+  run collie new y --agent no-such-agent
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"not found"* ]]
+  [[ "$output" == *"collie run y"* ]]
+  [ -f "$(task_dir y)/TASK.md" ]
+}
+
+# drives `collie new` with no id on a tty (the new-task popup) in a tmux pane
+new_popup() { # keys...
+  tmux new-session -d -s pop -c "$REPO/main" \
+    "unset TMUX; ${COLLIE_BASH:-bash} '$COLLIE_ROOT/bin/collie' new; echo END=\$?; sleep 300"
+  wait_for 'tmux capture-pane -p -t =pop: | grep -q "task id:"'
+  local k
+  for k in "$@"; do tmux send-keys -t =pop: -l "$k"; tmux send-keys -t =pop: Enter; done
+  wait_for 'tmux capture-pane -p -t =pop: | grep -q "END="'
+}
+
+@test "new popup: with an objective, asks to start the agent (default yes)" {
+  new_popup x '' 'do it' '' ''
+  tmux capture-pane -p -t =pop: | grep -q 'start sleep now'
+  tmux capture-pane -p -t =pop: | grep -q 'END=0'
+  [ -n "$(run_pane x)" ]
+}
+
+@test "new popup: answering n, or giving no objective, starts no agent" {
+  new_popup x '' 'do it' '' n
+  [ -z "$(run_pane x)" ]
+  tmux kill-session -t =pop:
+  new_popup y '' '' ''
+  ! tmux capture-pane -p -t =pop: | grep -q 'start sleep now'
+  tmux capture-pane -p -t =pop: | grep -q 'END=0'
+  [ -z "$(run_pane y)" ]
+}
+
 # --- state ------------------------------------------------------------------
 
 @test "state: hooks drive three concurrent tasks; unchanged states are not logged" {
