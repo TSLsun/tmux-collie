@@ -4,6 +4,8 @@ Herd coding agents across git worktrees, from tmux.
 
 > **Status: 0.x, experimental.** Interfaces may change without notice.
 
+New here? [docs/USAGE.md](docs/USAGE.md) shows the task lifecycle, states and
+where each action lives in diagrams and tables.
 See [docs/DESIGN.md](docs/DESIGN.md) for goals, data model and roadmap, and
 [docs/UNVERIFIED.md](docs/UNVERIFIED.md) for what has not been checked yet.
 
