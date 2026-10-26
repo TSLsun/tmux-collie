@@ -312,7 +312,7 @@ add_worktree() { # common path branch from
 # Plans, preflights and creates worktrees for SPECS (newline-separated) into
 # task <id>; all-or-nothing. Appends to repos.tsv and links on success.
 create_repos() { # id default_branch from specs
-  local id=$1 default_branch=$2 from=$3 specs=$4 tdir plan="" spec branch path line dup n wt
+  local id=$1 default_branch=$2 from=$3 specs=$4 tdir plan="" spec branch path dup n
   tdir="$TASKS_DIR/$id"
 
   while IFS= read -r spec; do
@@ -326,20 +326,7 @@ create_repos() { # id default_branch from specs
       while IFS=$TAB read -r n _; do [ "$n" != "$R_NAME" ] || dup=1; done <"$tdir/repos.tsv"
     fi
     [ "$dup" -eq 0 ] || die "repo '$R_NAME' is already part of task '$id'"
-    # worktree path that has the branch checked out
-    line="" wt=""
-    while IFS= read -r n; do
-      case $n in
-        "worktree "*) wt=${n#worktree } ;;
-        "branch refs/heads/$branch") line=$wt; break ;;
-      esac
-    done <<<"$(git --git-dir="$R_COMMON" worktree list --porcelain)"
-    if [ -n "$line" ]; then
-      local owner
-      owner=$(task_owning "$line")
-      [ -z "$owner" ] || owner=" (task '$owner')"
-      die "branch '$branch' in $R_NAME is checked out at $line$owner"
-    fi
+    checked_out "$R_COMMON" "$R_NAME" "$branch"
     [ ! -e "$path" ] || die "$path already exists"
     plan="$plan$R_NAME$TAB$R_COMMON$TAB$branch$TAB$path"$'\n'
   done <<<"$specs"
@@ -360,12 +347,33 @@ create_repos() { # id default_branch from specs
     [ -n "$name" ] || continue
     NEW_PATHS="$NEW_PATHS${NEW_PATHS:+$'\n'}$p"
     printf '%s\t%s\t%s\t%s\n' "$name" "$c" "$b" "$p" >>"$tdir/repos.tsv"
-    ln -s "$p" "$tdir/repos/$name"
-    ln -s "$tdir" "$p/.collie"
-    [ -d "$c/info" ] || mkdir -p "$c/info"
-    excluded "$c/info/exclude" || echo '/.collie' >>"$c/info/exclude"
-    log_event "$id" worktree_created "repo=$name branch=$b path=$p start=$(git -C "$p" rev-parse HEAD)"
+    link_worktree "$id" "$name" "$c" "$b" "$p"
   done <<<"$plan"
+}
+
+# Dies if a branch is checked out in some worktree, naming the owning task.
+checked_out() { # common name branch
+  local n wt="" at=""
+  while IFS= read -r n; do
+    case $n in
+      "worktree "*) wt=${n#worktree } ;;
+      "branch refs/heads/$3") at=$wt; break ;;
+    esac
+  done <<<"$(git --git-dir="$1" worktree list --porcelain)"
+  [ -n "$at" ] || return 0
+  n=$(task_owning "$at")
+  [ -z "$n" ] || n=" (task '$n')"
+  die "branch '$3' in $2 is checked out at $at$n"
+}
+
+# Links a new worktree and the task dir both ways and logs where it started.
+link_worktree() { # id name common branch path
+  local tdir="$TASKS_DIR/$1"
+  ln -s "$5" "$tdir/repos/$2"
+  ln -s "$tdir" "$5/.collie"
+  [ -d "$3/info" ] || mkdir -p "$3/info"
+  excluded "$3/info/exclude" || echo '/.collie' >>"$3/info/exclude"
+  log_event "$1" worktree_created "repo=$2 branch=$4 path=$5 start=$(git -C "$5" rev-parse HEAD)"
 }
 
 # Whether an info/exclude file has the /.collie line.
