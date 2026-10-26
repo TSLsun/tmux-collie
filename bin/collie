@@ -352,8 +352,7 @@ open_window() { # id name path
     wid=$(tmux new-session -d -P -F '#{window_id}' -s "$1" -n "$2" -c "$3" \
       -e "COLLIE_TASK=$1" -e "COLLIE_TASK_DIR=$TASKS_DIR/$1" </dev/null)
   fi
-  tmux set-option -w -t "$wid" @collie_path "$3"
-  tmux set-option -w -t "$wid" @collie_task "$1"
+  tmux set-option -w -t "$wid" @collie_path "$3" \; set-option -w -t "$wid" @collie_task "$1"
 }
 
 ensure_session() {
@@ -798,17 +797,16 @@ cmd_run() {
   command -v "$agent" >/dev/null || die "agent command '$agent' not found"
 
   # an agent with hooks and no prompt sits at its input box
-  local st=working run wid o
+  local st=working run wid
   [ "$AGENT_HOOKS" = 0 ] || [ -n "$prompt" ] || st=idle
   run=$(($(awk -F'\t' '$2 == "run_started" { n++ } END { print n + 0 }' "$d/events.log") + 1))
   ensure_session "$id"
   wid=$(tmux new-window -d -P -F '#{window_id}' -t "=$id:" -n "$agent" -c "$path" \
     "$BASH" "$PLUGIN_DIR/bin/collie" _exec "$id" "$run" "${AGENT_ARGV[@]}" ${extra[@]+"${extra[@]}"} </dev/null)
   # @collie_run last: the wrapper starts the agent once it is set
-  for o in "@collie_task=$id" "@collie_path=$path" "@collie_agent=$agent" \
-    "@collie_hooks=$AGENT_HOOKS" "@collie_state=$st" "@collie_run=$run"; do
-    tmux set-option -w -t "$wid" "${o%%=*}" "${o#*=}"
-  done
+  tmux set-option -w -t "$wid" @collie_task "$id" \; set-option -w -t "$wid" @collie_path "$path" \; \
+    set-option -w -t "$wid" @collie_agent "$agent" \; set-option -w -t "$wid" @collie_hooks "$AGENT_HOOKS" \; \
+    set-option -w -t "$wid" @collie_state "$st" \; set-option -w -t "$wid" @collie_run "$run"
   # an instant agent exit may log run_exited first; task_runs is order-free
   log_event "$id" run_started "run=$run agent=$agent repo=$rname window=$wid"
 }
