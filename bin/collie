@@ -81,7 +81,12 @@ EOF
 # --- repos ------------------------------------------------------------------
 
 # Sets R_COMMON (git common dir), R_ROOT (worktree parent), R_NAME for a dir.
+# The last dir is remembered: `new` resolves the current repo twice.
 repo_at() {
+  local dir=$1
+  [ "$dir" != . ] || dir=$PWD
+  [ "$dir" != "${R_AT:-}" ] || return 0
+  R_AT=""
   R_COMMON=$(git -C "$1" rev-parse --path-format=absolute --git-common-dir 2>/dev/null) || return 1
   if [ "$(git config --file "$R_COMMON/config" --bool core.bare 2>/dev/null)" = true ]; then
     R_ROOT=${R_COMMON%/*}
@@ -92,6 +97,7 @@ repo_at() {
     R_NAME=${main##*/}
     R_ROOT="${main%/*}/$R_NAME.worktrees"
   fi
+  R_AT=$dir
 }
 
 repo_roots() {
@@ -593,7 +599,7 @@ cmd_new() {
   write_task_md "$tdir" "$id" "${title:-$id}" "$goal" "$ship"
   log_event "$id" task_created
   [ "$edit" -eq 0 ] || "${EDITOR:-vi}" "$tdir/TASK.md"
-  printf '%s\n' "$NEW_PATHS" | head -n 1
+  printf '%s\n' "${NEW_PATHS%%$'\n'*}"
   if [ "$window" -eq 1 ] && command -v tmux >/dev/null; then
     ensure_session "$id"
     [ "$asked" -eq 0 ] || [ -z "${TMUX:-}" ] || tmux switch-client -t "=$id"
@@ -615,12 +621,12 @@ cmd_add() {
   task_id "$id"
   [ -n "$specs" ] || die "usage: collie add [<id>] -r repo[:branch]..."
   local branch
-  branch=$(head -n 1 "$TASKS_DIR/$id/repos.tsv" | cut -f3)
+  IFS=$TAB read -r _ _ branch _ <"$TASKS_DIR/$id/repos.tsv"
   create_repos "$id" "$branch" "$from" "$specs"
   if [ "$window" -eq 1 ] && has_session "$id"; then
     local name c b p
     while IFS=$TAB read -r name c b p; do
-      printf '%s\n' "$NEW_PATHS" | grep -qxF "$p" && open_window "$id" "$name" "$p"
+      case $'\n'$NEW_PATHS$'\n' in *$'\n'"$p"$'\n'*) open_window "$id" "$name" "$p" ;; esac
     done <"$TASKS_DIR/$id/repos.tsv"
   fi
 }
@@ -676,7 +682,9 @@ cmd_go() {
   elif [ -t 1 ]; then
     exec tmux attach-session -t "=$id"
   else
-    head -n 1 "$TASKS_DIR/$id/repos.tsv" | cut -f4
+    local p
+    IFS=$TAB read -r _ _ _ p <"$TASKS_DIR/$id/repos.tsv"
+    printf '%s\n' "$p"
   fi
 }
 
@@ -1290,7 +1298,7 @@ cmd_spike() {
   fi
   owner=$(task_owning "$src")
   cmd_new "$id" -t exp -r "$src" --from "$head" ${args[@]+"${args[@]}"}
-  path=$(printf '%s\n' "$NEW_PATHS" | head -n 1)
+  path=${NEW_PATHS%%$'\n'*}
   if [ -n "$stash" ]; then
     git -C "$path" stash apply -q --index "$stash" || warn "could not apply changes in $path (stash $stash)"
   fi
