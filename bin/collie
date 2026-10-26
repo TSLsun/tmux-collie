@@ -43,6 +43,11 @@ tasks:
                       status is todo (no run yet), active, review (agent done,
                       REPORT.md written since its run started), done, archived
   show [<id>]         task fields, TASK.md body, repos, agent runs and recent events
+                      (finished tasks: also when, commits and REPORT.md)
+  history [-n] [pattern]
+                      finished tasks, newest first: date, status, id, title,
+                      branches, PR; pattern searches TASK.md and REPORT.md;
+                      on a tty an fzf picker (enter: show), -n prints the rows
   edit [<id>]         open the task's TASK.md in $EDITOR
   go [<id>]           switch to the task session (fzf picker if omitted);
                       outside tmux and not a tty, print the primary worktree path
@@ -484,6 +489,8 @@ manual_runs() { # session
 # it is gone).
 task_runs() {
   local id=$1 wins="" fallback=unknown
+  fm_get "$TASKS_DIR/$id/TASK.md" status
+  case $FM in done | archived) fallback=exited ;; esac
   if has_session "$id"; then
     fallback=exited
     wins=$(win_states -t "=$id" | awk -F'\t' '{ print $3 "\t" $4 "\t" $5 "\t" $2 }'; manual_runs "=$id" | cut -f1-4)
@@ -539,6 +546,51 @@ task_status() { # id top_state [stored_status]
   else
     STATUS=active
   fi
+}
+
+# When a task was finished (done/archive), from its last task_done or
+# task_archived event; "" if never.
+finished_at() { # id
+  awk -F'\t' '$2 == "task_done" || $2 == "task_archived" { t = $1 } END { print t }' "$TASKS_DIR/$1/events.log"
+}
+
+# Sets START to the commit a repo's worktree was created at ("" if unknown).
+repo_start() { # dir name
+  START=$(awk -F'\t' -v n="repo=$2 " '
+    $2 == "worktree_created" && index($3, n) == 1 {
+      k = split($3, a, " "); for (i = 1; i <= k; i++) if (index(a[i], "start=") == 1) s = substr(a[i], 7)
+    }
+    END { print s }' "$1/events.log")
+}
+
+# A repo's branch commits, then their diff stat: since it forked from the
+# default base (squash-merged or unmerged: a rebase onto base is not counted),
+# or, once its tip is in base, since its worktree was created. Prints nothing
+# once the branch is gone.
+repo_commits() { # dir name common branch
+  local tip from=""
+  tip=$(git --git-dir="$3" rev-parse -q --verify "refs/heads/$4") || return 0
+  printf '== %s  %s  %s\n' "$2" "$4" "$(git --git-dir="$3" rev-parse --short "$tip")"
+  if default_base "$3" && ! git --git-dir="$3" merge-base --is-ancestor "$tip" "$BASE"; then
+    from=$(git --git-dir="$3" merge-base "$BASE" "$tip") || from=""
+  fi
+  if [ -z "$from" ]; then
+    repo_start "$1" "$2"
+    from=$START
+  fi
+  [ -n "$from" ] || return 0
+  git --git-dir="$3" log --oneline "$from..$tip"
+  git --git-dir="$3" diff --stat "$from" "$tip"
+}
+
+# A task's commits: the snapshot done/archive took, else read from its branches.
+task_commits() { # id
+  local d="$TASKS_DIR/$1" name c b _
+  if [ -f "$d/commits.txt" ]; then
+    cat "$d/commits.txt"
+    return
+  fi
+  while IFS=$TAB read -r name c b _; do repo_commits "$d" "$name" "$c" "$b"; done <"$d/repos.tsv"
 }
 
 # @collie-notify / $COLLIE_NOTIFY: on (default), off, or a command that gets
@@ -729,13 +781,18 @@ cmd_ls() {
 }
 
 cmd_show() {
-  local id d name c b p mark top
+  local id d name c b p mark top gone=missing fin=0
   task_id "${1:-}"
   d="$TASKS_DIR/$id"
   awk 'NR == 1 { next } $0 == "---" { exit } /^(status|next):/ { next } { print }' "$d/TASK.md"
   top=$(task_top "$id")
   task_status "$id" "${top%%"$TAB"*}"
   printf 'status: %s\n' "$STATUS"
+  case $STATUS in done | archived)
+    fin=1 gone=removed
+    printf 'finished: %s\n' "$(finished_at "$id")"
+    ;;
+  esac
   echo
   # the contract: TASK.md after its frontmatter
   awk 'NR == 1 && $0 == "---" { f = 1; next }
@@ -746,7 +803,7 @@ cmd_show() {
   echo "repos:"
   while IFS=$TAB read -r name c b p; do
     mark=""
-    [ -d "$p" ] || mark=" (missing)"
+    [ -d "$p" ] || mark=" ($gone)"
     printf '  %s\t%s\t%s%s\n' "$name" "$b" "$p" "$mark"
   done <"$d/repos.tsv"
   echo
@@ -755,6 +812,64 @@ cmd_show() {
   echo
   echo "events:"
   tail -n 5 "$d/events.log" | sed 's/^/  /'
+  [ "$fin" -eq 1 ] || return 0
+  echo
+  echo "commits:"
+  task_commits "$id" | sed 's/^/  /'
+  if [ -f "$d/REPORT.md" ]; then
+    echo
+    echo "report:"
+    sed 's/^/  /' "$d/REPORT.md"
+  fi
+}
+
+# Finished tasks, newest first: finish date, status, id, title, branches, PR
+# (#n of the first pull/merge request URL in REPORT.md). A pattern keeps the
+# tasks whose TASK.md or REPORT.md contains it, ignoring case.
+history_rows() { # [pattern]
+  local d st title bs name b rep fin _
+  for d in "$TASKS_DIR"/*; do
+    [ -f "$d/TASK.md" ] || continue
+    fm_get "$d/TASK.md" status
+    st=$FM
+    case $st in done | archived) ;; *) continue ;; esac
+    [ -z "${1:-}" ] || grep -qsiF -- "$1" "$d/TASK.md" "$d/REPORT.md" || continue
+    fm_get "$d/TASK.md" title
+    title=$FM
+    bs=""
+    while IFS=$TAB read -r name _ b _ || [ -n "$name" ]; do bs="$bs${bs:+,}$b"; done <"$d/repos.tsv"
+    rep=""
+    [ ! -f "$d/REPORT.md" ] || rep="$d/REPORT.md"
+    fin=$(awk -F'\t' '
+      FNR == NR { if ($2 == "task_done" || $2 == "task_archived") t = substr($1, 1, 10); next }
+      pr == "" && match($0, /https?:\/\/[^ )>]*\/(pull|merge_requests)\/[0-9]+/) {
+        pr = substr($0, RSTART, RLENGTH); sub(/.*\//, "#", pr)
+      }
+      END { print (t == "" ? "-" : t) "\t" (pr == "" ? "-" : pr) }' "$d/events.log" ${rep:+"$rep"})
+    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "${fin%%"$TAB"*}" "$st" "${d##*/}" "$title" "$bs" "${fin#*"$TAB"}"
+  done | sort -t "$TAB" -k1,1r -k3,3
+}
+
+cmd_history() {
+  local list=0 pat="" rows self
+  while [ $# -gt 0 ]; do
+    case $1 in
+      -n) list=1 ;;
+      -*) die "history: unknown option $1" ;;
+      *) [ -z "$pat" ] || die "history: too many arguments"; pat=$1 ;;
+    esac
+    shift
+  done
+  if [ "$list" -eq 1 ] || [ ! -t 1 ] || ! command -v fzf >/dev/null; then
+    history_rows "$pat"
+    return
+  fi
+  rows=$(history_rows "$pat")
+  [ -n "$rows" ] || die "history: no finished tasks${pat:+ matching $pat}"
+  self="'$BASH' '$PLUGIN_DIR/bin/collie'"
+  printf '%s\n' "$rows" | fzf --delimiter='\t' --no-sort --prompt='history> ' --header='enter: show' \
+    --preview="$self _preview {3}" --preview-window=right,50% \
+    --bind="enter:execute($self show {3} | sh -c \"\${PAGER:-less}\")" >/dev/null || true
 }
 
 # $EDITOR may carry arguments (EDITOR='code --wait'); like git, let sh split it.
@@ -826,6 +941,10 @@ finish_task() { # final_status args...
     done <"$d/repos.tsv"
   fi
 
+  # what the task committed, kept for history once its branches are deleted
+  while IFS=$TAB read -r name c b p; do
+    repo_commits "$d" "$name" "$c" "$b"
+  done <"$d/repos.tsv" >"$d/commits.txt"
   while IFS=$TAB read -r name c b p; do
     rm -f "$d/repos/$name"
     [ -d "$p" ] || continue
@@ -1270,6 +1389,7 @@ cmd__preview() {
   task_status "$id" "${top%%"$TAB"*}"
   fm_get "$d/TASK.md" priority
   printf '%s  [%s %s]\n' "$title" "$STATUS" "$FM"
+  case $STATUS in done | archived) printf 'finished %s\n' "$(finished_at "$id")" ;; esac
   echo
   echo "objective:"
   awk '$0 == "## Objective" { f = 1; next }
@@ -1281,6 +1401,19 @@ cmd__preview() {
   task_runs "$id" | sed 's/^/  /'
   echo
   echo "repos:"
+  case $STATUS in done | archived)
+    while IFS=$TAB read -r name c b p; do printf '  %s  %s  (removed)\n' "$name" "$b"; done <"$d/repos.tsv"
+    echo
+    echo "commits:"
+    task_commits "$id" | sed 's/^/  /'
+    if [ -f "$d/REPORT.md" ]; then
+      echo
+      echo "report:"
+      sed 's/^/  /' "$d/REPORT.md"
+    fi
+    return
+    ;;
+  esac
   while IFS=$TAB read -r name c b p; do
     if [ ! -d "$p" ]; then
       printf '  %s  %s  (missing)\n' "$name" "$b"
@@ -1426,11 +1559,8 @@ cmd_gc() {
     id=${d##*/}
     merged=1
     while IFS=$TAB read -r name c b p; do
-      start=$(awk -F'\t' -v n="repo=$name " '
-        $2 == "worktree_created" && index($3, n) == 1 {
-          k = split($3, a, " "); for (i = 1; i <= k; i++) if (index(a[i], "start=") == 1) s = substr(a[i], 7)
-        }
-        END { print s }' "$d/events.log")
+      repo_start "$d" "$name"
+      start=$START
       tip=$(git --git-dir="$c" rev-parse -q --verify "refs/heads/$b") || { merged=0; break; }
       case $'\n'$fetched in
         *$'\n'"$c"$'\n'*) ;;
@@ -1467,7 +1597,7 @@ cmd_workspaces() {
 }
 
 case "${1:-help}" in
-  new | add | ls | show | edit | go | run | adopt | state | status | set | dash | review | spike | gc | doctor | _exec | _target | _preview | _rows | _pick | _key | _actions | _jump | _menu | _popup | _dev | repos | workspaces)
+  new | add | ls | show | history | edit | go | run | adopt | state | status | set | dash | review | spike | gc | doctor | _exec | _target | _preview | _rows | _pick | _key | _actions | _jump | _menu | _popup | _dev | repos | workspaces)
     cmd=$1
     shift
     "cmd_$cmd" "$@"
