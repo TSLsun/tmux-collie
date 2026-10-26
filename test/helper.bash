@@ -16,10 +16,15 @@ setup_env() {
   export COLLIE_REPO_ROOTS="$TMP/repos/*"
   export GIT_CONFIG_GLOBAL="$TMP/gitconfig"
   export GIT_CONFIG_NOSYSTEM=1
-  git config --global user.name test
-  git config --global user.email test@example.com
-  git config --global init.defaultBranch main
-  git config --global advice.detachedHead false
+  cat >"$GIT_CONFIG_GLOBAL" <<'EOF'
+[user]
+	name = test
+	email = test@example.com
+[init]
+	defaultBranch = main
+[advice]
+	detachedHead = false
+EOF
 }
 
 teardown_env() {
@@ -30,30 +35,46 @@ collie() {
   "${COLLIE_BASH:-bash}" "$COLLIE_ROOT/bin/collie" "$@"
 }
 
-# origin repo with one commit on main
-make_origin() {
-  git init -q "$TMP/origin-$1"
-  git -C "$TMP/origin-$1" commit -q --allow-empty -m init
+# Repos are built once per test file and copied per test: git is slow to spawn
+# on macOS. Parallel tests may race to build; `ln -sn` lets exactly one win.
+repo_template() {
+  TPL="$BATS_FILE_TMPDIR/tpl"
+  [ -e "$TPL" ] && return
+  local t
+  t="$(mktemp -d "$BATS_FILE_TMPDIR/tpl.XXXXXX")"
+  # origin repo with one commit on main
+  git init -q "$t/origin"
+  git -C "$t/origin" commit -q --allow-empty -m init
+  # bare layout: <root>/.bare + .git file + <root>/main worktree
+  git clone -q --bare "$t/origin" "$t/bare/.bare"
+  echo "gitdir: ./.bare" >"$t/bare/.git"
+  git -C "$t/bare" config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*"
+  git -C "$t/bare" fetch -q origin
+  git -C "$t/bare" worktree add -q "$t/bare/main" main
+  # normal clone layout: <root> is the main worktree
+  git clone -q "$t/origin" "$t/normal"
+  ln -sn "$t" "$TPL" 2>/dev/null || true
 }
 
-# bare layout: <root>/.bare + .git file + <root>/main worktree
+make_origin() {
+  repo_template
+  cp -R "$TPL/origin" "$TMP/origin-$1"
+}
+
 make_bare_repo() {
   local name=${1:-proj} root="$TMP/repos/${1:-proj}"
   make_origin "$name"
-  mkdir "$root"
-  git clone -q --bare "$TMP/origin-$name" "$root/.bare"
-  echo "gitdir: ./.bare" >"$root/.git"
-  git -C "$root" config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*"
-  git -C "$root" fetch -q origin
-  git -C "$root" worktree add -q "$root/main" main
+  cp -R "$TPL/bare" "$root"
+  git -C "$root" config remote.origin.url "$TMP/origin-$name"
+  git -C "$root" worktree repair "$root/main"
   REPO="$root"
 }
 
-# normal clone layout: <root> is the main worktree
 make_normal_repo() {
   local name=${1:-proj}
   make_origin "$name"
-  git clone -q "$TMP/origin-$name" "$TMP/repos/$name"
+  cp -R "$TPL/normal" "$TMP/repos/$name"
+  git -C "$TMP/repos/$name" config remote.origin.url "$TMP/origin-$name"
   REPO="$TMP/repos/$name"
 }
 
