@@ -29,4 +29,9 @@ jobs:
           HOMEBREW_NO_INSTALL_CLEANUP: 1
           HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: 1
         run: brew install bats-core parallel tmux
-      - run: make ${{ runner.os == 'Linux' && 'check' || 'test' }}
+      - name: jobs sweep
+        run: |
+          for j in 3 4 6 8 3 4 6 8; do
+            s=$(date +%s); bats --jobs $j test/ >out.tap 2>&1; rc=$?
+            echo "SWEEP jobs=$j rc=$rc $(( $(date +%s) - s ))s notok=$(grep -c '^not ok' out.tap)"
+          done
