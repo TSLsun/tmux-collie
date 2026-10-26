@@ -100,37 +100,41 @@ repo_at() {
   R_AT=$dir
 }
 
-repo_roots() {
-  if [ -n "${COLLIE_REPO_ROOTS+x}" ]; then
-    printf '%s' "$COLLIE_REPO_ROOTS"
-  else
-    tmux show-options -gqv @collie-repo-roots 2>/dev/null || true
-  fi
-}
-
-# Prints "name<TAB>dir" for every repo matching the root globs (':'-separated).
+# Sets REPOS to "name<TAB>dir" lines for every repo matching the root globs
+# (':'-separated).
 discover() {
   local IFS=: pat d n roots
-  roots=$(repo_roots)
+  if [ -n "${COLLIE_REPO_ROOTS+x}" ]; then
+    roots=$COLLIE_REPO_ROOTS
+  else
+    roots=$(tmux_opt @collie-repo-roots)
+  fi
+  REPOS=""
   for pat in $roots; do
     pat=${pat/#\~/$HOME}
     for d in $pat; do
       [ -d "$d/.bare" ] || [ -d "$d/.git" ] || continue
       n=${d%/}
-      printf '%s\t%s\n' "${n##*/}" "$d"
+      REPOS="$REPOS${n##*/}$TAB$d"$'\n'
     done
   done
 }
 
 # Resolves "repo[:branch]" into R_* plus SPEC_BRANCH.
 resolve_spec() {
-  local ref=${1%%:*} dir
+  local ref=${1%%:*} dir="" n d
   SPEC_BRANCH=""
   [ "$ref" = "$1" ] || SPEC_BRANCH=${1#*:}
   case $ref in
     */* | .* | "~"*) dir=${ref/#\~/$HOME} ;;
     *)
-      dir=$(discover | awk -F'\t' -v n="$ref" '$1 == n { print $2; exit }')
+      discover
+      while IFS=$TAB read -r n d; do
+        if [ "$n" = "$ref" ]; then
+          dir=$d
+          break
+        fi
+      done <<<"$REPOS"
       [ -n "$dir" ] || die "unknown repo '$ref' (check @collie-repo-roots)"
       ;;
   esac
@@ -1426,7 +1430,10 @@ cmd_gc() {
   done
 }
 
-cmd_repos() { discover; }
+cmd_repos() {
+  discover
+  printf '%s' "$REPOS"
+}
 
 cmd_workspaces() {
   local file="$CONFIG_DIR/workspaces"
