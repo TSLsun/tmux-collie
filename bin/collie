@@ -198,9 +198,11 @@ task_id() {
   [ -f "$TASKS_DIR/$id/TASK.md" ] || die "no task '$id'"
 }
 
-# Frontmatter value of a key (read loop: an awk per field was a fork each).
+# Sets FM to a frontmatter value ("" if unset). Sets a variable and reads in
+# bash: an awk in a command substitution per field was two processes.
 fm_get() { # file key
   local l n=0
+  FM=""
   while IFS= read -r l || [ -n "$l" ]; do
     n=$((n + 1))
     if [ "$n" -eq 1 ]; then
@@ -210,7 +212,7 @@ fm_get() { # file key
     [ "$l" != --- ] || return 0
     case $l in "$2:"*)
       l=${l#"$2:"}
-      printf '%s\n' "${l# }"
+      FM=${l# }
       return 0
       ;;
     esac
@@ -503,20 +505,25 @@ task_top() {
 # Task status: done/archived as written by done/archive/gc, else derived:
 # todo (no run yet), review (no agent working or waiting, and REPORT.md
 # written since the last run started), else active. Other stored values
-# (old records: todo, blocked, ...) are ignored.
+# (old records: todo, blocked, ...) are ignored. Sets STATUS.
 task_status() { # id top_state [stored_status]
   local d st last
   d="$TASKS_DIR/$1"
-  if [ $# -ge 3 ]; then st=$3; else st=$(fm_get "$d/TASK.md" status); fi
-  case $st in done | archived) echo "$st"; return ;; esac
+  if [ $# -ge 3 ]; then
+    st=$3
+  else
+    fm_get "$d/TASK.md" status
+    st=$FM
+  fi
+  case $st in done | archived) STATUS=$st; return ;; esac
   last=$(awk -F'\t' '$2 == "run_started" { t = $1 } END { print t }' "$d/events.log")
   if [ -z "$last" ]; then
-    echo todo
+    STATUS=todo
   elif [ "$2" != working ] && [ "$2" != waiting ] && [ -f "$d/REPORT.md" ] &&
     ! [[ $(date -u -r "$d/REPORT.md" +%Y-%m-%dT%H:%M:%SZ) < $last ]]; then
-    echo review
+    STATUS=review
   else
-    echo active
+    STATUS=active
   fi
 }
 
@@ -686,7 +693,8 @@ cmd_ls() {
   for d in "$TASKS_DIR"/*; do
     [ -f "$d/TASK.md" ] || continue
     id=${d##*/}
-    st=$(fm_get "$d/TASK.md" status)
+    fm_get "$d/TASK.md" status
+    st=$FM
     case $st in done | archived) [ "$all" -eq 1 ] || continue ;; esac
     mark=-
     if has_session "$id"; then mark='*'; fi
@@ -695,18 +703,22 @@ cmd_ls() {
     top=${top%%"$TAB"*}
     repos=""
     while IFS=$TAB read -r name _ || [ -n "$name" ]; do repos="$repos${repos:+,}$name"; done <"$d/repos.tsv"
-    printf '%s\t%s\t%s\t%s\t%s\t%s' "$id" "$(task_status "$id" "$top" "$st")" "$(fm_get "$d/TASK.md" priority)" "$mark" \
+    task_status "$id" "$top" "$st"
+    fm_get "$d/TASK.md" priority
+    printf '%s\t%s\t%s\t%s\t%s\t%s' "$id" "$STATUS" "$FM" "$mark" \
       "$top" "$repos"
     if [ -n "${LS_AGENTS:-}" ]; then printf '\t%s\n' "$agents"; else echo; fi
   done
 }
 
 cmd_show() {
-  local id d name c b p mark
+  local id d name c b p mark top
   task_id "${1:-}"
   d="$TASKS_DIR/$id"
   awk 'NR == 1 { next } $0 == "---" { exit } /^(status|next):/ { next } { print }' "$d/TASK.md"
-  printf 'status: %s\n' "$(task_status "$id" "$(task_top "$id" | cut -f1)")"
+  top=$(task_top "$id")
+  task_status "$id" "${top%%"$TAB"*}"
+  printf 'status: %s\n' "$STATUS"
   echo
   echo "repos:"
   while IFS=$TAB read -r name c b p; do
@@ -1216,10 +1228,15 @@ cmd__target() {
 }
 
 cmd__preview() {
-  local id d name c b p base
+  local id d name c b p base top title
   task_id "${1:-}"
   d="$TASKS_DIR/$id"
-  printf '%s  [%s %s]\n' "$(fm_get "$d/TASK.md" title)" "$(task_status "$id" "$(task_top "$id" | cut -f1)")" "$(fm_get "$d/TASK.md" priority)"
+  fm_get "$d/TASK.md" title
+  title=$FM
+  top=$(task_top "$id")
+  task_status "$id" "${top%%"$TAB"*}"
+  fm_get "$d/TASK.md" priority
+  printf '%s  [%s %s]\n' "$title" "$STATUS" "$FM"
   echo
   echo "runs:"
   task_runs "$id" | sed 's/^/  /'
@@ -1275,7 +1292,8 @@ cmd_doctor() {
   echo "tasks:"
   for d in "$TASKS_DIR"/*; do
     [ -f "$d/TASK.md" ] || continue
-    case $(fm_get "$d/TASK.md" status) in done | archived) continue ;; esac
+    fm_get "$d/TASK.md" status
+    case $FM in done | archived) continue ;; esac
     id=${d##*/}
     while IFS=$TAB read -r name c b p; do
       if [ ! -d "$p" ]; then
@@ -1362,7 +1380,8 @@ cmd_gc() {
   [ "${1:-}" != -n ] || dry=1
   for d in "$TASKS_DIR"/*; do
     [ -f "$d/TASK.md" ] || continue
-    case $(fm_get "$d/TASK.md" status) in done | archived) continue ;; esac
+    fm_get "$d/TASK.md" status
+    case $FM in done | archived) continue ;; esac
     id=${d##*/}
     merged=1
     while IFS=$TAB read -r name c b p; do
