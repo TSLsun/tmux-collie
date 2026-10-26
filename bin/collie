@@ -56,6 +56,8 @@ tasks:
   gc [-n]             finish tasks whose branches are merged into base (-n: list)
   done [<id>] [--force]     accept: remove worktrees + session, keep branches
   archive [<id>] [--force]  abandon: same cleanup, status archived
+  reopen [<id>] [--no-window]
+                      undo done/archive: worktrees back on the kept branches
 
 agents:
   run [<id>] [--agent name] [-r repo] [-p prompt] [-- args]
@@ -236,6 +238,12 @@ fm_set() {
   mv "$1.tmp" "$1"
 }
 
+fm_del() { # file key
+  awk -v k="$2" 'NR > 1 && !end && $0 == "---" { end = 1 }
+    NR == 1 || end || index($0, k ":") != 1' "$1" >"$1.tmp"
+  mv "$1.tmp" "$1"
+}
+
 # NOW: the current time in a strftime format (stamp_utc: in UTC). bash 4.2+
 # formats it without forking date; bash 3.2 still runs date.
 if [ $((BASH_VERSINFO[0] * 100 + BASH_VERSINFO[1])) -ge 402 ]; then
@@ -269,12 +277,15 @@ write_task_md() { # dir id title [objective] [ship]
   } >"$1/TASK.md"
 }
 
-# Which task (if any) owns a worktree path.
+# Which open task (if any) owns a worktree path; a done/archived task keeps
+# its old paths in repos.tsv but owns nothing.
 task_owning() {
   local f
   for f in "$TASKS_DIR"/*/repos.tsv; do
     [ -f "$f" ] || continue
     if awk -F'\t' -v p="$1" '$4 == p { found = 1 } END { exit !found }' "$f"; then
+      fm_get "${f%/*}/TASK.md" status
+      case $FM in done | archived) continue ;; esac
       f=${f%/*}
       printf '%s\n' "${f##*/}"
       return
@@ -866,6 +877,50 @@ leave_session() { # id
     [ "$(tmux display-message -c "$client" -p '#{client_session}')" != "$1" ] ||
       tmux switch-client -c "$client" -t "=$other"
   done
+}
+
+# Undoes done/archive: worktrees back on the kept branches, stored status
+# cleared, session rebuilt. All-or-nothing, like new.
+cmd_reopen() {
+  local id="" window=1
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --no-window) window=0 ;;
+      -*) die "reopen: unknown option $1" ;;
+      *) [ -z "$id" ] || die "reopen: too many arguments"; id=$1 ;;
+    esac
+    shift
+  done
+  task_id "$id"
+  local d st name c b p created="" first=""
+  d="$TASKS_DIR/$id"
+  fm_get "$d/TASK.md" status
+  st=$FM
+  case $st in done | archived) ;; *) die "task '$id' is not done or archived" ;; esac
+
+  while IFS=$TAB read -r name c b p; do
+    git --git-dir="$c" show-ref -q --verify "refs/heads/$b" ||
+      die "branch '$b' in $name no longer exists"
+    checked_out "$c" "$name" "$b"
+    [ ! -e "$p" ] || die "$p already exists"
+  done <"$d/repos.tsv"
+
+  while IFS=$TAB read -r name c b p; do
+    if ! { mkdir -p "${p%/*}" && git --git-dir="$c" worktree add -q "$p" "$b" </dev/null; }; then
+      rollback "$created"
+      exit 1
+    fi
+    created="$created$c$TAB$p$TAB$b${TAB}0"$'\n'
+  done <"$d/repos.tsv"
+  while IFS=$TAB read -r name c b p; do
+    rm -f "$d/repos/$name"
+    link_worktree "$id" "$name" "$c" "$b" "$p"
+    [ -n "$first" ] || first=$p
+  done <"$d/repos.tsv"
+  fm_del "$d/TASK.md" status
+  log_event "$id" task_reopened "from=$st"
+  printf '%s\n' "$first"
+  if [ "$window" -eq 1 ] && command -v tmux >/dev/null; then ensure_session "$id"; fi
 }
 
 cmd_run() {
@@ -1475,7 +1530,7 @@ cmd_workspaces() {
 }
 
 case "${1:-help}" in
-  new | add | ls | show | edit | go | run | adopt | state | status | set | dash | review | spike | gc | doctor | _exec | _target | _preview | _rows | _pick | _key | _actions | _jump | _menu | _popup | _dev | repos | workspaces)
+  new | add | ls | show | edit | go | reopen | run | adopt | state | status | set | dash | review | spike | gc | doctor | _exec | _target | _preview | _rows | _pick | _key | _actions | _jump | _menu | _popup | _dev | repos | workspaces)
     cmd=$1
     shift
     "cmd_$cmd" "$@"
