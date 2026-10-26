@@ -169,7 +169,7 @@ created: 2026-01-01
 | `collie spike <id>` | New `exp/<id>` task from the current worktree, carrying its uncommitted tracked changes (`git stash create`); source untouched |
 | `collie done [<id>] [--force]` | Accept: safety checks, then remove worktrees and session |
 | `collie archive [<id>] [--force]` | Abandon: same cleanup |
-| `collie gc [-n]` | Finish (`done`) tasks whose branches all moved past their start and are contained in base; dirty ones are skipped |
+| `collie gc [-n]` | Finish (`done`) tasks whose branches all moved past their start and are contained in base; tasks `done` refuses (dirty, unmerged) are skipped with the first reason |
 
 ### Admin
 

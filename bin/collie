@@ -1417,7 +1417,7 @@ cmd_spike() {
 # A task is merged when every branch moved past where its worktree started
 # and that tip is merged into the base branch (see merged_into).
 cmd_gc() {
-  local dry=0 d id name c b p start tip merged fetched=""
+  local dry=0 d id name c b p start tip merged err fetched=""
   [ "${1:-}" != -n ] || dry=1
   for d in "$TASKS_DIR"/*; do
     [ -f "$d/TASK.md" ] || continue
@@ -1447,10 +1447,15 @@ cmd_gc() {
     [ "$merged" -eq 1 ] || continue
     if [ "$dry" -eq 1 ]; then
       echo "$id"
-    elif "$BASH" "$PLUGIN_DIR/bin/collie" "done" "$id" >/dev/null 2>&1; then
+    elif err=$("$BASH" "$PLUGIN_DIR/bin/collie" "done" "$id" 2>&1 >/dev/null); then
       echo "done $id"
     else
-      echo "skipped $id (see: collie done $id)"
+      # First problem under "refusing to …:", else done's last message.
+      err=$(printf '%s\n' "$err" | awk '
+        /^collie: refusing to .*:$/ { getline; sub(/^ +/, ""); r = $0; exit }
+        { r = $0; sub(/^collie: /, "", r) }
+        END { print r }')
+      echo "skipped $id: $err (see: collie done $id)"
     fi
   done
 }
