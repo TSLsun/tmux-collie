@@ -90,11 +90,11 @@ Dashboard rows start with a status glyph (red `●` an agent waits for you or
 finished its turn, yellow `◐` working, dim `○` no agent) and show a colored
 badge per running agent; rows that need you come first. `enter` goes to the
 task; `?` opens an action menu above the selected row (run agent, adopt agent,
-edit task, review, terminal, done, new task): press its key, or move with ↑↓ and
+edit task, review, terminal, done, archive, new task): press its key, or move with ↑↓ and
 press enter; esc closes it. The preview shows the start of TASK.md's Objective.
 
 `prefix h` opens a menu (dashboard, lazygit, terminal, new
-task, edit task, review, run agent, done, jump to alert) for the current session's task; outside a
+task, edit task, review, run agent, adopt agent, done, archive, jump to alert) for the current session's task; outside a
 task session it keeps only dashboard, lazygit, terminal, new task and jump to alert.
 `jump to alert` (`j`) switches to the pane of the last agent that notified. `prefix h h` goes straight to the
 dashboard. `new task` (`c`) prompts in a popup, creates the task from the
@@ -126,7 +126,7 @@ idle after 30s without output (`@collie-silence`).
 Agents you start by hand in a task's session (`claude`, `codex`, `gemini`,
 `omp`, `aider`) are found by process and show up the same way, but without
 hooks they are only working or idle (by output silence) and do not notify.
-`collie adopt` (dashboard `?` → `a`) stops such a Claude or omp and restarts
+`collie adopt` (dashboard `?` → `a`, `prefix h` → `a`) stops such a Claude or omp and restarts
 it with `collie run … -- --continue` (omp: `-c`): same conversation, now with
 hooks.
 

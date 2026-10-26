@@ -198,7 +198,9 @@ prefix h →  ┌ collie ─────────────┐
             │ e  edit task        │
             │ v  review           │
             │ r  run agent        │
+            │ a  adopt agent      │
             │ d  done             │
+            │ x  archive          │
             └─────────────────────┘
 ```
 
