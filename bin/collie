@@ -186,12 +186,11 @@ valid_id() {
   [[ $1 =~ $re ]]
 }
 
-# Task id from argument, else $COLLIE_TASK; must exist.
+# Sets the caller's id: the argument, else $COLLIE_TASK; must exist.
 task_id() {
-  local id=${1:-${COLLIE_TASK:-}}
+  id=${1:-${COLLIE_TASK:-}}
   [ -n "$id" ] || die "no task given (and \$COLLIE_TASK unset)"
   [ -f "$TASKS_DIR/$id/TASK.md" ] || die "no task '$id'"
-  printf '%s' "$id"
 }
 
 fm_get() {
@@ -597,7 +596,7 @@ cmd_add() {
     esac
     shift
   done
-  id=$(task_id "$id")
+  task_id "$id"
   [ -n "$specs" ] || die "usage: collie add [<id>] -r repo[:branch]..."
   local branch
   branch=$(head -n 1 "$TASKS_DIR/$id/repos.tsv" | cut -f3)
@@ -628,7 +627,7 @@ cmd_ls() {
 
 cmd_show() {
   local id d name c b p mark
-  id=$(task_id "${1:-}")
+  task_id "${1:-}"
   d="$TASKS_DIR/$id"
   awk 'NR == 1 { next } $0 == "---" { exit } /^(status|next):/ { next } { print }' "$d/TASK.md"
   printf 'status: %s\n' "$(task_status "$id" "$(task_top "$id" | cut -f1)")"
@@ -654,7 +653,7 @@ cmd_go() {
     id=$(cmd_ls | fzf --delimiter='\t' --prompt='task> ' | cut -f1)
     [ -n "$id" ] || exit 1
   fi
-  id=$(task_id "$id")
+  task_id "$id"
   ensure_session "$id"
   if [ -n "${TMUX:-}" ]; then
     tmux switch-client -t "=$id"
@@ -677,7 +676,7 @@ finish_task() { # final_status args...
     esac
     shift
   done
-  id=$(task_id "$id")
+  task_id "$id"
   local d name c b p problems="" n base here own=0
   d="$TASKS_DIR/$id"
 
@@ -753,7 +752,7 @@ cmd_run() {
     esac
     shift
   done
-  id=$(task_id "$id")
+  task_id "$id"
   command -v tmux >/dev/null || die "run: tmux required"
   agent=${agent:-${COLLIE_AGENT:-$(tmux_opt @collie-agent)}}
   agent=${agent:-claude}
@@ -809,7 +808,7 @@ cmd_adopt() {
     esac
     shift
   done
-  id=$(task_id "$id")
+  task_id "$id"
   has_session "$id" || die "adopt: task '$id' has no session"
   info=$(manual_runs "=$id" | head -n 1)
   [ -n "$info" ] || die "adopt: no agent started by hand in task '$id'"
@@ -894,7 +893,7 @@ cmd_set() {
       *) [ -z "$id" ] || die "set: too many arguments"; id=$a ;;
     esac
   done
-  id=$(task_id "$id")
+  task_id "$id"
   [ ${#keys[@]} -gt 0 ] || die "usage: collie set [<id>] field=value... (priority, title)"
   # validate everything before writing anything
   i=0
@@ -1137,11 +1136,15 @@ cmd__popup() {
 }
 
 # Window of the task's most urgent run, or "-".
-cmd__target() { task_top "$(task_id "${1:-}")" | cut -f2; }
+cmd__target() {
+  local id
+  task_id "${1:-}"
+  task_top "$id" | cut -f2
+}
 
 cmd__preview() {
   local id d name c b p base
-  id=$(task_id "${1:-}")
+  task_id "${1:-}"
   d="$TASKS_DIR/$id"
   printf '%s  [%s %s]\n' "$(fm_get "$d/TASK.md" title)" "$(task_status "$id" "$(task_top "$id" | cut -f1)")" "$(fm_get "$d/TASK.md" priority)"
   echo
@@ -1228,7 +1231,7 @@ cmd_review() {
     esac
     shift
   done
-  id=$(task_id "$id")
+  task_id "$id"
   d="$TASKS_DIR/$id"
   while IFS=$TAB read -r name c b p; do
     base=$(default_base "$c")
