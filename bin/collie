@@ -54,7 +54,7 @@ agents:
                       start an agent in a new task window (default agent:
                       $COLLIE_AGENT, @collie-agent, else claude); -p '' = no prompt
   adopt [<id>] [-y]   restart an agent you started by hand in the task's session
-                      under collie run, resuming its conversation (claude)
+                      under collie run, resuming its conversation (claude, omp)
   state <working|waiting|idle|exited>
                       called by agent hooks; no-op outside a collie window
   status              agent counts for the status bar (#{collie_status})

@@ -73,20 +73,44 @@ node --experimental-strip-types --no-warnings --input-type=module -e '
 const h = {};
 const { default: ext } = await import(process.argv[1]);
 ext({ on: (e, f) => (h[e] = f) });
-h.agent_start();
-await new Promise((r) => setTimeout(r, 300));
-h.tool_approval_requested();
-await new Promise((r) => setTimeout(r, 300));
-h.agent_end();
+const step = async (e, a) => (h[e](a), await new Promise((r) => setTimeout(r, 300)));
+await step("agent_start");
+await step("tool_approval_requested");
+await step("tool_approval_resolved");
+await step("tool_execution_start", { toolName: "bash" });
+await step("tool_execution_start", { toolName: "ask" });
+await step("tool_execution_end");
+await step("agent_end", { willContinue: true });
+await step("agent_end", {});
 ' "$2"
 exec sleep 300
 EOF
   chmod +x "$TMP/bin/omp"
   collie run x --agent omp -p ''
-  wait_for 'grep -q "state=waiting" "$(task_dir x)/events.log" && [ "$(agent_of x)" = idle ]'
-  grep -q "agent_state	run=1 state=working" "$(task_dir x)/events.log"
+  # ask waits like an approval; agent_end with willContinue is not idle yet
+  states() { grep -o 'state=[a-z]*' "$(task_dir x)/events.log" | tr '\n' ' '; }
+  wait_for '[ "$(states)" = "state=working state=waiting state=working state=waiting state=working state=idle " ]'
+  [ "$(agent_of x)" = idle ]
   [ "$(sed -n 2p "$ARGS")" = "$COLLIE_ROOT/agents/omp.ts" ]
   grep -qxF "$TMP/repos/B.worktrees/feat-x" "$ARGS"
+}
+
+@test "omp adopt: stops a hand-started omp and resumes it with -c" {
+  mkdir -p "$TMP/manual"
+  ln -s "$(command -v sleep)" "$TMP/manual/omp"
+  cat >"$TMP/bin/omp" <<'EOF'
+#!/bin/sh
+for a in "$@"; do printf '%s\n' "$a"; done >"$ARGS"
+exec sleep 300
+EOF
+  chmod +x "$TMP/bin/omp"
+  collie go x
+  tmux new-window -d -t "=x:" -c "$TMP/repos/A/feat-x" "sh -c '$TMP/manual/omp 300; :'"
+  wait_for '[ "$(agent_of x)" = working ]'
+  collie adopt x -y
+  wait_for '[ -f "$ARGS" ]'
+  grep -qxF -- -c "$ARGS"
+  grep -q "agent_adopted.*agent=omp" "$(task_dir x)/events.log"
 }
 
 @test "state: finds its pane through parent processes when TMUX_PANE is unset" {
