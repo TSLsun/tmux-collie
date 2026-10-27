@@ -166,11 +166,12 @@ created: 2026-01-01
 
 | Command | Purpose |
 |---|---|
-| `collie new <id> [-r repo[:branch]]... [-w workspace] [-t type] [--title ..] [--from ref] [--edit] [--no-window]` | Create task, worktrees and session; defaults to the current repo |
+| `collie new [<id>] [-r repo[:branch]]... [-w workspace] [-t type] [--title ..] [-m objective] [--from ref] [--edit] [--no-window] [--ship\|--no-ship]` | Create task, worktrees and session; defaults to the current repo. No id on a tty prompts for id, type, objective and ship. `-m` fills the Objective; `--ship` adds commit/push/PR/CI rules to TASK.md (default `$COLLIE_SHIP`, `@collie-ship`, else off) |
 | `collie add [<id>] -r repo[:branch]...` | Pull another repo into an existing task |
 | `collie ls [-a]` | Active tasks: id, derived status, priority, session, agent, repos, needs |
 | `collie go [<id>]` | Switch to the task session (fzf if no id); recreate it if missing |
 | `collie run [<id>] [--agent X] [-r repo] [-p prompt] [-- args]` | Launch an agent in a new task window; records a run |
+| `collie adopt [<id>] [-y]` | Restart an agent started by hand in the task's session under `collie run`, resuming its conversation (claude, omp) |
 | `collie dash [-n]` | fzf dashboard, most urgent first; enter jumps to the most urgent agent window |
 | `collie set [<id>] priority=P1 title="..."` | Update priority or title; a bare field reads stdin |
 | `collie edit [<id>]` | Open TASK.md in `$EDITOR` (also `new --edit`, dash `e`, menu `e`) |
@@ -204,13 +205,21 @@ prefix h →  ┌ collie ─────────────┐
             │ h  dashboard        │   ← prefix h h: the most used action
             │ g  lazygit          │
             │ t  terminal         │
-            │ c  new task         │
-            │ e  edit task        │
-            │ v  review           │
-            │ r  run agent        │
-            │ d  done             │
+            │ c  new task         │   ← `collie new` without id: prompts
+            │ e  edit task        │ ┐
+            │ v  review           │ │ task sessions only
+            │ ─────────────────── │ │
+            │ r  run agent        │ │
+            │ d  done             │ ┘
+            │ ─────────────────── │
+            │ j  jump to alert    │   ← last agent that notified
             └─────────────────────┘
 ```
+
+In a session that isn't a collie task, the task-only entries (`e v r d`) are
+replaced by a disabled "not a collie task — use collie new" line. With
+`@collie-dev on`, two dev entries (`D` load this checkout, `B` back to
+installed) are appended.
 
 Terminal-level shortcuts (e.g. a `Cmd+…` key sending `prefix h h`) belong in
 the user's own terminal config.
