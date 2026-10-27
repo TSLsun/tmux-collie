@@ -139,8 +139,18 @@ squash_upstream() {
   commit_in "$TMP/repos/A/feat-m" m
   merge_upstream feat/m
   echo dirty >"$TMP/repos/A/feat-m/d"
-  run collie gc
-  [[ "$output" == *"skipped m"* ]]
+  run --separate-stderr collie gc
+  [ "$output" = "skipped m: dirty: A ($TMP/repos/A/feat-m) (see: collie done m)" ]
+  [ -z "$(fm m status)" ]
+}
+
+@test "gc: shows the refusal reason when done fails outside the safety checks" {
+  collie new m --no-window
+  commit_in "$TMP/repos/A/feat-m" m
+  merge_upstream feat/m
+  cd "$TMP/repos/A/feat-m"
+  run --separate-stderr collie gc
+  [ "$output" = "skipped m: currently inside $TMP/repos/A/feat-m; cd elsewhere first (see: collie done m)" ]
   [ -z "$(fm m status)" ]
 }
 
