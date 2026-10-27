@@ -198,12 +198,12 @@ EOF
 
 @test "_group: tab cycles the grouping, kept across dashboards; not while the menu is up" {
   collie new a --no-window
-  [[ "$(FZF_PROMPT='collie> ' collie _group next)" == "change-header(enter: go  ^r: run  ^v: review  ^e: edit  ^d: done"$'\n'"?: more  tab: group by priority)+reload("*"_rows)" ]]
+  [[ "$(FZF_PROMPT='collie> ' collie _group next)" == "change-header(enter: go  ?: more  tab: group by priority"$'\n'"^r: run  ^v: review  ^e: edit  ^d: done)+reload("*"_rows)" ]]
   [[ "$(collie _rows | sed -n 3p)" == *"── P2 (1) ─"* ]]
   FZF_PROMPT='collie> ' collie _group next >/dev/null
   [ "$(cat "$COLLIE_STATE_DIR/dash-group")" = repo ]
-  [[ "$(FZF_PROMPT='collie> ' collie _group next)" == *"group by status)"* ]]
-  [[ "$(FZF_PROMPT='collie> ' collie _group prev)" == *"group by repo)"* ]]
+  [[ "$(FZF_PROMPT='collie> ' collie _group next)" == *"group by status"$'\n'* ]]
+  [[ "$(FZF_PROMPT='collie> ' collie _group prev)" == *"group by repo"$'\n'* ]]
   [ -z "$(FZF_PROMPT='▸ run agent ' collie _group next)" ]
   [ "$(cat "$COLLIE_STATE_DIR/dash-group")" = repo ]
 }
