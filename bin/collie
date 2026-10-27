@@ -884,12 +884,12 @@ leave_session() { # id
 }
 
 cmd_run() {
-  local id="" agent="" repo="" prompt=$DEFAULT_PROMPT extra=()
+  local id="" agent="" repo="" prompt=$DEFAULT_PROMPT custom=0 extra=()
   while [ $# -gt 0 ]; do
     case $1 in
       --agent) agent=${2:?--agent needs a name}; shift ;;
       -r) repo=${2:?-r needs a repo}; shift ;;
-      -p) [ $# -ge 2 ] || die "-p needs a prompt"; prompt=$2; shift ;;
+      -p) [ $# -ge 2 ] || die "-p needs a prompt"; prompt=$2 custom=1; shift ;;
       --) shift; extra=("$@"); break ;;
       -*) die "run: unknown option $1" ;;
       *) [ -z "$id" ] || die "run: too many arguments"; id=$1 ;;
@@ -909,9 +909,16 @@ cmd_run() {
   [ -n "$rname" ] || die "repo '$repo' is not part of task '$id'"
   [ -d "$path" ] || die "missing worktree $path"
 
-  # adapter inputs: other worktrees + the task dir, and the initial prompt
+  # adapter inputs: other worktrees + the task dir, the initial prompt and a
+  # session name. The default prompt leads with the task so agents that title
+  # sessions from their first prompt tell tasks apart.
   # shellcheck disable=SC2034
-  local RUN_PROMPT=$prompt RUN_DIRS
+  local RUN_NAME=$id RUN_PROMPT RUN_DIRS
+  fm_get "$d/TASK.md" title
+  [ -z "$FM" ] || [ "$FM" = "$id" ] || RUN_NAME="$id: $FM"
+  [ "$custom" = 1 ] || prompt="Task $RUN_NAME. $prompt"
+  # shellcheck disable=SC2034
+  RUN_PROMPT=$prompt
   # shellcheck disable=SC2034
   RUN_DIRS=$(awk -F'\t' -v p="$path" '$4 != p { print $4 }' "$d/repos.tsv"; printf '%s\n' "$d")
   AGENT_HOOKS=0
