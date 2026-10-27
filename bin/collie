@@ -1833,7 +1833,7 @@ cmd_sync() {
         # moving it would make gc take an untouched task for a merged one
         echo "$id $name: skipped: no commits beyond $bname"
       elif merged_into "$c" "$b" "$BASE"; then
-        echo "$id $name: skipped: merged into $bname (collie gc)"
+        echo "$id $name: skipped: merged into $bname (clean up with: collie gc)"
       elif [ "$dry" -eq 0 ] && [ -n "$busy" ]; then
         echo "$id $name: skipped: agent busy"
       elif [ "$dry" -eq 0 ] && [ -n "$(git -C "$p" status --porcelain)" ]; then
