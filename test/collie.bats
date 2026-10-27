@@ -197,11 +197,11 @@ two_repos() {
   run collie ls
   [ "$status" -eq 0 ]
   [ "${#lines[@]}" -eq 2 ]
-  [[ "${lines[0]}" == "x	todo	P2	*	-	A,B" ]]
-  [[ "${lines[1]}" == "y	todo	P2	-	-	A" ]]
+  [[ "${lines[0]}" == "x	todo	P2	*	-	A,B	start" ]]
+  [[ "${lines[1]}" == "y	todo	P2	-	-	A	start" ]]
   run collie ls -a
   [ "${#lines[@]}" -eq 3 ]
-  [[ "${lines[2]}" == "z	archived	P2	-	-	B" ]]
+  [[ "${lines[2]}" == "z	archived	P2	-	-	B	-" ]]
 }
 
 # run 1 of a task, started in 2020 and exited (no session)
@@ -232,7 +232,7 @@ past_run() {
   awk 'NR == 2 { print "status: blocked"; print "next: ask about retries" } { print }' "$f" >"$f.tmp" && mv "$f.tmp" "$f"
   run collie ls
   [ "$status" -eq 0 ]
-  [ "$output" = "x	todo	P2	-	-	A" ]
+  [ "$output" = "x	todo	P2	-	-	A	start" ]
   run collie show x
   [ "$status" -eq 0 ]
   [[ "$output" == *"status: todo"* && "$output" != *blocked* && "$output" != *"next:"* ]]

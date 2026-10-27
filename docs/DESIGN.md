@@ -107,14 +107,23 @@ reason. Ask the agent for the report, or `collie review` it anyway.
 | `exited` | agent process no longer in its pane |
 | `unknown` | session gone or state can't be determined |
 
-Dashboard order: `waiting` > `idle` > task `review` > `working`
-(the more it needs you, the higher it sorts).
+A task's *needs* (last `ls` column, the dashboard's state) folds status and
+agent state into what it wants from you, first match: `answer` (an agent is
+`waiting`), `review` (task review), `reply` (an agent is `idle`), `-` (an agent
+is `working`, or finished task), `start` (todo), else `stalled` (active, no
+live agent).
+
+Dashboard order: `answer` > `reply` > `review` > `stalled` > `working` >
+`start`, then priority, then id (the more it needs you, the higher
+it sorts). The dashboard shows them in groups (needs you, active, todo); tab
+switches to grouping by priority or repo, keeping this order inside a group.
 
 ### 3.4 Files
 
 ```
 ~/.config/collie/workspaces          # optional; one per line:  shop: api web infra
 ~/.config/collie/TASK.md             # optional; overrides the TASK.md body template
+~/.local/state/collie/dash-group     # dashboard grouping (status, priority, repo)
 ~/.local/state/collie/tasks/<id>/    # task record; survives worktree removal
   TASK.md        # contract + frontmatter (title, priority; status once finished)
   repos.tsv      # machine-owned: name<TAB>git common dir<TAB>branch<TAB>worktree path
@@ -167,7 +176,7 @@ created: 2026-01-01
 |---|---|
 | `collie new <id> [-r repo[:branch]]... [-w workspace] [-t type] [--title ..] [--from ref] [--edit] [--no-window]` | Create task, worktrees and session; defaults to the current repo |
 | `collie add [<id>] -r repo[:branch]...` | Pull another repo into an existing task |
-| `collie ls [-a]` | Active tasks: id, derived status, priority, session, agent, repos |
+| `collie ls [-a]` | Active tasks: id, derived status, priority, session, agent, repos, needs |
 | `collie go [<id>]` | Switch to the task session (fzf if no id); recreate it if missing |
 | `collie run [<id>] [--agent X] [-r repo] [-p prompt] [-- args]` | Launch an agent in a new task window; records a run |
 | `collie dash [-n]` | fzf dashboard, most urgent first; enter jumps to the most urgent agent window |
@@ -178,6 +187,7 @@ created: 2026-01-01
 | `collie done [<id>] [--force]` | Accept: safety checks, then remove worktrees and session |
 | `collie archive [<id>] [--force]` | Abandon: same cleanup |
 | `collie gc [-n]` | Finish (`done`) tasks whose branches all moved past their start and are contained in base; dirty ones are skipped |
+| `collie sync [<id>...] [-n]` | Merge base into active task branches (clean: commit + push if tracked; conflict: start the merge and hand it to the idle or exited agent); busy agents, dirty worktrees and untouched branches are skipped |
 
 ### Admin
 
@@ -221,7 +231,8 @@ One file per agent, `agents/<name>.sh`, sourced by `collie run`:
 
 ```bash
 AGENT_HOOKS=1         # 1 if the agent reports state through `collie state`
-agent_argv            # sets AGENT_ARGV from RUN_PROMPT (initial prompt) and
+agent_argv            # sets AGENT_ARGV from RUN_PROMPT (initial prompt),
+                      # RUN_NAME (session name, "<id>: <title>") and
                       # RUN_DIRS (other worktrees + task dir, one per line)
 ```
 

@@ -80,7 +80,7 @@ EOF
 
 # --- dashboard --------------------------------------------------------------
 
-@test "dash -n: waiting > idle > review > working > rest (by priority, id)" {
+@test "dash -n: answer > reply > review > stalled > working > start (by priority, id)" {
   for t in a b c d e f g; do collie new "$t" --no-window; done
   collie new z --no-window
   collie archive z
@@ -92,10 +92,16 @@ EOF
   # d: a past run (no session) that wrote its report
   printf '2020-01-01T00:00:00Z\trun_started\trun=1 agent=sleep repo=A\n' >>"$(task_dir d)/events.log"
   echo done >"$(task_dir d)/REPORT.md"
+  # e: a past run (no session) without a report
+  printf '2020-01-01T00:00:00Z\trun_started\trun=1 agent=sleep repo=A\n' >>"$(task_dir e)/events.log"
   collie set g priority=P0
   run collie dash -n
   [ "$status" -eq 0 ]
-  [ "$(printf '%s\n' "$output" | cut -f1 | paste -s -d' ' -)" = "b c d a g e f" ]
+  [ "$(printf '%s\n' "$output" | cut -f1 | paste -s -d' ' -)" = "b c d e a g f" ]
+  [ "$(printf '%s\n' "$output" | cut -f1,7 | paste -s -d' ' -)" = "b	answer c	reply d	review e	stalled a	- g	start f	start" ]
+  # a stalled task needs you too
+  [[ "$(collie _rows | sed $'s/\033\\[[0-9;]*m//g' | cut -f2 | sed -n 5p)" == "● e "*" stalled "* ]]
+  [[ "$(collie _rows | sed -n 6p)" == *"── needs you (4) ─"* ]]
 }
 
 @test "status: review once the agent is idle and REPORT.md is fresh; working stays active" {
@@ -146,19 +152,64 @@ EOF
   [ "$(tail -n 1 "$(task_dir x)/TASK.md")" = edited ]
 }
 
-@test "_rows: id first, then status glyph and live agent badge; attention first" {
-  for t in a b c; do collie new "$t" --no-window; done
+@test "_rows: column names, then aligned rows grouped needs you > active > todo" {
+  for t in a bb ccc-long; do collie new "$t" --no-window; done
   collie run a -- 300
-  collie run b -- 300
-  hook b waiting
+  collie run bb -- 300
+  hook bb waiting
+  collie set ccc-long priority=P0
   run collie _rows
   [ "$status" -eq 0 ]
-  [ "$(printf '%s\n' "$output" | cut -f1 | paste -s -d' ' -)" = "b a c" ]
-  plain=$(printf '%s\n' "$output" | sed $'s/\033\\[[0-9;]*m//g')
-  [[ "$(printf '%s\n' "$plain" | sed -n 1p)" == "b	● b	active	P2	sleep	A" ]]
-  [[ "$(printf '%s\n' "$plain" | sed -n 2p)" == "a	◐ a	active	P2	sleep	A" ]]
-  [[ "$(printf '%s\n' "$plain" | sed -n 3p)" == "c	○ c	todo	P2	-	A" ]]
-  [[ "$output" == *$'\033[31m●'* && "$output" == *$'\033[33m◐'* ]]
+  [ "$(printf '%s\n' "$output" | cut -f1 | paste -s -d, -)" = ",bb,,a,,ccc-long," ]
+  plain=$(printf '%s\n' "$output" | sed $'s/\033\\[[0-9;]*m//g' | cut -f2)
+  [ "$(printf '%s\n' "$plain" | sed -n 1p)" = "  TASK      STATE    PRI  AGENT  AGE  REPOS" ]
+  [ "$(printf '%s\n' "$plain" | sed -n 2p)" = "● bb        answer   P2   sleep  now  A" ]
+  [ "$(printf '%s\n' "$plain" | sed -n 3p)" = "── needs you (1) ──────────────────────────" ]
+  [ "$(printf '%s\n' "$plain" | sed -n 4p)" = "◐ a         working  P2   sleep  now  A" ]
+  [ "$(printf '%s\n' "$plain" | sed -n 6p)" = "○ ccc-long  start    P0   -      now  A" ]
+  [ "$(printf '%s\n' "$plain" | sed -n 7p)" = "── todo (1) ───────────────────────────────" ]
+  [[ "$output" == *$'\033[31m●'* && "$output" == *$'\033[33m◐'* && "$output" == *$'\033[1;31mP0'* ]]
+  [ "$(paste -s -d, - <"$COLLIE_STATE_DIR/dash-rows")" = "bb,,a,,ccc-long," ]
+  # dash -n keeps the same order, ungrouped
+  [ "$(collie dash -n | cut -f1 | paste -s -d' ' -)" = "bb a ccc-long" ]
+}
+
+@test "_rows: group by priority (P0..P3) or repo; age of the last event" {
+  for t in a b c; do collie new "$t" --no-window; done
+  collie set b priority=P0
+  collie set c priority=P3
+  printf '2020-01-01T00:00:00Z\tnote\t\n' >>"$(task_dir c)/events.log"
+  plain=$(collie _rows priority | sed $'s/\033\\[[0-9;]*m//g')
+  [ "$(printf '%s\n' "$plain" | cut -f1 | paste -s -d, -)" = ",b,,a,,c," ]
+  [[ "$(printf '%s\n' "$plain" | sed -n 3p)" == *"── P0 (1) ─"* ]]
+  [[ "$(printf '%s\n' "$plain" | sed -n 7p)" == *"── P3 (1) ─"* ]]
+  [[ "$(printf '%s\n' "$plain" | sed -n 6p)" == *"  P3   -      "*"w  A" ]]
+  [ "$(collie _rows repo | cut -f1 | paste -s -d, -)" = ",b,a,c," ]
+  [[ "$(collie _rows repo | sed -n 5p)" == *"── A (3) ─"* ]]
+}
+
+@test "_group: tab cycles the grouping, kept across dashboards; not while the menu is up" {
+  collie new a --no-window
+  [[ "$(FZF_PROMPT='collie> ' collie _group next)" == "change-header(enter: go   ?: actions   tab: group by priority)+reload("*"_rows)" ]]
+  [[ "$(collie _rows | sed -n 3p)" == *"── P2 (1) ─"* ]]
+  FZF_PROMPT='collie> ' collie _group next >/dev/null
+  [ "$(cat "$COLLIE_STATE_DIR/dash-group")" = repo ]
+  [[ "$(FZF_PROMPT='collie> ' collie _group next)" == *"group by status)"* ]]
+  [[ "$(FZF_PROMPT='collie> ' collie _group prev)" == *"group by repo)"* ]]
+  [ -z "$(FZF_PROMPT='▸ run agent ' collie _group next)" ]
+  [ "$(cat "$COLLIE_STATE_DIR/dash-group")" = repo ]
+}
+
+@test "_key: arrows step over group separators; enter on one does nothing" {
+  mkdir -p "$COLLIE_STATE_DIR"
+  printf '%s\n' b '' a '' >"$COLLIE_STATE_DIR/dash-rows"
+  [ "$(FZF_PROMPT='collie> ' FZF_POS=1 collie _key b up)" = "up+up" ]
+  [ "$(FZF_PROMPT='collie> ' FZF_POS=3 collie _key a down)" = "down+down" ]
+  [ "$(FZF_PROMPT='collie> ' FZF_POS=2 collie _key '' up)" = up ]
+  [ -z "$(FZF_PROMPT='collie> ' FZF_POS=3 collie _key a up)" ]
+  [ "$(FZF_PROMPT='collie> ' FZF_POS=1 FZF_QUERY=x collie _key b up)" = up ]
+  [ -z "$(FZF_PROMPT='collie> ' collie _key '' enter)" ]
+  [ -z "$(collie _preview '')" ]
 }
 
 @test "manual agent: one started by hand in a task session shows up, idle by silence" {
@@ -168,7 +219,7 @@ EOF
   tmux new-window -d -t "=x:" "sh -c '$TMP/bin/claude 300; :'"
   wait_for '[ "$(COLLIE_SILENCE=999 agent_of x)" = working ]'
   [ "$(COLLIE_SILENCE=0 agent_of x)" = idle ]
-  [[ "$(collie _rows | sed $'s/\033\\[[0-9;]*m//g')" == *"	claude	"* ]]
+  [[ "$(collie _rows | sed $'s/\033\\[[0-9;]*m//g')" == *"  claude  "* ]]
   run collie show x
   [[ "$output" == *"-	claude	"* ]]
 }
