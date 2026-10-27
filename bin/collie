@@ -38,24 +38,17 @@ warn() { printf 'collie: %s\n' "$*" >&2; }
 . "$PLUGIN_DIR/lib/cmd/dash.sh"
 . "$PLUGIN_DIR/lib/cmd/admin.sh"
 
+# every cmd_<name> function is the command <name>: adding one needs no list here
 case "${1:-help}" in
-  new | add | ls | show | edit | go | run | adopt | state | status | set | dash | review | spike | gc | sync | doctor | _exec | _target | _preview | _rows | _group | _pick | _key | _actions | _jump | _menu | _popup | _dev | repos | workspaces)
-    cmd=$1
-    shift
-    "cmd_$cmd" "$@"
-    ;;
-  "done")
-    shift
-    finish_task "done" "$@"
-    ;;
-  archive)
-    shift
-    finish_task archived "$@"
-    ;;
   help | -h | --help) usage ;;
   -v | --version) echo "collie $VERSION" ;;
   *)
-    usage >&2
-    exit 1
+    if ! declare -F "cmd_$1" >/dev/null; then
+      usage >&2
+      exit 1
+    fi
+    cmd=$1
+    shift
+    "cmd_$cmd" "$@"
     ;;
 esac

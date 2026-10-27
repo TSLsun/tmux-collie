@@ -62,6 +62,9 @@ finish_task() { # final_status args...
   fi
 }
 
+cmd_done() { finish_task "done" "$@"; }
+cmd_archive() { finish_task archived "$@"; }
+
 # Moves clients off a session about to be killed, so they land in another
 # session instead of detaching: the client's last session, else the most
 # recently used other one. Without another session, they detach as before.
