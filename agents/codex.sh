@@ -9,7 +9,9 @@ AGENT_HOOKS=1
 
 agent_argv() {
   local d
+  # PreToolUse: hooks/tmux-guard denies killing the user's tmux server
   AGENT_ARGV=(codex
+    -c "$(printf 'hooks.PreToolUse=[{matcher="Bash",hooks=[{type="command",command="'"'"'%s'"'"'"}]}]' "$PLUGIN_DIR/hooks/tmux-guard")"
     -c "$(codex_hook UserPromptSubmit working)"
     -c "$(codex_hook PostToolUse working)"
     -c "$(codex_hook PermissionRequest waiting)"

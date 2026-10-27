@@ -115,6 +115,25 @@ EOF
   [ "$(collie ls | cut -f2)" = active ]
 }
 
+@test "status: quiet agents without a fresh REPORT.md stay active; preview and show say so" {
+  collie new x --no-window
+  collie run x -- 300
+  hook x working
+  run collie _preview x
+  [[ "$output" != *"no REPORT.md"* ]]
+  hook x idle
+  [ "$(collie ls | cut -f2)" = active ]
+  run collie _preview x
+  [[ "$output" == *$'[active P2]\nno REPORT.md since run 1\n'* ]]
+  run collie show x
+  [[ "$output" == *$'status: active (no REPORT.md since run 1)\n'* ]]
+  echo "All green." >"$(task_dir x)/REPORT.md"
+  run collie _preview x
+  [[ "$output" == *"[review P2]"* && "$output" != *"no REPORT.md"* ]]
+  run collie show x
+  [[ "$output" == *$'status: review\n'* ]]
+}
+
 @test "dash actions: no next/notes keys" {
   run collie _actions x N
   [ -z "$output" ]
