@@ -1271,7 +1271,7 @@ dash_group() {
 
 # Two lines so narrow popups do not cut the keys off.
 dash_header() { # group
-  printf 'enter: go  ?: more  tab: group by %s\n^r: run  ^v: review  ^e: edit  ^d: done' "$1"
+  printf 'enter: go  tab: group by %s\n^r: run  ^v: review  ^e: edit  ^d: done  ?: more' "$1"
 }
 
 # dash_rows for fzf, in groups (DASH_GROUPS; status: needs you, active, todo;
