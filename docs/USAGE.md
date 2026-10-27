@@ -27,6 +27,7 @@ collie run fix-retry                                   # agent reads .collie/TAS
 collie review fix-retry                                # commits, diff stat, REPORT.md
 # merge fix/fix-retry (PR or locally), then:
 collie gc                                              # or: collie done fix-retry
+collie history                                         # later: finished tasks, their commits and REPORT.md
 ```
 
 ## 2. What a task is made of
@@ -60,6 +61,7 @@ flowchart TB
 | Piece | One per | Created by | Removed by | Survives `kill-server`? |
 |---|---|---|---|---|
 | Task record (`TASK.md`, `repos.tsv`, `events.log`, `REPORT.md`) | task | `new`, `spike` | never | yes |
+| Commit snapshot (`commits.txt`) | task | `done`, `archive` | never | yes |
 | Branch `<type>/<id>` | repo in the task | `new`, `add`, `spike` | never (delete it yourself) | yes |
 | Worktree + `.collie` symlink | repo in the task | `new`, `add`, `spike` | `done`, `archive`, `gc` | yes |
 | tmux session `<id>` | task | `new`, `go` (rebuilds it) | `done`, `archive`, `gc` | no; `go` rebuilds it |
@@ -158,17 +160,17 @@ recorded, so they are not restored.
 |---|---|---|---|
 | Dashboard | `collie dash` | `h` | — |
 | New task | `collie new` | `c` (prompts, switches to it) | `?` `c` |
-| Edit TASK.md | `collie edit` | `e` | `?` `e` |
-| Run agent | `collie run` | `r` | `?` `r` |
-| Adopt hand-started agent | `collie adopt` | — | `?` `a` |
+| Edit TASK.md | `collie edit` | `e` | `ctrl-e` or `?` `e` |
+| Run agent | `collie run` | `r` | `ctrl-r` or `?` `r` |
+| Adopt hand-started agent | `collie adopt` | `a` | `?` `a` |
 | Restore agents after the server died | `collie restore` | — | — |
 | Go to task | `collie go` | — | `enter` (most urgent agent window) |
 | Jump to last alert | — | `j` | — |
-| Review | `collie review` | `v` | `?` `v` |
+| Review | `collie review` | `v` | `ctrl-v` or `?` `v` |
 | Shell in worktree | — | `t` (popup) | `?` `t` |
 | lazygit | — | `g` | — |
-| Done | `collie done` | `d` (confirms) | `?` `d` (confirms) |
-| Archive | `collie archive` | — | — |
+| Done | `collie done` | `d` (confirms) | `ctrl-d` or `?` `d` (confirms) |
+| Archive | `collie archive` | `x` (confirms) | `?` `x` (confirms) |
 | Finish merged tasks | `collie gc` | — | — |
 | Show details | `collie show` | — | preview pane (Objective) |
 | Group by status / priority / repo | — | — | `tab` / `shift-tab` |
@@ -176,7 +178,9 @@ recorded, so they are not restored.
 | Extra repo mid-task | `collie add` | — | — |
 | Branch off dirty work | `collie spike` | — | — |
 
-The menu's task entries (`e v r d`) appear only inside a task's session.
+The menu's task entries (`e v r a d x`) appear only inside a task's session.
+On the dashboard the `ctrl-` keys act on the selected row at once, so plain
+keys keep filtering; `?` lists every action.
 `<id>` may be omitted anywhere inside a task session (`$COLLIE_TASK`).
 
 ## 6. Variations

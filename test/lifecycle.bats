@@ -130,13 +130,37 @@ squash_upstream() {
   [ -z "$(fm n status)" ]
 }
 
+@test "gc: a reopened task is not finished again until it has new work" {
+  collie new m --no-window
+  commit_in "$TMP/repos/A/feat-m" m
+  merge_upstream feat/m
+  collie gc >/dev/null
+  collie reopen m --no-window
+  run --separate-stderr collie gc -n
+  [ -z "$output" ]
+  commit_in "$TMP/repos/A/feat-m" m2
+  merge_upstream feat/m
+  run --separate-stderr collie gc -n
+  [ "$output" = m ]
+}
+
 @test "gc: skips a merged task with uncommitted changes" {
   collie new m --no-window
   commit_in "$TMP/repos/A/feat-m" m
   merge_upstream feat/m
   echo dirty >"$TMP/repos/A/feat-m/d"
-  run collie gc
-  [[ "$output" == *"skipped m"* ]]
+  run --separate-stderr collie gc
+  [ "$output" = "skipped m: dirty: A ($TMP/repos/A/feat-m) (see: collie done m)" ]
+  [ -z "$(fm m status)" ]
+}
+
+@test "gc: shows the refusal reason when done fails outside the safety checks" {
+  collie new m --no-window
+  commit_in "$TMP/repos/A/feat-m" m
+  merge_upstream feat/m
+  cd "$TMP/repos/A/feat-m"
+  run --separate-stderr collie gc
+  [ "$output" = "skipped m: currently inside $TMP/repos/A/feat-m; cd elsewhere first (see: collie done m)" ]
   [ -z "$(fm m status)" ]
 }
 
@@ -244,6 +268,65 @@ client_session() { tmux list-clients -F '#{client_session}'; }
   [ -f "$p/.collie/f" ]
   [ -L "$(task_dir m)/repos/A" ]
   [ -z "$(fm m status)" ]
+}
+
+# --- history ----------------------------------------------------------------
+
+@test "done: snapshots the branch's own commits, so show keeps them after the branch is deleted" {
+  collie new m --no-window
+  commit_in "$TMP/repos/A/feat-m" m
+  commit_in "$TMP/origin-A" later
+  git -C "$REPO" fetch -q origin
+  git -C "$TMP/repos/A/feat-m" rebase -q origin/main
+  squash_upstream feat/m
+  collie done m
+  git -C "$REPO" branch -q -D feat/m
+  run collie show m
+  [ "$status" -eq 0 ]
+  [[ "$output" == *$'commits:\n  == A  feat/m  '* ]]
+  [[ "$output" == *"add m"* && "$output" == *"1 file changed"* ]]
+  [[ "$output" != *"add later"* ]]
+}
+
+@test "show/_preview: a finished task shows when, removed worktrees and REPORT.md" {
+  collie new m --no-window
+  printf '# report\nPR: https://github.com/o/r/pull/7\n' >"$(task_dir m)/REPORT.md"
+  collie archive m
+  run collie show m
+  [ "$status" -eq 0 ]
+  [[ "$output" == *$'status: archived\nfinished: 20'* ]]
+  [[ "$output" == *"feat-m (removed)"* && "$output" != *missing* ]]
+  [[ "$output" == *$'report:\n  # report\n'* ]]
+  run collie _preview m
+  [ "$status" -eq 0 ]
+  [[ "$output" == *$'[archived P2]\nfinished 20'* ]]
+  [[ "$output" == *"A  feat/m  (removed)"* && "$output" == *"pull/7"* ]]
+  # a task finished before snapshots, its branch since deleted: point at the PR
+  rm "$(task_dir m)/commits.txt"
+  git -C "$REPO" branch -q -D feat/m
+  run collie show m
+  [[ "$output" == *$'commits:\n  (branches gone; see https://github.com/o/r/pull/7)\n'* ]]
+}
+
+@test "history -n: finished tasks newest first with branch and PR; a pattern searches TASK.md and REPORT.md" {
+  collie new old --no-window --title "Old one"
+  collie new new --no-window -m "Fix the OAuth flow"
+  collie new open --no-window
+  echo 'PR: https://github.com/o/r/pull/12 (green)' >"$(task_dir new)/REPORT.md"
+  collie done old
+  collie archive new
+  sed -i.bak 's/^[^	]*	task_done/2020-01-02T00:00:00Z	task_done/' "$(task_dir old)/events.log"
+  run collie history -n
+  [ "$status" -eq 0 ]
+  [ "${#lines[@]}" -eq 2 ]
+  [[ "${lines[0]}" == 20*"	archived	new	new	feat/new	#12" ]]
+  [ "${lines[1]}" = "2020-01-02	done	old	Old one	feat/old	-" ]
+  run collie history -n oauth
+  [ "$output" = "${lines[0]}" ]
+  run collie history -n pull/12
+  [[ "$output" == *"	new	"* && "$output" != *"	old	"* ]]
+  run collie history -n nothing-matches
+  [ "$status" -eq 0 ] && [ -z "$output" ]
 }
 
 # --- pre-push ---------------------------------------------------------------
