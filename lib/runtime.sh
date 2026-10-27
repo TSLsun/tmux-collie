@@ -57,6 +57,8 @@ manual_runs() { # session
 # it is gone).
 task_runs() {
   local id=$1 wins="" fallback=unknown
+  fm_get "$TASKS_DIR/$id/TASK.md" status
+  case $FM in done | archived) fallback=exited ;; esac
   if has_session "$id"; then
     fallback=exited
     wins=$(win_states -t "=$id" | awk -F'\t' '{ print $3 "\t" $4 "\t" $5 "\t" $2 }'; manual_runs "=$id" | cut -f1-4)
@@ -123,6 +125,57 @@ task_status() { # id top_state [stored_status]
     STATUS=active
     STATUS_NOTE="no REPORT.md since run $runs"
   fi
+}
+
+# When a task was finished (done/archive), from its last task_done or
+# task_archived event; "" if never.
+finished_at() { # id
+  awk -F'\t' '$2 == "task_done" || $2 == "task_archived" { t = $1 } END { print t }' "$TASKS_DIR/$1/events.log"
+}
+
+# Sets START to the commit a repo's worktree was created at ("" if unknown).
+repo_start() { # dir name
+  START=$(awk -F'\t' -v n="repo=$2 " '
+    $2 == "worktree_created" && index($3, n) == 1 {
+      k = split($3, a, " "); for (i = 1; i <= k; i++) if (index(a[i], "start=") == 1) s = substr(a[i], 7)
+    }
+    END { print s }' "$1/events.log")
+}
+
+# A repo's branch commits, then their diff stat: since it forked from the
+# default base (squash-merged or unmerged: a rebase onto base is not counted),
+# or, once its tip is in base, since its worktree was created. Prints nothing
+# once the branch is gone.
+repo_commits() { # dir name common branch
+  local tip from=""
+  [ "$3" != - ] || return 0
+  tip=$(git --git-dir="$3" rev-parse -q --verify "refs/heads/$4") || return 0
+  printf '== %s  %s  %s\n' "$2" "$4" "$(git --git-dir="$3" rev-parse --short "$tip")"
+  if default_base "$3" && ! git --git-dir="$3" merge-base --is-ancestor "$tip" "$BASE"; then
+    from=$(git --git-dir="$3" merge-base "$BASE" "$tip") || from=""
+  fi
+  if [ -z "$from" ]; then
+    repo_start "$1" "$2"
+    from=$START
+  fi
+  [ -n "$from" ] || return 0
+  git --git-dir="$3" log --oneline "$from..$tip"
+  git --git-dir="$3" diff --stat "$from" "$tip"
+}
+
+# A task's commits: the snapshot done/archive took, else read from its
+# branches; with neither, a pointer to the PR named in REPORT.md.
+task_commits() { # id
+  local d="$TASKS_DIR/$1" name c b out _
+  if [ -f "$d/commits.txt" ]; then
+    out=$(cat "$d/commits.txt")
+  else
+    out=$(while IFS=$TAB read -r name c b _; do repo_commits "$d" "$name" "$c" "$b"; done <"$d/repos.tsv")
+  fi
+  if [ -z "$out" ] && [ -f "$d/REPORT.md" ]; then
+    out=$(grep -oE -m1 "$PR_RE" "$d/REPORT.md") && out="(branches gone; see $out)"
+  fi
+  [ -z "$out" ] || printf '%s\n' "$out"
 }
 
 # @collie-notify / $COLLIE_NOTIFY: on (default), off, or a command that gets

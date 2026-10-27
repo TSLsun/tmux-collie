@@ -42,7 +42,9 @@ cmd_doctor() {
     case $FM in done | archived) continue ;; esac
     id=${d##*/}
     while IFS=$TAB read -r name c b p; do
-      if [ ! -d "$p" ]; then
+      if [ "$c" = - ]; then
+        [ -d "$p" ] || { doc_line FAIL "$id: $name folder missing: $p"; fail=1; }
+      elif [ ! -d "$p" ]; then
         doc_line FAIL "$id: $name worktree missing: $p"
         fail=1
       elif ! git --git-dir="$c" worktree list --porcelain | grep -qxF "worktree $p"; then

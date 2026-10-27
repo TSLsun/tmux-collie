@@ -17,8 +17,10 @@ finish_task() { # final_status args...
   local d name c b p problems="" n base here own=0
   d="$TASKS_DIR/$id"
 
+  # folders are used in place: nothing to check or remove
   while IFS=$TAB read -r name c b p; do
     [ -d "$p" ] || continue
+    [ "$c" != - ] || continue
     if [ -e "$p/.collie" ] && [ ! -L "$p/.collie" ]; then
       die "refusing to $final '$id': $p/.collie is not a symlink to the task dir; move it aside first"
     fi
@@ -41,13 +43,19 @@ finish_task() { # final_status args...
   here=$(pwd -P)
   if [ "$own" -eq 0 ]; then
     while IFS=$TAB read -r name c b p; do
+      [ "$c" != - ] || continue
       case "$here/" in "$p"/*) die "currently inside $p; cd elsewhere first" ;; esac
     done <"$d/repos.tsv"
   fi
 
+  # what the task committed, kept for history once its branches are deleted
+  while IFS=$TAB read -r name c b p; do
+    repo_commits "$d" "$name" "$c" "$b"
+  done <"$d/repos.tsv" >"$d/commits.txt"
   while IFS=$TAB read -r name c b p; do
     rm -f "$d/repos/$name"
     [ -d "$p" ] || continue
+    [ "$c" != - ] || continue
     rm -f "$p/.collie"
     if [ "$force" -eq 1 ]; then
       git --git-dir="$c" worktree remove --force "$p"
@@ -82,6 +90,56 @@ leave_session() { # id
   done
 }
 
+# Undoes done/archive: worktrees back on the kept branches, stored status
+# cleared, session rebuilt. All-or-nothing, like new.
+cmd_reopen() {
+  local id="" window=1
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --no-window) window=0 ;;
+      -*) die "reopen: unknown option $1" ;;
+      *) [ -z "$id" ] || die "reopen: too many arguments"; id=$1 ;;
+    esac
+    shift
+  done
+  task_id "$id"
+  local d st name c b p created="" first=""
+  d="$TASKS_DIR/$id"
+  fm_get "$d/TASK.md" status
+  st=$FM
+  case $st in done | archived) ;; *) die "task '$id' is not done or archived" ;; esac
+
+  # folders were left in place: they only need to still exist
+  while IFS=$TAB read -r name c b p; do
+    if [ "$c" = - ]; then
+      [ -d "$p" ] || die "folder $p no longer exists"
+      continue
+    fi
+    git --git-dir="$c" show-ref -q --verify "refs/heads/$b" ||
+      die "branch '$b' in $name no longer exists"
+    checked_out "$c" "$name" "$b"
+    [ ! -e "$p" ] || die "$p already exists"
+  done <"$d/repos.tsv"
+
+  while IFS=$TAB read -r name c b p; do
+    [ "$c" != - ] || continue
+    if ! { mkdir -p "${p%/*}" && git --git-dir="$c" worktree add -q "$p" "$b" </dev/null; }; then
+      rollback "$created"
+      exit 1
+    fi
+    created="$created$c$TAB$p$TAB$b${TAB}0"$'\n'
+  done <"$d/repos.tsv"
+  while IFS=$TAB read -r name c b p; do
+    rm -f "$d/repos/$name"
+    link_worktree "$id" "$name" "$c" "$b" "$p"
+    [ -n "$first" ] || first=$p
+  done <"$d/repos.tsv"
+  fm_del "$d/TASK.md" status
+  log_event "$id" task_reopened "from=$st"
+  printf '%s\n' "$first"
+  if [ "$window" -eq 1 ] && command -v tmux >/dev/null; then ensure_session "$id"; fi
+}
+
 cmd_review() {
   local id="" patch=0 d name c b p base
   while [ $# -gt 0 ]; do
@@ -95,6 +153,12 @@ cmd_review() {
   task_id "$id"
   d="$TASKS_DIR/$id"
   while IFS=$TAB read -r name c b p; do
+    if [ "$c" = - ]; then
+      printf '== %s  folder  %s\n' "$name" "$p"
+      folder_changes "$d" "$p"
+      echo
+      continue
+    fi
     default_base "$c"
     base=$BASE
     printf '== %s  %s  %s ahead of %s\n' "$name" "$b" \
@@ -111,6 +175,23 @@ cmd_review() {
   if [ -f "$d/REPORT.md" ]; then
     echo "== REPORT.md"
     cat "$d/REPORT.md"
+  fi
+}
+
+# A folder has no history: list the files modified since the task's first run.
+folder_changes() { # task_dir path
+  local since
+  since=$(awk -F'\t' '$2 == "run_started" { print $1; exit }' "$1/events.log")
+  if [ -z "$since" ]; then
+    echo "(no runs yet)"
+  elif [ ! -d "$2" ]; then
+    echo "(folder missing: $2)"
+  else
+    echo "changed since $since:"
+    # BSD find does not parse ISO 8601 "T...Z"
+    since=${since/T/ }
+    find "$2" -type f -newermt "${since%Z} UTC" ! -path '*/.git/*' | sort |
+      awk -v p="$2/" 'index($0, p) == 1 { print "  " substr($0, length(p) + 1) }'
   fi
 }
 
@@ -153,20 +234,20 @@ cmd_spike() {
 # A task is merged when every branch moved past where its worktree started
 # and that tip is merged into the base branch (see merged_into).
 cmd_gc() {
-  local dry=0 d id name c b p start tip merged
+  local dry=0 d id name c b p start tip merged err
   [ "${1:-}" != -n ] || dry=1
   for d in "$TASKS_DIR"/*; do
     [ -f "$d/TASK.md" ] || continue
     fm_get "$d/TASK.md" status
     case $FM in done | archived) continue ;; esac
     id=${d##*/}
-    merged=1
+    # folders have no branch: a task needs at least one merged repo
+    merged=0
     while IFS=$TAB read -r name c b p; do
-      start=$(awk -F'\t' -v n="repo=$name " '
-        $2 == "worktree_created" && index($3, n) == 1 {
-          k = split($3, a, " "); for (i = 1; i <= k; i++) if (index(a[i], "start=") == 1) s = substr(a[i], 7)
-        }
-        END { print s }' "$d/events.log")
+      [ "$c" != - ] || continue
+      merged=1
+      repo_start "$d" "$name"
+      start=$START
       tip=$(git --git-dir="$c" rev-parse -q --verify "refs/heads/$b") || { merged=0; break; }
       fetch_origin "$c" "$name" || true
       if [ -z "$start" ] || [ "$tip" = "$start" ] || ! { default_base "$c" || true; merged_into "$c" "$b" "$BASE"; }; then
@@ -177,10 +258,15 @@ cmd_gc() {
     [ "$merged" -eq 1 ] || continue
     if [ "$dry" -eq 1 ]; then
       echo "$id"
-    elif "$BASH" "$PLUGIN_DIR/bin/collie" "done" "$id" >/dev/null 2>&1; then
+    elif err=$("$BASH" "$PLUGIN_DIR/bin/collie" "done" "$id" 2>&1 >/dev/null); then
       echo "done $id"
     else
-      echo "skipped $id (see: collie done $id)"
+      # First problem under "refusing to …:", else done's last message.
+      err=$(printf '%s\n' "$err" | awk '
+        /^collie: refusing to .*:$/ { getline; sub(/^ +/, ""); r = $0; exit }
+        { r = $0; sub(/^collie: /, "", r) }
+        END { print r }')
+      echo "skipped $id: $err (see: collie done $id)"
     fi
   done
 }
@@ -218,6 +304,8 @@ cmd_sync() {
     agent=$(awk -F'\t' '$2 != "-" { a = $2 } END { print a }' <<<"$runs")
     while IFS=$TAB read -r name c b p; do
       [ -d "$p" ] || continue
+      # folders have no branch to sync
+      [ "$c" != - ] || continue
       fetch_origin "$c" "$name" || true
       default_base "$c" || { echo "$id $name: skipped: no base branch"; continue; }
       bname=$BASE
@@ -230,7 +318,7 @@ cmd_sync() {
         # moving it would make gc take an untouched task for a merged one
         echo "$id $name: skipped: no commits beyond $bname"
       elif merged_into "$c" "$b" "$BASE"; then
-        echo "$id $name: skipped: merged into $bname (collie gc)"
+        echo "$id $name: skipped: merged into $bname (clean up with: collie gc)"
       elif [ "$dry" -eq 0 ] && [ -n "$busy" ]; then
         echo "$id $name: skipped: agent busy"
       elif [ "$dry" -eq 0 ] && [ -n "$(git -C "$p" status --porcelain)" ]; then

@@ -40,15 +40,17 @@ collie new                             # on a terminal: prompts for id, type, ob
 collie new login -m 'add OAuth login' --run   # create and start the agent (see collie run)
 collie new login --ship                # agent ships it: commits, PR, CI (see below)
 collie new deploy-v2 -r A -r B         # cross-repo task (repos by name or path)
+collie new trip -r ~/notes/Trip        # plain folder (not git): used in place
 collie new deploy-v2 -r A -r B:release/v2   # per-repo branch
 collie new checkout-fix -w shop        # all repos of a workspace
 collie add deploy-v2 -r C              # pull another repo in mid-task
 collie ls                              # id  status  priority  session(*|-)  agent  repos  needs
 collie show deploy-v2                  # fields, TASK.md contract, repos, runs, events
-collie edit deploy-v2                  # adjust TASK.md in $EDITOR (also: dash ? e, prefix h e)
+collie edit deploy-v2                  # adjust TASK.md in $EDITOR (also: dash ctrl-e, prefix h e)
 collie go deploy-v2                    # switch/attach (fzf picker if no id)
 collie done deploy-v2                  # accept: remove worktrees + session, keep branches
 collie archive deploy-v2               # abandon: same cleanup
+collie reopen deploy-v2                # closed by mistake: worktrees back on the kept branches
 ```
 
 ### Agents
@@ -69,6 +71,8 @@ collie review deploy-v2                # commits, diff stat, dirty files, REPORT
 collie spike try-cache                 # from a dirty worktree: exp/try-cache task with the same changes
 collie spike try-cache -u              # ...plus untracked (non-ignored) files
 collie gc                              # finish tasks whose branches were merged
+collie history                         # finished tasks, newest first; fzf picker, enter: show
+collie history -n oauth                # rows of finished tasks whose TASK.md/REPORT.md mention oauth
 collie sync -n                         # after a merge: which task branches would conflict
 collie sync                            # merge base into them; agents resolve conflicts
 ```
@@ -77,9 +81,9 @@ collie sync                            # merge base into them; agents resolve co
 Task status is derived, never set by hand: `todo` until the first agent run,
 `active` after it, `review` once no agent is working or waiting and REPORT.md
 was written since the last run started; `done` / `archived` come from
-`done`, `gc` and `archive`. If the agents are quiet but the last run left no
-REPORT.md, the task stays `active` and `show` and the dashboard preview say
-`no REPORT.md since run N`.
+`done`, `gc` and `archive`, and `reopen` undoes them. If the agents are quiet
+but the last run left no REPORT.md, the task stays `active` and `show` and the
+dashboard preview say `no REPORT.md since run N`.
 `done` and `gc` fetch `origin` first, so a PR merged on GitHub counts without
 a manual fetch (progress is reported per repo on stderr), and also recognize
 squash merges with git >= 2.38. A client viewing a finished task's session
@@ -115,14 +119,18 @@ running agent, the age of the last event, repos. Rows come in groups under a
 `── <group> (<n>) ──` line, the most urgent next to the prompt: needs you,
 active, todo. `tab` / `shift-tab` switch the grouping (status, priority,
 repo); it is kept for the next dashboard. `enter` goes to the
-task; `?` opens an action menu above the selected row (run agent, adopt agent,
-edit task, review, terminal, done, new task): press its key, or move with ↑↓ and
-press enter; esc closes it. The preview shows the start of TASK.md's Objective.
+task; `ctrl-r` runs an agent, `ctrl-v` reviews, `ctrl-e` edits TASK.md and
+`ctrl-d` marks it done (after a y/n prompt), so typing still filters. `?` opens
+the full action menu above the selected row (run agent, adopt agent, edit task,
+review, terminal, done, archive, new task): press its key, or move with ↑↓ and
+press enter; esc closes it. The header lists the direct keys. The preview shows
+the start of TASK.md's Objective.
 
 `prefix h` opens a menu (dashboard, lazygit, terminal, new
-task, edit task, review, run agent, done, jump to alert) for the current session's task; outside a
+task, edit task, review, run agent, adopt agent, done, archive, jump to alert) for the current session's task; outside a
 task session it keeps only dashboard, lazygit, terminal, new task and jump to alert.
-`jump to alert` (`j`) switches to the pane of the last agent that notified. `prefix h h` goes straight to the
+`run agent` (`r`, here and in the dashboard) switches you to the new agent window;
+plain `collie run` leaves it in the background (`-s` switches). `jump to alert` (`j`) switches to the pane of the last agent that notified. `prefix h h` goes straight to the
 dashboard. `new task` (`c`) prompts in a popup, creates the task from the
 current pane's repo and switches to it. A popup whose command fails stays open
 until you press a key. Change the key with `set -g @collie-key 'h'`.
@@ -157,7 +165,7 @@ unless they name a private server with `-L`/`-S`; limits in DESIGN.md.
 Agents you start by hand in a task's session (`claude`, `codex`, `gemini`,
 `omp`, `aider`) are found by process and show up the same way, but without
 hooks they are only working or idle (by output silence) and do not notify.
-`collie adopt` (dashboard `?` → `a`) stops such a Claude or omp and restarts
+`collie adopt` (dashboard `?` → `a`, `prefix h` → `a`) stops such a Claude or omp and restarts
 it with `collie run … -- --continue` (omp: `-c`): same conversation, now with
 hooks.
 When the tmux server dies, `collie restore` (`-n` to list) restarts every
@@ -218,6 +226,18 @@ set -g @collie-ship 'on'                       # default for new tasks ($COLLIE_
 asks. The rules live in the task's TASK.md, so you can read (`collie show`) or
 edit (`collie edit`) them before `collie run`; replace them for all tasks with
 `~/.config/collie/SHIP.md`.
+
+### Folder tasks
+
+A directory that is not a git repository (given with `-r <path>`, or the
+current one when `new` runs outside a repo) joins a task as a **folder**: the
+agent works in it in place, with no branch and no copy. collie never writes
+into it (no `.collie` link: the run prompt names the task dir instead), and
+`done` / `archive` only close the session, without checks or removal. `gc`
+never finishes a folder-only task; `review` lists the folder's files
+modified since the task's first run. A folder another unfinished task already
+uses (or a parent or child of it) is allowed with a warning. Folders and repos
+can be mixed in one task. See [docs/FOLDER-TASKS.md](docs/FOLDER-TASKS.md).
 
 ### Repository layouts
 

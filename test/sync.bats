@@ -37,7 +37,7 @@ wt() { echo "$TMP/repos/A/feat-$1"; }
   run --separate-stderr collie sync
   [ "$status" -eq 0 ]
   [[ "$output" == *"s A: merged 2 commit(s) from origin/main"* ]]
-  [[ "$output" == *"m A: skipped: merged into origin/main (collie gc)"* ]]
+  [[ "$output" == *"m A: skipped: merged into origin/main (clean up with: collie gc)"* ]]
   [[ "$output" == *"u A: skipped: no commits beyond origin/main"* ]]
   [ "$stderr" = "collie: A: fetching origin…"$'\n'"collie: A: fetched (base origin/HEAD @ $(git -C "$REPO" rev-parse --short origin/HEAD))" ]
   git -C "$(wt s)" merge-base --is-ancestor origin/main HEAD

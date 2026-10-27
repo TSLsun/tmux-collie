@@ -8,11 +8,13 @@ run_agent() {
 }
 
 cmd_run() {
-  local id="" agent="" repo="" prompt=$DEFAULT_PROMPT custom=0 extra=()
+  local id="" agent="" repo="" prompt=$DEFAULT_PROMPT custom=0 extra=() switch=0 client=""
   while [ $# -gt 0 ]; do
     case $1 in
       --agent) agent=${2:?--agent needs a name}; shift ;;
       -r) repo=${2:?-r needs a repo}; shift ;;
+      -s) switch=1 ;;
+      -c) client=${2:?-c needs a client}; shift ;;
       -p) [ $# -ge 2 ] || die "-p needs a prompt"; prompt=$2 custom=1; shift ;;
       --) shift; extra=("$@"); break ;;
       -*) die "run: unknown option $1" ;;
@@ -24,13 +26,15 @@ cmd_run() {
   command -v tmux >/dev/null || die "run: tmux required"
   [ -n "$agent" ] || { run_agent; agent=$RUN_AGENT; }
 
-  local d name c b p rname="" path=""
+  local d name c b p rname="" rc="" path=""
   d="$TASKS_DIR/$id"
   while IFS=$TAB read -r name c b p; do
-    if [ -z "$rname" ] && { [ -z "$repo" ] || [ "$name" = "$repo" ]; }; then rname=$name path=$p; fi
+    if [ -z "$rname" ] && { [ -z "$repo" ] || [ "$name" = "$repo" ]; }; then rname=$name rc=$c path=$p; fi
   done <"$d/repos.tsv"
   [ -n "$rname" ] || die "repo '$repo' is not part of task '$id'"
   [ -d "$path" ] || die "missing worktree $path"
+  # a folder has no .collie link
+  [ "$rc" != - ] || [ "$prompt" != "$DEFAULT_PROMPT" ] || prompt=${prompt//.collie\//$d/}
 
   # adapter inputs: other worktrees + the task dir, the initial prompt and a
   # session name. The default prompt leads with the task so agents that title
@@ -69,6 +73,10 @@ cmd_run() {
     set-option -w -t "$wid" @collie_state "$st" \; set-option -w -t "$wid" @collie_run "$run"
   # an instant agent exit may log run_exited first; task_runs is order-free
   log_event "$id" run_started "run=$run agent=$agent repo=$rname window=$wid server=$server"
+  # -s: show the new window (menu, dashboard); a script keeps its window
+  if [ "$switch" = 1 ] && { [ -n "$client" ] || [ -n "${TMUX:-}" ]; }; then
+    tmux switch-client ${client:+-c "$client"} -t "$wid" \; select-window -t "$wid" 2>/dev/null || true
+  fi
 }
 
 # Restarts an agent started by hand in the task's session as a `collie run`

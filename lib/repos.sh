@@ -61,7 +61,30 @@ resolve_spec() {
       [ -n "$dir" ] || die "unknown repo '$ref' (check @collie-repo-roots)"
       ;;
   esac
-  repo_at "$dir" || die "not a git repository: $dir"
+  R_FOLDER=0
+  repo_at "$dir" && return
+  # a plain directory given by path is a folder, used in place
+  { [ -z "$SPEC_BRANCH" ] && [ -d "$dir" ]; } || die "not a git repository: $dir"
+  R_FOLDER=1
+  R_ROOT=$(cd "$dir" && pwd -P)
+  R_NAME=$(printf '%s' "${R_ROOT##*/}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]\{1,\}/-/g; s/^-//; s/-$//')
+  R_NAME=${R_NAME:-folder}
+}
+
+# Warns about other unfinished tasks using this folder, a parent or a child.
+warn_shared_folder() { # id path
+  local f t
+  for f in "$TASKS_DIR"/*/repos.tsv; do
+    [ -f "$f" ] || continue
+    t=${f%/*}
+    t=${t##*/}
+    [ "$t" != "$1" ] || continue
+    fm_get "${f%/*}/TASK.md" status
+    case $FM in done | archived) continue ;; esac
+    if awk -F'\t' -v p="$2" '$2 == "-" && ($4 == p || index($4, p "/") == 1 || index(p, $4 "/") == 1) { f = 1 } END { exit !f }' "$f"; then
+      warn "folder $2 is also used by task '$t'"
+    fi
+  done
 }
 
 workspace_repos() {

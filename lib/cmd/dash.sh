@@ -24,8 +24,9 @@ dash_group() {
   case " ${DASH_GROUPS[*]} " in *" $GROUP "*) ;; *) GROUP=status ;; esac
 }
 
+# Two lines so narrow popups do not cut the keys off; the group in bold yellow.
 dash_header() { # group
-  printf 'enter: go   ?: actions   tab: group by %s' "$1"
+  printf 'enter: go  tab: group by \033[1;33m%s\033[0m\n^r: run  ^v: review  ^e: edit  ^d: done  ?: more' "$1"
 }
 
 # dash_rows for fzf, in groups (DASH_GROUPS; status: needs you, active, todo;
@@ -130,7 +131,7 @@ cmd_dash() {
   command -v fzf >/dev/null || die "dash: fzf required"
   local self="'$BASH' '$PLUGIN_DIR/bin/collie'" rows header sel id wid k binds=()
   rows=$(cmd__rows)
-  for k in $(action_items x | cut -c1) esc enter up down; do binds+=(--bind="$k:transform($self _key {1} $k)"); done
+  for k in $(action_items x | cut -c1) $DASH_DIRECT esc enter up down; do binds+=(--bind="$k:transform($self _key {1} $k)"); done
   dash_group
   header=$(dash_header "$GROUP")
   [ -n "$rows" ] || header='no tasks — ?: new task'
@@ -157,13 +158,13 @@ cmd__pick() { # [id]
 }
 
 # Draws the menu with row <sel> highlighted on /dev/tty, just above the
-# selected dashboard row (fzf's default layout: prompt, info, header and the
-# column names take the last 4 lines, list row 1 sits above them).
+# selected dashboard row (fzf's default layout: prompt, info, the 2-line header
+# and the column names take the last 5 lines, list row 1 sits above them).
 pick_draw() { # id sel
   local items n w=30 top left=2 line i=0 t=${1:-collie} hl
   items=$(action_items "$1")
   n=$(printf '%s\n' "$items" | wc -l)
-  top=$((${FZF_LINES:-24} - ${FZF_POS:-1} - n - 5))
+  top=$((${FZF_LINES:-24} - ${FZF_POS:-1} - n - 6))
   [ "$top" -ge 1 ] || top=1
   {
     printf '\033[%d;%dH\033[0;34m╭─ \033[1m%s\033[22m %s╮' "$top" "$left" "$t" "$(rule $((w - 5 - ${#t})) ─)"
@@ -179,10 +180,17 @@ pick_draw() { # id sel
 
 # fzf transform for a menu key (an action key, up, down, esc or enter): with
 # the menu open, move the selection, run an action or close; otherwise the
-# key's usual job.
+# key's usual job. A direct key (ctrl-<action key>, see DASH_DIRECT) runs its
+# action on the selected task whether or not the menu is open.
 cmd__key() { # id key
   local self="'$BASH' '$PLUGIN_DIR/bin/collie'" back="change-prompt($DASH_PROMPT)+clear-screen"
   local items n cur k
+  case " $DASH_DIRECT " in
+    *" $2 "*)
+      [ -z "$1" ] || echo "$back+execute($self _actions '$1' '${2#ctrl-}')+reload($self _rows)+refresh-preview"
+      return
+      ;;
+  esac
   case ${FZF_PROMPT:-} in
     "$PICK_MARK"*) ;;
     *)
@@ -238,16 +246,17 @@ rule() { local s="" i; for ((i = 0; i < $1; i++)); do s="$s$2"; done; printf '%s
 
 # "<key>  <label>" lines of the dashboard actions for a task (or none).
 action_items() { # [id]
-  [ -z "$1" ] || printf '%s\n' 'r  run agent' 'a  adopt agent' 'e  edit task' 'v  review' 't  terminal' 'd  done'
+  [ -z "$1" ] || printf '%s\n' 'r  run agent' 'a  adopt agent' 'e  edit task' 'v  review' 't  terminal' 'd  done' 'x  archive'
   printf '%s\n' 'c  new task'
 }
 
-# Runs the dashboard action for a key (see action_items); done asks first.
+# Runs the dashboard action for a key (see action_items); done and archive ask
+# first.
 cmd__actions() { # id key
   local id=${1:-} k=${2:-} self="'$BASH' '$PLUGIN_DIR/bin/collie'" a
   [ ! -t 1 ] || printf '\033[H\033[2J'
   case ${id:+x}$k in
-    xr) a="$self run '$id'" ;;
+    xr) a="$self run '$id' -s" ;;
     xa) a="$self adopt '$id'" ;;
     xe) a="$self edit '$id'" ;;
     xv) a="$self review '$id' | less -R" ;;
@@ -258,10 +267,12 @@ cmd__actions() { # id key
       (cd "$a" && "${SHELL:-sh}") || true
       return 0
       ;;
-    xd)
-      read -r -p "done $id? (y/n) " k || return 0
+    xd | xx)
+      a="done"
+      [ "$k" = d ] || a=archive
+      read -r -p "$a $id? (y/n) " k || return 0
       [ "$k" = y ] || return 0
-      a="$self done '$id'"
+      a="$self $a '$id'"
       ;;
     c | xc) a="$self new" ;;
     *) return 0 ;;
@@ -281,8 +292,10 @@ cmd__menu() { # session [client]
     items+=("edit task" e "$popup '$C _popup $C edit $T'"
       review v "$popup '$C _popup \"$C review $T | less -R\"'"
       ""
-      "run agent" r "run-shell '$C run $T'"
-      "done" d "confirm-before -p 'done $T? (y/n)' \"display-popup -E -w 90 -h 12 '$C _popup $C done $T'\"")
+      "run agent" r "run-shell '$C run $T -s${2:+ -c $2}'"
+      "adopt agent" a "display-popup -E -w 90 -h 12 '$C _popup $C adopt $T'"
+      "done" d "confirm-before -p 'done $T? (y/n)' \"display-popup -E -w 90 -h 12 '$C _popup $C done $T'\""
+      archive x "confirm-before -p 'archive $T? (y/n)' \"display-popup -E -w 90 -h 12 '$C _popup $C archive $T'\"")
   else
     items+=("" "-not a collie task — use collie new" "" "")
   fi
@@ -344,6 +357,7 @@ cmd__preview() {
   fm_get "$d/TASK.md" priority
   printf '%s  [%s %s]\n' "$title" "$STATUS" "$FM"
   [ -z "$STATUS_NOTE" ] || echo "$STATUS_NOTE"
+  case $STATUS in done | archived) printf 'finished %s\n' "$(finished_at "$id")" ;; esac
   echo
   echo "objective:"
   awk '$0 == "## Objective" { f = 1; next }
@@ -355,9 +369,28 @@ cmd__preview() {
   task_runs "$id" | sed 's/^/  /'
   echo
   echo "repos:"
+  case $STATUS in done | archived)
+    while IFS=$TAB read -r name c b p; do
+      if [ "$c" = - ]; then printf '  %s  folder  %s\n' "$name" "$p"; else printf '  %s  %s  (removed)\n' "$name" "$b"; fi
+    done <"$d/repos.tsv"
+    echo
+    echo "commits:"
+    task_commits "$id" | sed 's/^/  /'
+    if [ -f "$d/REPORT.md" ]; then
+      echo
+      echo "report:"
+      sed 's/^/  /' "$d/REPORT.md"
+    fi
+    return
+    ;;
+  esac
   while IFS=$TAB read -r name c b p; do
     if [ ! -d "$p" ]; then
       printf '  %s  %s  (missing)\n' "$name" "$b"
+      continue
+    fi
+    if [ "$c" = - ]; then
+      printf '  %s  folder  %s\n' "$name" "$p"
       continue
     fi
     default_base "$c"

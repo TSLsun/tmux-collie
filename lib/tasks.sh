@@ -46,6 +46,12 @@ fm_set() {
   mv "$1.tmp" "$1"
 }
 
+fm_del() { # file key
+  awk -v k="$2" 'NR > 1 && !end && $0 == "---" { end = 1 }
+    NR == 1 || end || index($0, k ":") != 1' "$1" >"$1.tmp"
+  mv "$1.tmp" "$1"
+}
+
 # NOW: the current time in a strftime format (stamp_utc: in UTC). bash 4.2+
 # formats it without forking date; bash 3.2 still runs date.
 if [ $((BASH_VERSINFO[0] * 100 + BASH_VERSINFO[1])) -ge 402 ]; then
@@ -79,12 +85,15 @@ write_task_md() { # dir id title [objective] [ship]
   } >"$1/TASK.md"
 }
 
-# Which task (if any) owns a worktree path.
+# Which open task (if any) owns a worktree path; a done/archived task keeps
+# its old paths in repos.tsv but owns nothing.
 task_owning() {
   local f
   for f in "$TASKS_DIR"/*/repos.tsv; do
     [ -f "$f" ] || continue
     if awk -F'\t' -v p="$1" '$4 == p { found = 1 } END { exit !found }' "$f"; then
+      fm_get "${f%/*}/TASK.md" status
+      case $FM in done | archived) continue ;; esac
       f=${f%/*}
       printf '%s\n' "${f##*/}"
       return

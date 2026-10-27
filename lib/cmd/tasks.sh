@@ -35,8 +35,9 @@ cmd_new() {
       where="workspace $ws"
     elif [ -n "$specs" ]; then
       where=$(printf '%s' "$specs" | tr '\n' ' ')
+    elif ! repo_at .; then
+      where="folder $(pwd -P) (current pane)"
     else
-      repo_at . || die "not inside a git repository (use -r or -w)"
       where="$R_NAME (current pane)"
       if [ -z "$base" ]; then
         default_base "$R_COMMON" || true
@@ -72,12 +73,11 @@ cmd_new() {
   tdir="$TASKS_DIR/$id"
   [ ! -e "$tdir" ] || die "task '$id' already exists"
   if [ -n "$ws" ]; then
-    for r in $(workspace_repos "$ws"); do specs="$specs$r"$'\n'; done
+    r=$(workspace_repos "$ws") || exit 1
+    for r in $r; do specs="$specs$r"$'\n'; done
   fi
-  if [ -z "$specs" ]; then
-    repo_at . || die "not inside a git repository (use -r or -w)"
-    specs="$(pwd -P)"$'\n'
-  fi
+  # the current repo, else the current directory as a folder
+  [ -n "$specs" ] || specs="$(pwd -P)"$'\n'
 
   if ! create_repos "$id" "$type/$id" "$from" "$specs"; then
     rm -rf "$tdir"
@@ -118,6 +118,7 @@ cmd_add() {
   [ -n "$specs" ] || die "usage: collie add [<id>] -r repo[:branch]..."
   local branch
   IFS=$TAB read -r _ _ branch _ <"$TASKS_DIR/$id/repos.tsv"
+  [ "$branch" != - ] || branch=feat/$id
   create_repos "$id" "$branch" "$from" "$specs"
   if [ "$window" -eq 1 ] && has_session "$id"; then
     local name c b p
@@ -174,13 +175,18 @@ cmd_ls() {
 }
 
 cmd_show() {
-  local id d name c b p mark top
+  local id d name c b p mark top gone=missing fin=0
   task_id "${1:-}"
   d="$TASKS_DIR/$id"
   awk 'NR == 1 { next } $0 == "---" { exit } /^(status|next):/ { next } { print }' "$d/TASK.md"
   top=$(task_top "$id")
   task_status "$id" "${top%%"$TAB"*}"
   printf 'status: %s%s\n' "$STATUS" "${STATUS_NOTE:+ ($STATUS_NOTE)}"
+  case $STATUS in done | archived)
+    fin=1 gone=removed
+    printf 'finished: %s\n' "$(finished_at "$id")"
+    ;;
+  esac
   echo
   # the contract: TASK.md after its frontmatter
   awk 'NR == 1 && $0 == "---" { f = 1; next }
@@ -191,7 +197,7 @@ cmd_show() {
   echo "repos:"
   while IFS=$TAB read -r name c b p; do
     mark=""
-    [ -d "$p" ] || mark=" (missing)"
+    [ -d "$p" ] || mark=" ($gone)"
     printf '  %s\t%s\t%s%s\n' "$name" "$b" "$p" "$mark"
   done <"$d/repos.tsv"
   echo
@@ -200,6 +206,64 @@ cmd_show() {
   echo
   echo "events:"
   tail -n 5 "$d/events.log" | sed 's/^/  /'
+  [ "$fin" -eq 1 ] || return 0
+  echo
+  echo "commits:"
+  task_commits "$id" | sed 's/^/  /'
+  if [ -f "$d/REPORT.md" ]; then
+    echo
+    echo "report:"
+    sed 's/^/  /' "$d/REPORT.md"
+  fi
+}
+
+# Finished tasks, newest first: finish date, status, id, title, branches, PR
+# (#n of the first pull/merge request URL in REPORT.md). A pattern keeps the
+# tasks whose TASK.md or REPORT.md contains it, ignoring case.
+history_rows() { # [pattern]
+  local d st title bs name b rep fin _
+  for d in "$TASKS_DIR"/*; do
+    [ -f "$d/TASK.md" ] || continue
+    fm_get "$d/TASK.md" status
+    st=$FM
+    case $st in done | archived) ;; *) continue ;; esac
+    [ -z "${1:-}" ] || grep -qsiF -- "$1" "$d/TASK.md" "$d/REPORT.md" || continue
+    fm_get "$d/TASK.md" title
+    title=$FM
+    bs=""
+    while IFS=$TAB read -r name _ b _ || [ -n "$name" ]; do bs="$bs${bs:+,}$b"; done <"$d/repos.tsv"
+    rep=""
+    [ ! -f "$d/REPORT.md" ] || rep="$d/REPORT.md"
+    fin=$(awk -F'\t' -v re="$PR_RE" '
+      FNR == NR { if ($2 == "task_done" || $2 == "task_archived") t = substr($1, 1, 10); next }
+      pr == "" && match($0, re) {
+        pr = substr($0, RSTART, RLENGTH); sub(/.*\//, "#", pr)
+      }
+      END { print (t == "" ? "-" : t) "\t" (pr == "" ? "-" : pr) }' "$d/events.log" ${rep:+"$rep"})
+    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "${fin%%"$TAB"*}" "$st" "${d##*/}" "$title" "$bs" "${fin#*"$TAB"}"
+  done | sort -t "$TAB" -k1,1r -k3,3
+}
+
+cmd_history() {
+  local list=0 pat="" rows self
+  while [ $# -gt 0 ]; do
+    case $1 in
+      -n) list=1 ;;
+      -*) die "history: unknown option $1" ;;
+      *) [ -z "$pat" ] || die "history: too many arguments"; pat=$1 ;;
+    esac
+    shift
+  done
+  if [ "$list" -eq 1 ] || [ ! -t 1 ] || ! command -v fzf >/dev/null; then
+    history_rows "$pat"
+    return
+  fi
+  rows=$(history_rows "$pat")
+  [ -n "$rows" ] || die "history: no finished tasks${pat:+ matching $pat}"
+  self="'$BASH' '$PLUGIN_DIR/bin/collie'"
+  printf '%s\n' "$rows" | fzf --delimiter='\t' --no-sort --prompt='history> ' --header='enter: show' \
+    --preview="$self _preview {3}" --preview-window=right,50% \
+    --bind="enter:execute($self show {3} | sh -c \"\${PAGER:-less}\")" >/dev/null || true
 }
 
 # $EDITOR may carry arguments (EDITOR='code --wait'); like git, let sh split it.
