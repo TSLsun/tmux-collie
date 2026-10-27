@@ -34,9 +34,16 @@ n=${0##*/}
 case $(/bin/ps -o args= -p "$PPID") in
   *bin/collie*) echo "x $$ $n" >>"$SPAWN_LOG/${BATS_TEST_FILENAME##*/}:${BATS_TEST_NUMBER:-0}" ;;
 esac
+# search only behind the shim dir: a test's stub dir sits in front of it and
+# its stub execs `command -v tmux` (this shim) again, which would loop
 IFS=:
+past=0
 for d in $PATH; do
-  [ "$d" != "$SPAWN_SHIM" ] && [ -x "$d/$n" ] && exec "$d/$n" "$@"
+  if [ "$past" = 1 ]; then
+    [ -x "$d/$n" ] && exec "$d/$n" "$@"
+  elif [ "$d" = "$SPAWN_SHIM" ]; then
+    past=1
+  fi
 done
 echo "shim: $n: not found" >&2
 exit 127

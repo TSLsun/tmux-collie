@@ -278,6 +278,28 @@ Known gap: folder-trust dialogs on a new worktree (Claude; Gemini asks twice,
 once for the folder and once for `--include-directories`) are not reported by
 any hook, so the run shows `working` until they are answered.
 
+### tmux kill guard
+
+Agents inherit `$TMUX`, so a bare `tmux kill-server` in an agent's shell kills
+the user's server and every agent on it. claude (`PreToolUse` on `Bash`), codex
+(`PreToolUse` on `Bash`) and gemini (`BeforeTool` on `run_shell_command`) get
+`hooks/tmux-guard` with their other hooks. It reads the hook JSON on stdin and
+exits 2 (deny, reason on stderr: use `tmux -L <name>`) when a statement of the
+command runs `tmux … kill-server|kill-session` (or a prefix such as
+`kill-ses`) or `pkill`/`killall` with `tmux` in its arguments, unless that
+statement has a `-L`/`-S` word. Statements are split on `;`, `&`, `|`,
+newlines, `(`, `)` and backticks (`\;` stays: it is tmux's own separator), then
+checked once with quotes dropped and once per quoted piece, which catches
+`bash -c 'tmux kill-server'`. Leading `VAR=x`, `sudo`, `env`, `command`,
+`exec`, `nohup` and `time` are skipped.
+
+Limits: a best-effort net against mistakes, not a sandbox. Not caught: `kill
+<pid>`, `kill $(pgrep tmux)`, `xargs kill`, `-S` pointing at the user's own
+socket, scripts written to a file and then run, `sudo -u <user> tmux …`, and
+`kill-window`/`kill-pane` (out of scope). omp has no blocking hook and runs
+unguarded. A quoted string that starts with `tmux kill-server` (`echo "tmux
+kill-server"`) is a false positive.
+
 ---
 
 ## 6. Phases
