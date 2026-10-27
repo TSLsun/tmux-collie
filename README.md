@@ -67,6 +67,7 @@ collie ls                              # agent column: waiting/idle/working/exit
 ```sh
 collie review deploy-v2                # commits, diff stat, dirty files, REPORT.md
 collie spike try-cache                 # from a dirty worktree: exp/try-cache task with the same changes
+collie spike try-cache -u              # ...plus untracked (non-ignored) files
 collie gc                              # finish tasks whose branches were merged
 collie sync -n                         # after a merge: which task branches would conflict
 collie sync                            # merge base into them; agents resolve conflicts
@@ -150,6 +151,9 @@ settings file); omp through an extension loaded with `-e agents/omp.ts`
 (tool approvals and the `ask` tool count as waiting); nothing to install.
 Codex asks you to trust the hooks once in `/hooks`. Other agents count as
 idle after 30s without output (`@collie-silence`).
+The same three also get `hooks/tmux-guard`, which blocks shell commands that
+would kill your tmux server (`tmux kill-server`/`kill-session`, `pkill tmux`)
+unless they name a private server with `-L`/`-S`; limits in DESIGN.md.
 Agents you start by hand in a task's session (`claude`, `codex`, `gemini`,
 `omp`, `aider`) are found by process and show up the same way, but without
 hooks they are only working or idle (by output silence) and do not notify.
@@ -192,8 +196,9 @@ Task data lives in `~/.local/state/collie/tasks/<id>/` (`TASK.md`, `repos.tsv`,
 `events.log`) and survives worktree removal. Each worktree gets a `.collie`
 symlink to it, excluded via the repo's `info/exclude`.
 
-`done`/`archive` refuse dirty worktrees or commits not in the base branch
-(`--force` overrides; branches are always kept). `new` is all-or-nothing:
+`done` refuses dirty worktrees or commits not in the base branch; `archive`
+refuses only dirty worktrees, since abandoned work is unmerged by definition
+(`--force` overrides and discards uncommitted changes; branches are always kept). `new` is all-or-nothing:
 a failure rolls back worktrees and branches it already created.
 
 ### Ship workflow
@@ -225,7 +230,9 @@ edit (`collie edit`) them before `collie run`; replace them for all tasks with
 Windows are tagged with `@collie_path` / `@collie_task`; sessions export
 `COLLIE_TASK` and `COLLIE_TASK_DIR`.
 
-`collie new` does not fetch; run `git fetch` first if you want a fresh base.
+`collie new` and `collie add` fetch `origin` before creating worktrees, so a
+new branch starts from origin's latest default branch. Offline, they warn and
+start from local refs.
 
 ## Development
 

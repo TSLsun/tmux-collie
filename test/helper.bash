@@ -28,7 +28,8 @@ EOF
 }
 
 teardown_env() {
-  tmux kill-server 2>/dev/null || true
+  # name the test socket: a bare kill-server could reach the user's server
+  tmux -S "$TMUX_TMPDIR/tmux-$(id -u)/default" kill-server 2>/dev/null || true
 }
 
 collie() {

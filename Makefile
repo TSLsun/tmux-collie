@@ -7,7 +7,7 @@ test:
 	bats --print-output-on-failure --jobs $(JOBS) test/
 
 lint:
-	shellcheck -x bin/collie collie.tmux agents/*.sh hooks/pre-push test/helper.bash
+	shellcheck -x bin/collie collie.tmux agents/*.sh hooks/pre-push hooks/tmux-guard test/helper.bash
 	zsh -n completions/_collie
 
 check: lint test
