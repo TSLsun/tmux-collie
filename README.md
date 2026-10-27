@@ -66,6 +66,8 @@ collie ls                              # agent column: waiting/idle/working/exit
 collie review deploy-v2                # commits, diff stat, dirty files, REPORT.md
 collie spike try-cache                 # from a dirty worktree: exp/try-cache task with the same changes
 collie gc                              # finish tasks whose branches were merged
+collie sync -n                         # after a merge: which task branches would conflict
+collie sync                            # merge base into them; agents resolve conflicts
 ```
 
 `collie run`'s default prompt asks the agent to write `.collie/REPORT.md`.
@@ -78,6 +80,14 @@ a manual fetch (progress is reported per repo on stderr), and also recognize
 squash merges with git >= 2.38. A client viewing a finished task's session
 switches to its last session (else the most recently used one) instead of
 detaching; it detaches only when no other session exists.
+`collie sync` merges the base branch (fetched first) into every active task
+branch, so open PRs stay mergeable after one lands. A clean merge is committed
+and pushed if the branch has an upstream. On a conflict the merge is started
+and the agent is told which files to resolve: typed into it if idle, or a new
+run if it exited; with no agent the worktree is left alone. Tasks whose agent
+is working or waiting, dirty worktrees and branches without commits of their
+own are skipped. It merges instead of rebasing: no force-push, conflicts are
+resolved once, and squash merges discard the merge commits anyway.
 `hooks/pre-push` refuses to push `exp/*` branches:
 `ln -s ~/.tmux/plugins/tmux-collie/hooks/pre-push "$(git rev-parse --git-common-dir)/hooks/pre-push"`.
 
