@@ -41,7 +41,7 @@ collie new deploy-v2 -r A -r B         # cross-repo task (repos by name or path)
 collie new deploy-v2 -r A -r B:release/v2   # per-repo branch
 collie new checkout-fix -w shop        # all repos of a workspace
 collie add deploy-v2 -r C              # pull another repo in mid-task
-collie ls                              # id  status  priority  session(*|-)  agent  repos
+collie ls                              # id  status  priority  session(*|-)  agent  repos  needs
 collie show deploy-v2                  # fields, TASK.md contract, repos, runs, events
 collie edit deploy-v2                  # adjust TASK.md in $EDITOR (also: dash ? e, prefix h e)
 collie go deploy-v2                    # switch/attach (fzf picker if no id)
@@ -98,9 +98,14 @@ collie dash                            # fzf: needs you > active > todo; tab reg
 collie set deploy-v2 priority=P1 "title=Ship v2"
 ```
 
-Dashboard rows start with a status glyph (red `●` an agent waits for you or
-finished its turn, yellow `◐` working, dim `○` no agent), then aligned
-columns: id, status, priority (P0 red, P1 yellow, P3 dim), a colored badge per
+`ls`'s last column says what a task needs from you: `answer` (an agent waits
+for permission or input), `review` (fresh REPORT.md), `reply` (an agent
+finished its turn without one), `stalled` (active, no live agent), `start`
+(todo), or `-` (an agent is working, or the task is finished).
+
+Dashboard rows start with a glyph (red `●` needs you: answer, review, reply,
+stalled; yellow `◐` working; dim `○` todo), then aligned columns: id, state
+(the needs value, or `working`), priority (P0 red, P1 yellow, P3 dim), a colored badge per
 running agent, the age of the last event, repos. Rows come in groups under a
 `── <group> (<n>) ──` line, the most urgent next to the prompt: needs you,
 active, todo. `tab` / `shift-tab` switch the grouping (status, priority,
