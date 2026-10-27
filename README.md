@@ -71,6 +71,8 @@ collie review deploy-v2                # commits, diff stat, dirty files, REPORT
 collie spike try-cache                 # from a dirty worktree: exp/try-cache task with the same changes
 collie spike try-cache -u              # ...plus untracked (non-ignored) files
 collie gc                              # finish tasks whose branches were merged
+collie history                         # finished tasks, newest first; fzf picker, enter: show
+collie history -n oauth                # rows of finished tasks whose TASK.md/REPORT.md mention oauth
 collie sync -n                         # after a merge: which task branches would conflict
 collie sync                            # merge base into them; agents resolve conflicts
 ```

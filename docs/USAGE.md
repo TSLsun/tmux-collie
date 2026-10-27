@@ -27,6 +27,7 @@ collie run fix-retry                                   # agent reads .collie/TAS
 collie review fix-retry                                # commits, diff stat, REPORT.md
 # merge fix/fix-retry (PR or locally), then:
 collie gc                                              # or: collie done fix-retry
+collie history                                         # later: finished tasks, their commits and REPORT.md
 ```
 
 ## 2. What a task is made of
@@ -60,6 +61,7 @@ flowchart TB
 | Piece | One per | Created by | Removed by | Survives `kill-server`? |
 |---|---|---|---|---|
 | Task record (`TASK.md`, `repos.tsv`, `events.log`, `REPORT.md`) | task | `new`, `spike` | never | yes |
+| Commit snapshot (`commits.txt`) | task | `done`, `archive` | never | yes |
 | Branch `<type>/<id>` | repo in the task | `new`, `add`, `spike` | never (delete it yourself) | yes |
 | Worktree + `.collie` symlink | repo in the task | `new`, `add`, `spike` | `done`, `archive`, `gc` | yes |
 | tmux session `<id>` | task | `new`, `go` (rebuilds it) | `done`, `archive`, `gc` | no; `go` rebuilds it |

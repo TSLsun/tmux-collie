@@ -131,6 +131,7 @@ switches to grouping by priority or repo, keeping this order inside a group.
                  # (a folder: name<TAB>-<TAB>-<TAB>folder path; see FOLDER-TASKS.md)
   REPORT.md      # agent's final report (P5)
   events.log     # append-only: ts<TAB>event<TAB>k=v ...
+  commits.txt    # written by done/archive: per repo, branch commits + diff stat
   repos/<repo> -> worktree path (symlink)
 
 <repo worktree>/.collie -> ~/.local/state/collie/tasks/<id>
@@ -189,6 +190,7 @@ created: 2026-01-01
 | `collie spike <id>` | New `exp/<id>` task from the current worktree, carrying its uncommitted tracked changes (`git stash create`); `-u` also copies untracked, non-ignored files; source untouched |
 | `collie done [<id>] [--force]` | Accept: safety checks, then remove worktrees and session |
 | `collie archive [<id>] [--force]` | Abandon: same cleanup; unmerged commits are fine (branch kept), only dirty worktrees refuse |
+| `collie history [-n] [pattern]` | Finished tasks, newest first: date, status, id, title, branches, PR (from REPORT.md); pattern greps TASK.md/REPORT.md; fzf picker with preview, enter pages `show` |
 | `collie reopen [<id>] [--no-window]` | Undo done/archive/gc: worktrees back on the kept branches, stored status cleared, session rebuilt; refuses a deleted or checked-out branch |
 | `collie gc [-n]` | Finish (`done`) tasks whose branches all moved past their start and are contained in base; tasks `done` refuses (dirty, unmerged) are skipped with the first reason |
 | `collie sync [<id>...] [-n]` | Merge base into active task branches (clean: commit + push if tracked; conflict: start the merge and hand it to the idle or exited agent); busy agents, dirty worktrees and untouched branches are skipped |
@@ -197,7 +199,7 @@ created: 2026-01-01
 
 | Command | Purpose |
 |---|---|
-| `collie show [<id>]` | Full task info, the TASK.md body, runs + recent events |
+| `collie show [<id>]` | Full task info, the TASK.md body, runs + recent events; finished tasks add finish time, commits (`commits.txt`, else the live branch, else the PR URL from REPORT.md) and REPORT.md |
 | `collie state <working\|waiting\|idle\|exited>` | Endpoint called by agent hooks; no-op outside a collie window |
 | `collie status` | Agent counts for the status bar (`#{collie_status}`) |
 | `collie doctor` | Dependencies, installed agents, task/git/tmux reconciliation; exits 1 on failures |

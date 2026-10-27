@@ -1,6 +1,7 @@
 #!/usr/bin/env bats
 
 load helper
+bats_require_minimum_version 1.5.0
 
 # Folder tasks: a plain (non-git) directory used in place. collie never
 # creates, checks or removes anything inside it.
@@ -76,6 +77,17 @@ teardown() { teardown_env; }
   [ -f "$F/plan.md" ] && [ -f "$F/draft.md" ]
   ! tmux has-session -t =trip 2>/dev/null
   [ ! -e "$(task_dir trip)/repos/trip-2027" ]
+}
+
+@test "history: a finished folder task has no commits and keeps its folder in the preview" {
+  cd "$TMP"
+  collie new trip -r "$F" --no-window
+  run --separate-stderr collie done trip
+  [ "$status" -eq 0 ] && [ -z "$stderr" ]
+  [ ! -s "$(task_dir trip)/commits.txt" ]
+  run collie _preview trip
+  [[ "$output" == *"trip-2027  folder  $F"* && "$output" != *removed* ]]
+  [[ "$(collie history -n)" == *"	done	trip	"* ]]
 }
 
 @test "reopen: a folder task comes back in place; a vanished folder refuses" {
