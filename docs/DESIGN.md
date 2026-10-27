@@ -216,7 +216,8 @@ One file per agent, `agents/<name>.sh`, sourced by `collie run`:
 
 ```bash
 AGENT_HOOKS=1         # 1 if the agent reports state through `collie state`
-agent_argv            # sets AGENT_ARGV from RUN_PROMPT (initial prompt) and
+agent_argv            # sets AGENT_ARGV from RUN_PROMPT (initial prompt),
+                      # RUN_NAME (session name, "<id>: <title>") and
                       # RUN_DIRS (other worktrees + task dir, one per line)
 ```
 
