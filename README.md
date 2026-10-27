@@ -4,6 +4,8 @@ Herd coding agents across git worktrees, from tmux.
 
 > **Status: 0.x, experimental.** Interfaces may change without notice.
 
+New here? [docs/USAGE.md](docs/USAGE.md) shows the task lifecycle, states and
+where each action lives in diagrams and tables.
 See [docs/DESIGN.md](docs/DESIGN.md) for goals, data model and roadmap, and
 [docs/UNVERIFIED.md](docs/UNVERIFIED.md) for what has not been checked yet.
 
@@ -92,13 +94,17 @@ resolved once, and squash merges discard the merge commits anyway.
 ### Dashboard and menu
 
 ```sh
-collie dash                            # fzf: waiting > idle > review > working
+collie dash                            # fzf: needs you > active > todo; tab regroups
 collie set deploy-v2 priority=P1 "title=Ship v2"
 ```
 
 Dashboard rows start with a status glyph (red `●` an agent waits for you or
-finished its turn, yellow `◐` working, dim `○` no agent) and show a colored
-badge per running agent; rows that need you come first. `enter` goes to the
+finished its turn, yellow `◐` working, dim `○` no agent), then aligned
+columns: id, status, priority (P0 red, P1 yellow, P3 dim), a colored badge per
+running agent, the age of the last event, repos. Rows come in groups under a
+`── <group> (<n>) ──` line, the most urgent next to the prompt: needs you,
+active, todo. `tab` / `shift-tab` switch the grouping (status, priority,
+repo); it is kept for the next dashboard. `enter` goes to the
 task; `?` opens an action menu above the selected row (run agent, adopt agent,
 edit task, review, terminal, done, new task): press its key, or move with ↑↓ and
 press enter; esc closes it. The preview shows the start of TASK.md's Objective.

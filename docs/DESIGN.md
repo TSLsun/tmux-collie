@@ -99,14 +99,17 @@ is the handoff.
 | `exited` | agent process no longer in its pane |
 | `unknown` | session gone or state can't be determined |
 
-Dashboard order: `waiting` > `idle` > task `review` > `working`
-(the more it needs you, the higher it sorts).
+Dashboard order: `waiting` > `idle` > task `review` > `working` > other
+`active` > `todo`, then priority, then id (the more it needs you, the higher
+it sorts). The dashboard shows them in groups (needs you, active, todo); tab
+switches to grouping by priority or repo, keeping this order inside a group.
 
 ### 3.4 Files
 
 ```
 ~/.config/collie/workspaces          # optional; one per line:  shop: api web infra
 ~/.config/collie/TASK.md             # optional; overrides the TASK.md body template
+~/.local/state/collie/dash-group     # dashboard grouping (status, priority, repo)
 ~/.local/state/collie/tasks/<id>/    # task record; survives worktree removal
   TASK.md        # contract + frontmatter (title, priority; status once finished)
   repos.tsv      # machine-owned: name<TAB>git common dir<TAB>branch<TAB>worktree path
