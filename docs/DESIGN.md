@@ -182,12 +182,12 @@ created: 2026-01-01
 | `collie adopt [<id>] [-y]` | Restart an agent started by hand in the task's session under `collie run`, resuming its conversation (claude, omp) |
 | `collie dash [-n]` | fzf dashboard, most urgent first; enter jumps to the most urgent agent window |
 | `collie set [<id>] priority=P1 title="..."` | Update priority or title; a bare field reads stdin |
-| `collie edit [<id>]` | Open TASK.md in `$EDITOR` (also `new --edit`, dash `e`, menu `e`) |
+| `collie edit [<id>]` | Open TASK.md in `$EDITOR` (also `new --edit`, dash `ctrl-e` or `? e`, menu `e`) |
 | `collie review [<id>] [-p]` | Per-repo commits, diff stat (`-p` patch), dirty files, then REPORT.md |
 | `collie spike <id>` | New `exp/<id>` task from the current worktree, carrying its uncommitted tracked changes (`git stash create`); `-u` also copies untracked, non-ignored files; source untouched |
 | `collie done [<id>] [--force]` | Accept: safety checks, then remove worktrees and session |
 | `collie archive [<id>] [--force]` | Abandon: same cleanup; unmerged commits are fine (branch kept), only dirty worktrees refuse |
-| `collie gc [-n]` | Finish (`done`) tasks whose branches all moved past their start and are contained in base; dirty ones are skipped |
+| `collie gc [-n]` | Finish (`done`) tasks whose branches all moved past their start and are contained in base; tasks `done` refuses (dirty, unmerged) are skipped with the first reason |
 | `collie sync [<id>...] [-n]` | Merge base into active task branches (clean: commit + push if tracked; conflict: start the merge and hand it to the idle or exited agent); busy agents, dirty worktrees and untouched branches are skipped |
 
 ### Admin
