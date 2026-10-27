@@ -14,7 +14,8 @@ cmd__pr() { # id
   [ -f "$d/repos.tsv" ] || return 0
   while IFS=$TAB read -r name c b p; do
     # folders have no branch
-    [ "$c" != - ] && [ -d "$p" ] || continue
+    [ "$c" != - ] || continue
+    [ -d "$p" ] || continue
     # newest first; a draft is open too
     if ! line=$(cd "$p" && gh pr list --state all --head "$b" --limit 1 --json number,state,isDraft \
       --jq '.[] | "\(.number)\t\(if .isDraft and .state == "OPEN" then "draft" else .state | ascii_downcase end)"' \
