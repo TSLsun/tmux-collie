@@ -127,8 +127,8 @@ press enter; esc closes it. The header lists the direct keys. The preview shows
 the start of TASK.md's Objective.
 
 `prefix h` opens a menu (dashboard, lazygit, terminal, new
-task, edit task, review, run agent, adopt agent, done, archive, jump to alert) for the current session's task; outside a
-task session it keeps only dashboard, lazygit, terminal, new task and jump to alert.
+task, edit task, review, run agent, adopt agent, done, archive, jump to alert, gc merged tasks) for the current session's task; outside a
+task session it keeps only dashboard, lazygit, terminal, new task, jump to alert and gc merged tasks.
 `run agent` (`r`, here and in the dashboard) switches you to the new agent window;
 plain `collie run` leaves it in the background (`-s` switches). `jump to alert` (`j`) switches to the pane of the last agent that notified. `prefix h h` goes straight to the
 dashboard. `new task` (`c`) prompts in a popup, creates the task from the
