@@ -32,9 +32,12 @@ usage: collie <command> [args]
 tasks:
   new [<id>] [-r repo[:branch]]... [-w workspace] [-t type] [--title text]
            [-m objective] [--from ref] [--edit] [--no-window]
-           [--ship|--no-ship]
+           [--ship|--no-ship] [--run] [--agent name] [-p prompt] [-- args]
                       create a task: worktree per repo + tmux session;
-                      no id on a tty prompts for id, type, objective, ship;
+                      no id on a tty prompts for id, type, objective, ship,
+                      and (given an objective) whether to start the agent;
+                      --run starts the agent as `run` does; --agent, -p and
+                      -- pass through to run and imply --run;
                       --ship adds commit/push/PR/CI rules to TASK.md
                       (default: $COLLIE_SHIP, @collie-ship, else off)
   add [<id>] -r repo[:branch]... [--from ref] [--no-window]
@@ -624,6 +627,7 @@ cmd__jump() { # [pane|-] [client]
 cmd_new() {
   local id="" specs="" ws="" type=feat title="" from="" edit=0 window=1
   local goal="" asked=0 t ship=${COLLIE_SHIP-$(tmux_opt @collie-ship)}
+  local run=0 agent="" runargs=()
   case $ship in on | 1 | yes | true) ship=1 ;; *) ship=0 ;; esac
   while [ $# -gt 0 ]; do
     case $1 in
@@ -637,6 +641,10 @@ cmd_new() {
       --no-window) window=0 ;;
       --ship) ship=1 ;;
       --no-ship) ship=0 ;;
+      --run) run=1 ;;
+      --agent) agent=${2:?--agent needs a name}; run=1; shift ;;
+      -p) [ $# -ge 2 ] || die "-p needs a prompt"; runargs+=(-p "$2"); run=1; shift ;;
+      --) shift; runargs+=(-- "$@"); run=1; break ;;
       -*) die "new: unknown option $1" ;;
       *) [ -z "$id" ] || die "new: too many arguments"; id=$1 ;;
     esac
@@ -645,6 +653,7 @@ cmd_new() {
   # no id on a terminal (e.g. the menu popup): show what will be asked, then ask
   if [ -z "$id" ] && [ -t 0 ]; then
     local where base=${from:-}
+    [ -n "$agent" ] || { run_agent; agent=$RUN_AGENT; }
     if [ -n "$ws" ]; then
       where="workspace $ws"
     elif [ -n "$specs" ]; then
@@ -662,16 +671,25 @@ cmd_new() {
       id required '[a-z0-9-], max 40' \
       type "$type" 'e.g. fix, refactor, docs' \
       objective optional 'goes into TASK.md' \
-      ship "$([ "$ship" = 1 ] && echo on || echo off)" 'agent pushes, opens a PR, checks CI'
+      ship "$([ "$ship" = 1 ] && echo on || echo off)" 'agent pushes, opens a PR, checks CI' \
+      agent "$agent" "$([ "$run" = 1 ] && echo 'starts after creation' || echo 'asked if an objective is given')"
     echo
     read -r -e -p "task id: " id
     read -r -e -p "type [$type]: " t && type=${t:-$type}
     [ -n "$goal" ] || read -r -e -p "objective (optional): " goal
     read -r -e -p "ship [$([ "$ship" = 1 ] && echo Y/n || echo y/N)]: " t
     case $t in [yY]*) ship=1 ;; [nN]*) ship=0 ;; esac
+    if [ -n "$goal" ] && [ "$run" = 0 ] && command -v tmux >/dev/null; then
+      read -r -e -p "start $agent now [Y/n]: " t
+      case $t in [nN]*) ;; *) run=1 ;; esac
+    fi
     asked=1
   fi
   [ -n "$id" ] || die "usage: collie new <id> [-r repo[:branch]]... [-w workspace] ..."
+  if [ "$run" = 1 ]; then
+    [ "$window" = 1 ] || die "new: --run needs a session; drop --no-window"
+    command -v tmux >/dev/null || die "new: --run needs tmux"
+  fi
   valid_id "$id" || die "invalid id '$id' (use [a-z0-9-], max 40, no leading '-')"
   local tdir r
   tdir="$TASKS_DIR/$id"
@@ -694,7 +712,16 @@ cmd_new() {
   printf '%s\n' "${NEW_PATHS%%$'\n'*}"
   if [ "$window" -eq 1 ] && command -v tmux >/dev/null; then
     ensure_session "$id"
+    # the task exists either way: a failed run is reported, not rolled back
+    local rc=0
+    [ "$run" = 0 ] || (cmd_run "$id" ${agent:+--agent "$agent"} ${runargs[@]+"${runargs[@]}"}) || rc=$?
     [ "$asked" -eq 0 ] || [ -z "${TMUX:-}" ] || tmux switch-client -t "=$id"
+    if [ "$rc" -ne 0 ]; then
+      warn "task '$id' created; start the agent with: collie run $id"
+      # the popup closes on exit: keep the error on screen until a key
+      [ "$asked" -eq 0 ] || read -rsn1 -p '[press any key]' _ || true
+      exit "$rc"
+    fi
   fi
 }
 
@@ -901,6 +928,12 @@ leave_session() { # id
   done
 }
 
+# Sets RUN_AGENT, the agent `collie run` starts without --agent.
+run_agent() {
+  RUN_AGENT=${COLLIE_AGENT:-$(tmux_opt @collie-agent)}
+  RUN_AGENT=${RUN_AGENT:-claude}
+}
+
 cmd_run() {
   local id="" agent="" repo="" prompt=$DEFAULT_PROMPT custom=0 extra=()
   while [ $# -gt 0 ]; do
@@ -916,8 +949,7 @@ cmd_run() {
   done
   task_id "$id"
   command -v tmux >/dev/null || die "run: tmux required"
-  agent=${agent:-${COLLIE_AGENT:-$(tmux_opt @collie-agent)}}
-  agent=${agent:-claude}
+  [ -n "$agent" ] || { run_agent; agent=$RUN_AGENT; }
 
   local d name c b p rname="" path=""
   d="$TASKS_DIR/$id"
