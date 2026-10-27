@@ -80,7 +80,7 @@ EOF
 
 # --- dashboard --------------------------------------------------------------
 
-@test "dash -n: waiting > idle > review > working > rest (by priority, id)" {
+@test "dash -n: answer > reply > review > stalled > working > start (by priority, id)" {
   for t in a b c d e f g; do collie new "$t" --no-window; done
   collie new z --no-window
   collie archive z
@@ -92,10 +92,16 @@ EOF
   # d: a past run (no session) that wrote its report
   printf '2020-01-01T00:00:00Z\trun_started\trun=1 agent=sleep repo=A\n' >>"$(task_dir d)/events.log"
   echo done >"$(task_dir d)/REPORT.md"
+  # e: a past run (no session) without a report
+  printf '2020-01-01T00:00:00Z\trun_started\trun=1 agent=sleep repo=A\n' >>"$(task_dir e)/events.log"
   collie set g priority=P0
   run collie dash -n
   [ "$status" -eq 0 ]
-  [ "$(printf '%s\n' "$output" | cut -f1 | paste -s -d' ' -)" = "b c d a g e f" ]
+  [ "$(printf '%s\n' "$output" | cut -f1 | paste -s -d' ' -)" = "b c d e a g f" ]
+  [ "$(printf '%s\n' "$output" | cut -f1,7 | paste -s -d' ' -)" = "b	answer c	reply d	review e	stalled a	- g	start f	start" ]
+  # a stalled task needs you too
+  [[ "$(collie _rows | sed $'s/\033\\[[0-9;]*m//g' | cut -f2 | sed -n 5p)" == "● e "*" stalled "* ]]
+  [[ "$(collie _rows | sed -n 6p)" == *"── needs you (4) ─"* ]]
 }
 
 @test "status: review once the agent is idle and REPORT.md is fresh; working stays active" {
@@ -145,12 +151,12 @@ EOF
   [ "$status" -eq 0 ]
   [ "$(printf '%s\n' "$output" | cut -f1 | paste -s -d, -)" = ",bb,,a,,ccc-long," ]
   plain=$(printf '%s\n' "$output" | sed $'s/\033\\[[0-9;]*m//g' | cut -f2)
-  [ "$(printf '%s\n' "$plain" | sed -n 1p)" = "  TASK      STATUS  PRI  AGENT  AGE  REPOS" ]
-  [ "$(printf '%s\n' "$plain" | sed -n 2p)" = "● bb        active  P2   sleep  now  A" ]
-  [ "$(printf '%s\n' "$plain" | sed -n 3p)" = "── needs you (1) ─────────────────────────" ]
-  [ "$(printf '%s\n' "$plain" | sed -n 4p)" = "◐ a         active  P2   sleep  now  A" ]
-  [ "$(printf '%s\n' "$plain" | sed -n 6p)" = "○ ccc-long  todo    P0   -      now  A" ]
-  [ "$(printf '%s\n' "$plain" | sed -n 7p)" = "── todo (1) ──────────────────────────────" ]
+  [ "$(printf '%s\n' "$plain" | sed -n 1p)" = "  TASK      STATE    PRI  AGENT  AGE  REPOS" ]
+  [ "$(printf '%s\n' "$plain" | sed -n 2p)" = "● bb        answer   P2   sleep  now  A" ]
+  [ "$(printf '%s\n' "$plain" | sed -n 3p)" = "── needs you (1) ──────────────────────────" ]
+  [ "$(printf '%s\n' "$plain" | sed -n 4p)" = "◐ a         working  P2   sleep  now  A" ]
+  [ "$(printf '%s\n' "$plain" | sed -n 6p)" = "○ ccc-long  start    P0   -      now  A" ]
+  [ "$(printf '%s\n' "$plain" | sed -n 7p)" = "── todo (1) ───────────────────────────────" ]
   [[ "$output" == *$'\033[31m●'* && "$output" == *$'\033[33m◐'* && "$output" == *$'\033[1;31mP0'* ]]
   [ "$(paste -s -d, - <"$COLLIE_STATE_DIR/dash-rows")" = "bb,,a,,ccc-long," ]
   # dash -n keeps the same order, ungrouped

@@ -64,7 +64,7 @@ flowchart TB
 | Worktree + `.collie` symlink | repo in the task | `new`, `add`, `spike` | `done`, `archive`, `gc` | yes |
 | tmux session `<id>` | task | `new`, `go` (rebuilds it) | `done`, `archive`, `gc` | no; `go` rebuilds it |
 | Shell window | repo in the task | with the session | with the session | no |
-| Agent window (a *run*) | `collie run` / `adopt` | `run`, `adopt` | closing the window | no; its run becomes `unknown` |
+| Agent window (a *run*) | `collie run` / `adopt` | `run`, `adopt` | closing the window | no; its run becomes `unknown` until `collie restore` |
 
 ## 3. Task status
 
@@ -117,25 +117,40 @@ stateDiagram-v2
     exited --> unknown: session gone
 ```
 
-| State | Dash glyph | Notifies? | Source |
-|---|---|---|---|
-| `waiting` | red `●` | yes | hook (not available for generic agents) |
-| `idle` | red `●` | yes, from `working` | hook; generic agents: 30s without output |
-| `working` | yellow `◐` | no | hook; generic agents: output |
-| `exited` | dim `○` | no | wrapper saw the process exit |
-| `unknown` | dim `○` | no | window or session gone |
+| State | Notifies? | Source |
+|---|---|---|
+| `waiting` | yes | hook (not available for generic agents) |
+| `idle` | yes, from `working` | hook; generic agents: 30s without output |
+| `working` | no | hook; generic agents: output |
+| `exited` | no | wrapper saw the process exit |
+| `unknown` | no | window or session gone |
 
 A task's `agent` column shows its most urgent run (`waiting` > `idle` >
-`working` > `exited` > `unknown`). The dashboard sorts tasks by
-`waiting` > `idle` > task `review` > `working` > other `active` > `todo`, then
-priority, and shows them in groups (needs you, active, todo); `tab` /
+`working` > `exited` > `unknown`). Status and agent fold into one *needs*
+value (`ls`'s last column, the dashboard's STATE), first match:
+
+| Needs | When | Dash glyph |
+|---|---|---|
+| `answer` | an agent is `waiting` | red `●` |
+| `review` | task status `review` | red `●` |
+| `reply` | an agent is `idle` (turn over, no fresh REPORT.md) | red `●` |
+| `-` | an agent is `working` (dash: `working`), or task finished | yellow `◐` |
+| `start` | task status `todo` | dim `○` |
+| `stalled` | `active`, but no live agent | red `●` |
+
+The dashboard sorts tasks in that urgency (`answer` > `reply` > `review` >
+`stalled` > `working` > `start`), then priority, and shows them in groups
+(needs you, active, todo); `tab` /
 `shift-tab` regroup by priority or repo.
 
 Agents get hooks per run, nothing installed: claude, codex, gemini, omp.
 Any other command (`--agent aider`) runs without hooks. Agents you start by
 hand in a task's session are detected by process (working/idle only, no
 notifications); `collie adopt` restarts a hand-started claude or omp under
-`collie run` with its conversation resumed.
+`collie run` with its conversation resumed. `collie restore` restarts the
+runs lost with a dead tmux server (claude by its logged session id, omp by
+the worktree's latest conversation); agents started by hand are not
+recorded, so they are not restored.
 
 ## 5. Where each action lives
 
@@ -146,6 +161,7 @@ notifications); `collie adopt` restarts a hand-started claude or omp under
 | Edit TASK.md | `collie edit` | `e` | `ctrl-e` or `?` `e` |
 | Run agent | `collie run` | `r` | `ctrl-r` or `?` `r` |
 | Adopt hand-started agent | `collie adopt` | — | `?` `a` |
+| Restore agents after the server died | `collie restore` | — | — |
 | Go to task | `collie go` | — | `enter` (most urgent agent window) |
 | Jump to last alert | — | `j` | — |
 | Review | `collie review` | `v` | `ctrl-v` or `?` `v` |
