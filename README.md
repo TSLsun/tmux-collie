@@ -46,10 +46,11 @@ collie new checkout-fix -w shop        # all repos of a workspace
 collie add deploy-v2 -r C              # pull another repo in mid-task
 collie ls                              # id  status  priority  session(*|-)  agent  repos  needs
 collie show deploy-v2                  # fields, TASK.md contract, repos, runs, events
-collie edit deploy-v2                  # adjust TASK.md in $EDITOR (also: dash ? e, prefix h e)
+collie edit deploy-v2                  # adjust TASK.md in $EDITOR (also: dash ctrl-e, prefix h e)
 collie go deploy-v2                    # switch/attach (fzf picker if no id)
 collie done deploy-v2                  # accept: remove worktrees + session, keep branches
 collie archive deploy-v2               # abandon: same cleanup
+collie reopen deploy-v2                # closed by mistake: worktrees back on the kept branches
 ```
 
 ### Agents
@@ -78,9 +79,9 @@ collie sync                            # merge base into them; agents resolve co
 Task status is derived, never set by hand: `todo` until the first agent run,
 `active` after it, `review` once no agent is working or waiting and REPORT.md
 was written since the last run started; `done` / `archived` come from
-`done`, `gc` and `archive`. If the agents are quiet but the last run left no
-REPORT.md, the task stays `active` and `show` and the dashboard preview say
-`no REPORT.md since run N`.
+`done`, `gc` and `archive`, and `reopen` undoes them. If the agents are quiet
+but the last run left no REPORT.md, the task stays `active` and `show` and the
+dashboard preview say `no REPORT.md since run N`.
 `done` and `gc` fetch `origin` first, so a PR merged on GitHub counts without
 a manual fetch (progress is reported per repo on stderr), and also recognize
 squash merges with git >= 2.38. A client viewing a finished task's session
@@ -116,12 +117,15 @@ running agent, the age of the last event, repos. Rows come in groups under a
 `── <group> (<n>) ──` line, the most urgent next to the prompt: needs you,
 active, todo. `tab` / `shift-tab` switch the grouping (status, priority,
 repo); it is kept for the next dashboard. `enter` goes to the
-task; `?` opens an action menu above the selected row (run agent, adopt agent,
-edit task, review, terminal, done, new task): press its key, or move with ↑↓ and
-press enter; esc closes it. The preview shows the start of TASK.md's Objective.
+task; `ctrl-r` runs an agent, `ctrl-v` reviews, `ctrl-e` edits TASK.md and
+`ctrl-d` marks it done (after a y/n prompt), so typing still filters. `?` opens
+the full action menu above the selected row (run agent, adopt agent, edit task,
+review, terminal, done, archive, new task): press its key, or move with ↑↓ and
+press enter; esc closes it. The header lists the direct keys. The preview shows
+the start of TASK.md's Objective.
 
 `prefix h` opens a menu (dashboard, lazygit, terminal, new
-task, edit task, review, run agent, done, jump to alert) for the current session's task; outside a
+task, edit task, review, run agent, adopt agent, done, archive, jump to alert) for the current session's task; outside a
 task session it keeps only dashboard, lazygit, terminal, new task and jump to alert.
 `jump to alert` (`j`) switches to the pane of the last agent that notified. `prefix h h` goes straight to the
 dashboard. `new task` (`c`) prompts in a popup, creates the task from the
@@ -158,7 +162,7 @@ unless they name a private server with `-L`/`-S`; limits in DESIGN.md.
 Agents you start by hand in a task's session (`claude`, `codex`, `gemini`,
 `omp`, `aider`) are found by process and show up the same way, but without
 hooks they are only working or idle (by output silence) and do not notify.
-`collie adopt` (dashboard `?` → `a`) stops such a Claude or omp and restarts
+`collie adopt` (dashboard `?` → `a`, `prefix h` → `a`) stops such a Claude or omp and restarts
 it with `collie run … -- --continue` (omp: `-c`): same conversation, now with
 hooks.
 When the tmux server dies, `collie restore` (`-n` to list) restarts every

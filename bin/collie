@@ -17,6 +17,9 @@ TASKS_DIR="$STATE_DIR/tasks"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/collie"
 TAB=$'\t'
 DASH_PROMPT='collie> ' PICK_MARK='▸ '
+# dashboard keys that run an action without the ? menu; printable keys stay
+# for filtering (they take over fzf's ctrl-e end-of-line and ctrl-d delete-char)
+DASH_DIRECT='ctrl-r ctrl-v ctrl-e ctrl-d'
 
 die() {
   printf 'collie: %s\n' "$*" >&2
@@ -64,6 +67,8 @@ tasks:
                       conflicts go to the task's idle agent (-n: predict only)
   done [<id>] [--force]     accept: remove worktrees + session, keep branches
   archive [<id>] [--force]  abandon: same cleanup, status archived (unmerged ok)
+  reopen [<id>] [--no-window]
+                      undo done/archive: worktrees back on the kept branches
 
 agents:
   run [<id>] [--agent name] [-r repo] [-p prompt] [-- args]
@@ -272,6 +277,12 @@ fm_set() {
   mv "$1.tmp" "$1"
 }
 
+fm_del() { # file key
+  awk -v k="$2" 'NR > 1 && !end && $0 == "---" { end = 1 }
+    NR == 1 || end || index($0, k ":") != 1' "$1" >"$1.tmp"
+  mv "$1.tmp" "$1"
+}
+
 # NOW: the current time in a strftime format (stamp_utc: in UTC). bash 4.2+
 # formats it without forking date; bash 3.2 still runs date.
 if [ $((BASH_VERSINFO[0] * 100 + BASH_VERSINFO[1])) -ge 402 ]; then
@@ -305,12 +316,15 @@ write_task_md() { # dir id title [objective] [ship]
   } >"$1/TASK.md"
 }
 
-# Which task (if any) owns a worktree path.
+# Which open task (if any) owns a worktree path; a done/archived task keeps
+# its old paths in repos.tsv but owns nothing.
 task_owning() {
   local f
   for f in "$TASKS_DIR"/*/repos.tsv; do
     [ -f "$f" ] || continue
     if awk -F'\t' -v p="$1" '$4 == p { found = 1 } END { exit !found }' "$f"; then
+      fm_get "${f%/*}/TASK.md" status
+      case $FM in done | archived) continue ;; esac
       f=${f%/*}
       printf '%s\n' "${f##*/}"
       return
@@ -348,7 +362,7 @@ add_worktree() { # common path branch from
 # Plans, preflights and creates worktrees for SPECS (newline-separated) into
 # task <id>; all-or-nothing. Appends to repos.tsv and links on success.
 create_repos() { # id default_branch from specs
-  local id=$1 default_branch=$2 from=$3 specs=$4 tdir plan="" spec branch path line dup n wt
+  local id=$1 default_branch=$2 from=$3 specs=$4 tdir plan="" spec branch path dup n
   tdir="$TASKS_DIR/$id"
 
   while IFS= read -r spec; do
@@ -367,20 +381,7 @@ create_repos() { # id default_branch from specs
       plan="$plan$R_NAME$TAB-$TAB-$TAB$R_ROOT"$'\n'
       continue
     fi
-    # worktree path that has the branch checked out
-    line="" wt=""
-    while IFS= read -r n; do
-      case $n in
-        "worktree "*) wt=${n#worktree } ;;
-        "branch refs/heads/$branch") line=$wt; break ;;
-      esac
-    done <<<"$(git --git-dir="$R_COMMON" worktree list --porcelain)"
-    if [ -n "$line" ]; then
-      local owner
-      owner=$(task_owning "$line")
-      [ -z "$owner" ] || owner=" (task '$owner')"
-      die "branch '$branch' in $R_NAME is checked out at $line$owner"
-    fi
+    checked_out "$R_COMMON" "$R_NAME" "$branch"
     [ ! -e "$path" ] || die "$path already exists"
     plan="$plan$R_NAME$TAB$R_COMMON$TAB$branch$TAB$path"$'\n'
   done <<<"$specs"
@@ -403,17 +404,38 @@ create_repos() { # id default_branch from specs
     [ -n "$name" ] || continue
     NEW_PATHS="$NEW_PATHS${NEW_PATHS:+$'\n'}$p"
     printf '%s\t%s\t%s\t%s\n' "$name" "$c" "$b" "$p" >>"$tdir/repos.tsv"
-    ln -s "$p" "$tdir/repos/$name"
-    if [ "$c" = - ]; then
-      # shared and unversioned: no .collie link, agents get the task dir
-      log_event "$id" folder_added "repo=$name path=$p"
-      continue
-    fi
-    ln -s "$tdir" "$p/.collie"
-    [ -d "$c/info" ] || mkdir -p "$c/info"
-    excluded "$c/info/exclude" || echo '/.collie' >>"$c/info/exclude"
-    log_event "$id" worktree_created "repo=$name branch=$b path=$p start=$(git -C "$p" rev-parse HEAD)"
+    link_worktree "$id" "$name" "$c" "$b" "$p"
   done <<<"$plan"
+}
+
+# Dies if a branch is checked out in some worktree, naming the owning task.
+checked_out() { # common name branch
+  local n wt="" at=""
+  while IFS= read -r n; do
+    case $n in
+      "worktree "*) wt=${n#worktree } ;;
+      "branch refs/heads/$3") at=$wt; break ;;
+    esac
+  done <<<"$(git --git-dir="$1" worktree list --porcelain)"
+  [ -n "$at" ] || return 0
+  n=$(task_owning "$at")
+  [ -z "$n" ] || n=" (task '$n')"
+  die "branch '$3' in $2 is checked out at $at$n"
+}
+
+# Links a new worktree and the task dir both ways and logs where it started.
+link_worktree() { # id name common branch path
+  local tdir="$TASKS_DIR/$1"
+  ln -s "$5" "$tdir/repos/$2"
+  if [ "$3" = - ]; then
+    # shared and unversioned: no .collie link, agents get the task dir
+    log_event "$1" folder_added "repo=$2 path=$5"
+    return
+  fi
+  ln -s "$tdir" "$5/.collie"
+  [ -d "$3/info" ] || mkdir -p "$3/info"
+  excluded "$3/info/exclude" || echo '/.collie' >>"$3/info/exclude"
+  log_event "$1" worktree_created "repo=$2 branch=$4 path=$5 start=$(git -C "$5" rev-parse HEAD)"
 }
 
 # Whether an info/exclude file has the /.collie line.
@@ -982,6 +1004,56 @@ leave_session() { # id
   done
 }
 
+# Undoes done/archive: worktrees back on the kept branches, stored status
+# cleared, session rebuilt. All-or-nothing, like new.
+cmd_reopen() {
+  local id="" window=1
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --no-window) window=0 ;;
+      -*) die "reopen: unknown option $1" ;;
+      *) [ -z "$id" ] || die "reopen: too many arguments"; id=$1 ;;
+    esac
+    shift
+  done
+  task_id "$id"
+  local d st name c b p created="" first=""
+  d="$TASKS_DIR/$id"
+  fm_get "$d/TASK.md" status
+  st=$FM
+  case $st in done | archived) ;; *) die "task '$id' is not done or archived" ;; esac
+
+  # folders were left in place: they only need to still exist
+  while IFS=$TAB read -r name c b p; do
+    if [ "$c" = - ]; then
+      [ -d "$p" ] || die "folder $p no longer exists"
+      continue
+    fi
+    git --git-dir="$c" show-ref -q --verify "refs/heads/$b" ||
+      die "branch '$b' in $name no longer exists"
+    checked_out "$c" "$name" "$b"
+    [ ! -e "$p" ] || die "$p already exists"
+  done <"$d/repos.tsv"
+
+  while IFS=$TAB read -r name c b p; do
+    [ "$c" != - ] || continue
+    if ! { mkdir -p "${p%/*}" && git --git-dir="$c" worktree add -q "$p" "$b" </dev/null; }; then
+      rollback "$created"
+      exit 1
+    fi
+    created="$created$c$TAB$p$TAB$b${TAB}0"$'\n'
+  done <"$d/repos.tsv"
+  while IFS=$TAB read -r name c b p; do
+    rm -f "$d/repos/$name"
+    link_worktree "$id" "$name" "$c" "$b" "$p"
+    [ -n "$first" ] || first=$p
+  done <"$d/repos.tsv"
+  fm_del "$d/TASK.md" status
+  log_event "$id" task_reopened "from=$st"
+  printf '%s\n' "$first"
+  if [ "$window" -eq 1 ] && command -v tmux >/dev/null; then ensure_session "$id"; fi
+}
+
 # Sets RUN_AGENT, the agent `collie run` starts without --agent.
 run_agent() {
   RUN_AGENT=${COLLIE_AGENT:-$(tmux_opt @collie-agent)}
@@ -1309,8 +1381,9 @@ dash_group() {
   case " ${DASH_GROUPS[*]} " in *" $GROUP "*) ;; *) GROUP=status ;; esac
 }
 
+# Two lines so narrow popups do not cut the keys off; the group in bold yellow.
 dash_header() { # group
-  printf 'enter: go   ?: actions   tab: group by %s' "$1"
+  printf 'enter: go  tab: group by \033[1;33m%s\033[0m\n^r: run  ^v: review  ^e: edit  ^d: done  ?: more' "$1"
 }
 
 # dash_rows for fzf, in groups (DASH_GROUPS; status: needs you, active, todo;
@@ -1415,7 +1488,7 @@ cmd_dash() {
   command -v fzf >/dev/null || die "dash: fzf required"
   local self="'$BASH' '$PLUGIN_DIR/bin/collie'" rows header sel id wid k binds=()
   rows=$(cmd__rows)
-  for k in $(action_items x | cut -c1) esc enter up down; do binds+=(--bind="$k:transform($self _key {1} $k)"); done
+  for k in $(action_items x | cut -c1) $DASH_DIRECT esc enter up down; do binds+=(--bind="$k:transform($self _key {1} $k)"); done
   dash_group
   header=$(dash_header "$GROUP")
   [ -n "$rows" ] || header='no tasks — ?: new task'
@@ -1442,13 +1515,13 @@ cmd__pick() { # [id]
 }
 
 # Draws the menu with row <sel> highlighted on /dev/tty, just above the
-# selected dashboard row (fzf's default layout: prompt, info, header and the
-# column names take the last 4 lines, list row 1 sits above them).
+# selected dashboard row (fzf's default layout: prompt, info, the 2-line header
+# and the column names take the last 5 lines, list row 1 sits above them).
 pick_draw() { # id sel
   local items n w=30 top left=2 line i=0 t=${1:-collie} hl
   items=$(action_items "$1")
   n=$(printf '%s\n' "$items" | wc -l)
-  top=$((${FZF_LINES:-24} - ${FZF_POS:-1} - n - 5))
+  top=$((${FZF_LINES:-24} - ${FZF_POS:-1} - n - 6))
   [ "$top" -ge 1 ] || top=1
   {
     printf '\033[%d;%dH\033[0;34m╭─ \033[1m%s\033[22m %s╮' "$top" "$left" "$t" "$(rule $((w - 5 - ${#t})) ─)"
@@ -1464,10 +1537,17 @@ pick_draw() { # id sel
 
 # fzf transform for a menu key (an action key, up, down, esc or enter): with
 # the menu open, move the selection, run an action or close; otherwise the
-# key's usual job.
+# key's usual job. A direct key (ctrl-<action key>, see DASH_DIRECT) runs its
+# action on the selected task whether or not the menu is open.
 cmd__key() { # id key
   local self="'$BASH' '$PLUGIN_DIR/bin/collie'" back="change-prompt($DASH_PROMPT)+clear-screen"
   local items n cur k
+  case " $DASH_DIRECT " in
+    *" $2 "*)
+      [ -z "$1" ] || echo "$back+execute($self _actions '$1' '${2#ctrl-}')+reload($self _rows)+refresh-preview"
+      return
+      ;;
+  esac
   case ${FZF_PROMPT:-} in
     "$PICK_MARK"*) ;;
     *)
@@ -1523,11 +1603,12 @@ rule() { local s="" i; for ((i = 0; i < $1; i++)); do s="$s$2"; done; printf '%s
 
 # "<key>  <label>" lines of the dashboard actions for a task (or none).
 action_items() { # [id]
-  [ -z "$1" ] || printf '%s\n' 'r  run agent' 'a  adopt agent' 'e  edit task' 'v  review' 't  terminal' 'd  done'
+  [ -z "$1" ] || printf '%s\n' 'r  run agent' 'a  adopt agent' 'e  edit task' 'v  review' 't  terminal' 'd  done' 'x  archive'
   printf '%s\n' 'c  new task'
 }
 
-# Runs the dashboard action for a key (see action_items); done asks first.
+# Runs the dashboard action for a key (see action_items); done and archive ask
+# first.
 cmd__actions() { # id key
   local id=${1:-} k=${2:-} self="'$BASH' '$PLUGIN_DIR/bin/collie'" a
   [ ! -t 1 ] || printf '\033[H\033[2J'
@@ -1543,10 +1624,12 @@ cmd__actions() { # id key
       (cd "$a" && "${SHELL:-sh}") || true
       return 0
       ;;
-    xd)
-      read -r -p "done $id? (y/n) " k || return 0
+    xd | xx)
+      a="done"
+      [ "$k" = d ] || a=archive
+      read -r -p "$a $id? (y/n) " k || return 0
       [ "$k" = y ] || return 0
-      a="$self done '$id'"
+      a="$self $a '$id'"
       ;;
     c | xc) a="$self new" ;;
     *) return 0 ;;
@@ -1567,7 +1650,9 @@ cmd__menu() { # session [client]
       review v "$popup '$C _popup \"$C review $T | less -R\"'"
       ""
       "run agent" r "run-shell '$C run $T'"
-      "done" d "confirm-before -p 'done $T? (y/n)' \"display-popup -E -w 90 -h 12 '$C _popup $C done $T'\"")
+      "adopt agent" a "display-popup -E -w 90 -h 12 '$C _popup $C adopt $T'"
+      "done" d "confirm-before -p 'done $T? (y/n)' \"display-popup -E -w 90 -h 12 '$C _popup $C done $T'\""
+      archive x "confirm-before -p 'archive $T? (y/n)' \"display-popup -E -w 90 -h 12 '$C _popup $C archive $T'\"")
   else
     items+=("" "-not a collie task — use collie new" "" "")
   fi
@@ -1812,7 +1897,7 @@ cmd_spike() {
 # A task is merged when every branch moved past where its worktree started
 # and that tip is merged into the base branch (see merged_into).
 cmd_gc() {
-  local dry=0 d id name c b p start tip merged
+  local dry=0 d id name c b p start tip merged err
   [ "${1:-}" != -n ] || dry=1
   for d in "$TASKS_DIR"/*; do
     [ -f "$d/TASK.md" ] || continue
@@ -1839,10 +1924,15 @@ cmd_gc() {
     [ "$merged" -eq 1 ] || continue
     if [ "$dry" -eq 1 ]; then
       echo "$id"
-    elif "$BASH" "$PLUGIN_DIR/bin/collie" "done" "$id" >/dev/null 2>&1; then
+    elif err=$("$BASH" "$PLUGIN_DIR/bin/collie" "done" "$id" 2>&1 >/dev/null); then
       echo "done $id"
     else
-      echo "skipped $id (see: collie done $id)"
+      # First problem under "refusing to …:", else done's last message.
+      err=$(printf '%s\n' "$err" | awk '
+        /^collie: refusing to .*:$/ { getline; sub(/^ +/, ""); r = $0; exit }
+        { r = $0; sub(/^collie: /, "", r) }
+        END { print r }')
+      echo "skipped $id: $err (see: collie done $id)"
     fi
   done
 }
@@ -1894,7 +1984,7 @@ cmd_sync() {
         # moving it would make gc take an untouched task for a merged one
         echo "$id $name: skipped: no commits beyond $bname"
       elif merged_into "$c" "$b" "$BASE"; then
-        echo "$id $name: skipped: merged into $bname (collie gc)"
+        echo "$id $name: skipped: merged into $bname (clean up with: collie gc)"
       elif [ "$dry" -eq 0 ] && [ -n "$busy" ]; then
         echo "$id $name: skipped: agent busy"
       elif [ "$dry" -eq 0 ] && [ -n "$(git -C "$p" status --porcelain)" ]; then
@@ -1966,7 +2056,7 @@ cmd_workspaces() {
 }
 
 case "${1:-help}" in
-  new | add | ls | show | edit | go | run | adopt | restore | state | status | set | dash | review | spike | gc | sync | doctor | _exec | _session | _target | _preview | _rows | _group | _pick | _key | _actions | _jump | _menu | _popup | _dev | repos | workspaces)
+  new | add | ls | show | edit | go | reopen | run | adopt | restore | state | status | set | dash | review | spike | gc | sync | doctor | _exec | _session | _target | _preview | _rows | _group | _pick | _key | _actions | _jump | _menu | _popup | _dev | repos | workspaces)
     cmd=$1
     shift
     "cmd_$cmd" "$@"

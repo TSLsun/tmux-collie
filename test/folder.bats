@@ -78,6 +78,23 @@ teardown() { teardown_env; }
   [ ! -e "$(task_dir trip)/repos/trip-2027" ]
 }
 
+@test "reopen: a folder task comes back in place; a vanished folder refuses" {
+  cd "$TMP"
+  collie new trip -r "$F" --no-window
+  collie done trip
+  run collie reopen trip --no-window
+  [ "$status" -eq 0 ]
+  [ "$output" = "$F" ]
+  [ -z "$(fm trip status)" ]
+  [ "$(readlink "$(task_dir trip)/repos/trip-2027")" = "$F" ]
+  [ ! -e "$F/.collie" ]
+  collie archive trip
+  mv "$F" "$TMP/notes/moved"
+  run collie reopen trip --no-window
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"folder $F no longer exists"* ]]
+}
+
 @test "gc: never finishes a folder-only task" {
   cd "$TMP"
   collie new trip -r "$F" --no-window
