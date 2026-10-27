@@ -33,9 +33,11 @@ _collie() {
     'set:set priority or title'
     'run:start an agent'
     'adopt:restart an agent started by hand under collie run'
+    'restore:restart agents lost with the tmux server'
     'review:per-repo commits and diffs'
     'spike:branch the current worktree into an exp/ task'
     'gc:finish merged tasks'
+    'sync:merge base into active task branches'
     'doctor:check dependencies and tasks'
     'done:accept and clean up a task'
     'archive:abandon and clean up a task'
@@ -60,9 +62,10 @@ _collie() {
     state) compadd working waiting idle exited ;;
     set) compadd -S '=' priority title; _collie_tasks ;;
     ls) compadd -- -a ;;
-    new) compadd -- -r -w -t -m --title --from --edit --no-window --ship --no-ship ;;
+    new) compadd -- -r -w -t -m --title --from --edit --no-window --ship --no-ship --run --agent -p ;;
     gc) compadd -- -n ;;
     reopen) compadd -- --no-window; _collie_tasks ;;
+    sync | restore) compadd -- -n; _collie_tasks ;;
     add | show | edit | go | run | adopt | review | done | archive) _collie_tasks ;;
   esac
 }
