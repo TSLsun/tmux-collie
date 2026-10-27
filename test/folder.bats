@@ -86,6 +86,14 @@ teardown() { teardown_env; }
   [ -z "$output" ]
 }
 
+@test "sync: folders are skipped silently" {
+  cd "$TMP"
+  collie new trip -r "$F" --no-window
+  run collie sync trip
+  [ "$status" -eq 0 ]
+  [ -z "$output" ]
+}
+
 @test "review: files changed since the first run, then REPORT.md" {
   cd "$TMP"
   collie new trip -r "$F" --no-window
