@@ -36,6 +36,9 @@ EOF
   collie run x --agent codex -p ''
   working_then_idle
   grep -q '^hooks.PermissionRequest=.*state waiting' "$ARGS"
+  c=$(sed -n 's/^hooks\.PreToolUse=\[{matcher="Bash",.*command="\(.*\)"}\]}\]$/\1/p' "$ARGS")
+  run sh -c "$c" <<<'{"tool_input":{"command":"tmux kill-server"}}'
+  [ "$status" -eq 2 ]
   grep -qxF "$TMP/repos/B.worktrees/feat-x" "$ARGS"
   grep -qxF "$(task_dir x)" "$ARGS"
   collie run x --agent codex -p 'go'
@@ -60,6 +63,12 @@ EOF
   working_then_idle
   [ "$(cat "$ARGS.out")" = "$(printf '{}\n{}')" ]
   grep -q '"Notification":\[{"matcher":"ToolPermission".*state waiting' "$COLLIE_STATE_DIR/gemini-settings.json"
+  # the shell guard blocks with exit 2 and prints JSON when it allows
+  c=$(sed -n 's/^"BeforeTool":\[{"matcher":"run_shell_command",.*"command":"\(.*\)"}\]}\],$/\1/p' "$COLLIE_STATE_DIR/gemini-settings.json")
+  run sh -c "$c" <<<'{"tool_input":{"command":"tmux kill-server"}}'
+  [ "$status" -eq 2 ]
+  run sh -c "$c" <<<'{"tool_input":{"command":"tmux -L x kill-server"}}'
+  [ "$output" = '{}' ]
   grep -qxF -- --include-directories "$ARGS"
   grep -qxF "$TMP/repos/B.worktrees/feat-x" "$ARGS"
 }
