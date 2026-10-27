@@ -128,6 +128,7 @@ switches to grouping by priority or repo, keeping this order inside a group.
 ~/.local/state/collie/tasks/<id>/    # task record; survives worktree removal
   TASK.md        # contract + frontmatter (title, priority; status once finished)
   repos.tsv      # machine-owned: name<TAB>git common dir<TAB>branch<TAB>worktree path
+                 # (a folder: name<TAB>-<TAB>-<TAB>folder path; see FOLDER-TASKS.md)
   REPORT.md      # agent's final report (P5)
   events.log     # append-only: ts<TAB>event<TAB>k=v ...
   repos/<repo> -> worktree path (symlink)
@@ -175,7 +176,7 @@ created: 2026-01-01
 
 | Command | Purpose |
 |---|---|
-| `collie new [<id>] [-r repo[:branch]]... [-w workspace] [-t type] [--title ..] [-m objective] [--from ref] [--edit] [--no-window] [--ship\|--no-ship]` | Create task, worktrees and session; defaults to the current repo. No id on a tty prompts for id, type, objective and ship. `-m` fills the Objective; `--ship` adds commit/push/PR/CI rules to TASK.md (default `$COLLIE_SHIP`, `@collie-ship`, else off) |
+| `collie new [<id>] [-r repo[:branch]]... [-w workspace] [-t type] [--title ..] [-m objective] [--from ref] [--edit] [--no-window] [--ship\|--no-ship]` | Create task, worktrees and session; defaults to the current repo (a non-git directory becomes a folder, used in place). No id on a tty prompts for id, type, objective and ship. `-m` fills the Objective; `--ship` adds commit/push/PR/CI rules to TASK.md (default `$COLLIE_SHIP`, `@collie-ship`, else off) |
 | `collie add [<id>] -r repo[:branch]...` | Pull another repo into an existing task |
 | `collie ls [-a]` | Active tasks: id, derived status, priority, session, agent, repos, needs |
 | `collie go [<id>]` | Switch to the task session (fzf if no id); recreate it if missing |
@@ -184,7 +185,7 @@ created: 2026-01-01
 | `collie dash [-n]` | fzf dashboard, most urgent first; enter jumps to the most urgent agent window |
 | `collie set [<id>] priority=P1 title="..."` | Update priority or title; a bare field reads stdin |
 | `collie edit [<id>]` | Open TASK.md in `$EDITOR` (also `new --edit`, dash `ctrl-e` or `? e`, menu `e`) |
-| `collie review [<id>] [-p]` | Per-repo commits, diff stat (`-p` patch), dirty files, then REPORT.md |
+| `collie review [<id>] [-p]` | Per-repo commits, diff stat (`-p` patch), dirty files (folders: files modified since the first run), then REPORT.md |
 | `collie spike <id>` | New `exp/<id>` task from the current worktree, carrying its uncommitted tracked changes (`git stash create`); `-u` also copies untracked, non-ignored files; source untouched |
 | `collie done [<id>] [--force]` | Accept: safety checks, then remove worktrees and session |
 | `collie archive [<id>] [--force]` | Abandon: same cleanup; unmerged commits are fine (branch kept), only dirty worktrees refuse |

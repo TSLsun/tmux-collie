@@ -37,6 +37,8 @@ tasks:
            [-m objective] [--from ref] [--edit] [--no-window]
            [--ship|--no-ship] [--run] [--agent name] [-p prompt] [-- args]
                       create a task: worktree per repo + tmux session;
+                      a non-git directory (-r path, or the current one) is
+                      used in place as a folder: no branch, never removed;
                       no id on a tty prompts for id, type, objective, ship,
                       and (given an objective) whether to start the agent;
                       --run starts the agent as `run` does; --agent, -p and
@@ -152,7 +154,30 @@ resolve_spec() {
       [ -n "$dir" ] || die "unknown repo '$ref' (check @collie-repo-roots)"
       ;;
   esac
-  repo_at "$dir" || die "not a git repository: $dir"
+  R_FOLDER=0
+  repo_at "$dir" && return
+  # a plain directory given by path is a folder, used in place
+  { [ -z "$SPEC_BRANCH" ] && [ -d "$dir" ]; } || die "not a git repository: $dir"
+  R_FOLDER=1
+  R_ROOT=$(cd "$dir" && pwd -P)
+  R_NAME=$(printf '%s' "${R_ROOT##*/}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]\{1,\}/-/g; s/^-//; s/-$//')
+  R_NAME=${R_NAME:-folder}
+}
+
+# Warns about other unfinished tasks using this folder, a parent or a child.
+warn_shared_folder() { # id path
+  local f t
+  for f in "$TASKS_DIR"/*/repos.tsv; do
+    [ -f "$f" ] || continue
+    t=${f%/*}
+    t=${t##*/}
+    [ "$t" != "$1" ] || continue
+    fm_get "${f%/*}/TASK.md" status
+    case $FM in done | archived) continue ;; esac
+    if awk -F'\t' -v p="$2" '$2 == "-" && ($4 == p || index($4, p "/") == 1 || index(p, $4 "/") == 1) { f = 1 } END { exit !f }' "$f"; then
+      warn "folder $2 is also used by task '$t'"
+    fi
+  done
 }
 
 workspace_repos() {
@@ -351,6 +376,11 @@ create_repos() { # id default_branch from specs
       while IFS=$TAB read -r n _; do [ "$n" != "$R_NAME" ] || dup=1; done <"$tdir/repos.tsv"
     fi
     [ "$dup" -eq 0 ] || die "repo '$R_NAME' is already part of task '$id'"
+    if [ "$R_FOLDER" = 1 ]; then
+      warn_shared_folder "$id" "$R_ROOT"
+      plan="$plan$R_NAME$TAB-$TAB-$TAB$R_ROOT"$'\n'
+      continue
+    fi
     checked_out "$R_COMMON" "$R_NAME" "$branch"
     [ ! -e "$path" ] || die "$path already exists"
     plan="$plan$R_NAME$TAB$R_COMMON$TAB$branch$TAB$path"$'\n'
@@ -359,6 +389,7 @@ create_repos() { # id default_branch from specs
   local name c b p created=""
   while IFS=$TAB read -r name c b p; do
     [ -n "$name" ] || continue
+    [ "$c" != - ] || continue
     fetch_origin "$c" "$name" || true
     if ! add_worktree "$c" "$p" "$b" "$from"; then
       rollback "$created"
@@ -396,6 +427,11 @@ checked_out() { # common name branch
 link_worktree() { # id name common branch path
   local tdir="$TASKS_DIR/$1"
   ln -s "$5" "$tdir/repos/$2"
+  if [ "$3" = - ]; then
+    # shared and unversioned: no .collie link, agents get the task dir
+    log_event "$1" folder_added "repo=$2 path=$5"
+    return
+  fi
   ln -s "$tdir" "$5/.collie"
   [ -d "$3/info" ] || mkdir -p "$3/info"
   excluded "$3/info/exclude" || echo '/.collie' >>"$3/info/exclude"
@@ -691,8 +727,9 @@ cmd_new() {
       where="workspace $ws"
     elif [ -n "$specs" ]; then
       where=$(printf '%s' "$specs" | tr '\n' ' ')
+    elif ! repo_at .; then
+      where="folder $(pwd -P) (current pane)"
     else
-      repo_at . || die "not inside a git repository (use -r or -w)"
       where="$R_NAME (current pane)"
       if [ -z "$base" ]; then
         default_base "$R_COMMON" || true
@@ -728,12 +765,11 @@ cmd_new() {
   tdir="$TASKS_DIR/$id"
   [ ! -e "$tdir" ] || die "task '$id' already exists"
   if [ -n "$ws" ]; then
-    for r in $(workspace_repos "$ws"); do specs="$specs$r"$'\n'; done
+    r=$(workspace_repos "$ws") || exit 1
+    for r in $r; do specs="$specs$r"$'\n'; done
   fi
-  if [ -z "$specs" ]; then
-    repo_at . || die "not inside a git repository (use -r or -w)"
-    specs="$(pwd -P)"$'\n'
-  fi
+  # the current repo, else the current directory as a folder
+  [ -n "$specs" ] || specs="$(pwd -P)"$'\n'
 
   if ! create_repos "$id" "$type/$id" "$from" "$specs"; then
     rm -rf "$tdir"
@@ -774,6 +810,7 @@ cmd_add() {
   [ -n "$specs" ] || die "usage: collie add [<id>] -r repo[:branch]..."
   local branch
   IFS=$TAB read -r _ _ branch _ <"$TASKS_DIR/$id/repos.tsv"
+  [ "$branch" != - ] || branch=feat/$id
   create_repos "$id" "$branch" "$from" "$specs"
   if [ "$window" -eq 1 ] && has_session "$id"; then
     local name c b p
@@ -901,8 +938,10 @@ finish_task() { # final_status args...
   local d name c b p problems="" n base here own=0
   d="$TASKS_DIR/$id"
 
+  # folders are used in place: nothing to check or remove
   while IFS=$TAB read -r name c b p; do
     [ -d "$p" ] || continue
+    [ "$c" != - ] || continue
     if [ -e "$p/.collie" ] && [ ! -L "$p/.collie" ]; then
       die "refusing to $final '$id': $p/.collie is not a symlink to the task dir; move it aside first"
     fi
@@ -925,6 +964,7 @@ finish_task() { # final_status args...
   here=$(pwd -P)
   if [ "$own" -eq 0 ]; then
     while IFS=$TAB read -r name c b p; do
+      [ "$c" != - ] || continue
       case "$here/" in "$p"/*) die "currently inside $p; cd elsewhere first" ;; esac
     done <"$d/repos.tsv"
   fi
@@ -932,6 +972,7 @@ finish_task() { # final_status args...
   while IFS=$TAB read -r name c b p; do
     rm -f "$d/repos/$name"
     [ -d "$p" ] || continue
+    [ "$c" != - ] || continue
     rm -f "$p/.collie"
     if [ "$force" -eq 1 ]; then
       git --git-dir="$c" worktree remove --force "$p"
@@ -982,7 +1023,12 @@ cmd_reopen() {
   st=$FM
   case $st in done | archived) ;; *) die "task '$id' is not done or archived" ;; esac
 
+  # folders were left in place: they only need to still exist
   while IFS=$TAB read -r name c b p; do
+    if [ "$c" = - ]; then
+      [ -d "$p" ] || die "folder $p no longer exists"
+      continue
+    fi
     git --git-dir="$c" show-ref -q --verify "refs/heads/$b" ||
       die "branch '$b' in $name no longer exists"
     checked_out "$c" "$name" "$b"
@@ -990,6 +1036,7 @@ cmd_reopen() {
   done <"$d/repos.tsv"
 
   while IFS=$TAB read -r name c b p; do
+    [ "$c" != - ] || continue
     if ! { mkdir -p "${p%/*}" && git --git-dir="$c" worktree add -q "$p" "$b" </dev/null; }; then
       rollback "$created"
       exit 1
@@ -1030,13 +1077,15 @@ cmd_run() {
   command -v tmux >/dev/null || die "run: tmux required"
   [ -n "$agent" ] || { run_agent; agent=$RUN_AGENT; }
 
-  local d name c b p rname="" path=""
+  local d name c b p rname="" rc="" path=""
   d="$TASKS_DIR/$id"
   while IFS=$TAB read -r name c b p; do
-    if [ -z "$rname" ] && { [ -z "$repo" ] || [ "$name" = "$repo" ]; }; then rname=$name path=$p; fi
+    if [ -z "$rname" ] && { [ -z "$repo" ] || [ "$name" = "$repo" ]; }; then rname=$name rc=$c path=$p; fi
   done <"$d/repos.tsv"
   [ -n "$rname" ] || die "repo '$repo' is not part of task '$id'"
   [ -d "$path" ] || die "missing worktree $path"
+  # a folder has no .collie link
+  [ "$rc" != - ] || [ "$prompt" != "$DEFAULT_PROMPT" ] || prompt=${prompt//.collie\//$d/}
 
   # adapter inputs: other worktrees + the task dir, the initial prompt and a
   # session name. The default prompt leads with the task so agents that title
@@ -1681,6 +1730,10 @@ cmd__preview() {
       printf '  %s  %s  (missing)\n' "$name" "$b"
       continue
     fi
+    if [ "$c" = - ]; then
+      printf '  %s  folder  %s\n' "$name" "$p"
+      continue
+    fi
     default_base "$c"
     base=$BASE
     printf '  %s  %s  %s ahead, %s dirty  %s\n' "$name" "$b" \
@@ -1731,7 +1784,9 @@ cmd_doctor() {
     case $FM in done | archived) continue ;; esac
     id=${d##*/}
     while IFS=$TAB read -r name c b p; do
-      if [ ! -d "$p" ]; then
+      if [ "$c" = - ]; then
+        [ -d "$p" ] || { doc_line FAIL "$id: $name folder missing: $p"; fail=1; }
+      elif [ ! -d "$p" ]; then
         doc_line FAIL "$id: $name worktree missing: $p"
         fail=1
       elif ! git --git-dir="$c" worktree list --porcelain | grep -qxF "worktree $p"; then
@@ -1761,6 +1816,12 @@ cmd_review() {
   task_id "$id"
   d="$TASKS_DIR/$id"
   while IFS=$TAB read -r name c b p; do
+    if [ "$c" = - ]; then
+      printf '== %s  folder  %s\n' "$name" "$p"
+      folder_changes "$d" "$p"
+      echo
+      continue
+    fi
     default_base "$c"
     base=$BASE
     printf '== %s  %s  %s ahead of %s\n' "$name" "$b" \
@@ -1777,6 +1838,23 @@ cmd_review() {
   if [ -f "$d/REPORT.md" ]; then
     echo "== REPORT.md"
     cat "$d/REPORT.md"
+  fi
+}
+
+# A folder has no history: list the files modified since the task's first run.
+folder_changes() { # task_dir path
+  local since
+  since=$(awk -F'\t' '$2 == "run_started" { print $1; exit }' "$1/events.log")
+  if [ -z "$since" ]; then
+    echo "(no runs yet)"
+  elif [ ! -d "$2" ]; then
+    echo "(folder missing: $2)"
+  else
+    echo "changed since $since:"
+    # BSD find does not parse ISO 8601 "T...Z"
+    since=${since/T/ }
+    find "$2" -type f -newermt "${since%Z} UTC" ! -path '*/.git/*' | sort |
+      awk -v p="$2/" 'index($0, p) == 1 { print "  " substr($0, length(p) + 1) }'
   fi
 }
 
@@ -1826,8 +1904,11 @@ cmd_gc() {
     fm_get "$d/TASK.md" status
     case $FM in done | archived) continue ;; esac
     id=${d##*/}
-    merged=1
+    # folders have no branch: a task needs at least one merged repo
+    merged=0
     while IFS=$TAB read -r name c b p; do
+      [ "$c" != - ] || continue
+      merged=1
       start=$(awk -F'\t' -v n="repo=$name " '
         $2 == "worktree_created" && index($3, n) == 1 {
           k = split($3, a, " "); for (i = 1; i <= k; i++) if (index(a[i], "start=") == 1) s = substr(a[i], 7)
@@ -1889,6 +1970,8 @@ cmd_sync() {
     agent=$(awk -F'\t' '$2 != "-" { a = $2 } END { print a }' <<<"$runs")
     while IFS=$TAB read -r name c b p; do
       [ -d "$p" ] || continue
+      # folders have no branch to sync
+      [ "$c" != - ] || continue
       fetch_origin "$c" "$name" || true
       default_base "$c" || { echo "$id $name: skipped: no base branch"; continue; }
       bname=$BASE

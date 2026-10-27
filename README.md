@@ -40,6 +40,7 @@ collie new                             # on a terminal: prompts for id, type, ob
 collie new login -m 'add OAuth login' --run   # create and start the agent (see collie run)
 collie new login --ship                # agent ships it: commits, PR, CI (see below)
 collie new deploy-v2 -r A -r B         # cross-repo task (repos by name or path)
+collie new trip -r ~/notes/Trip        # plain folder (not git): used in place
 collie new deploy-v2 -r A -r B:release/v2   # per-repo branch
 collie new checkout-fix -w shop        # all repos of a workspace
 collie add deploy-v2 -r C              # pull another repo in mid-task
@@ -222,6 +223,18 @@ set -g @collie-ship 'on'                       # default for new tasks ($COLLIE_
 asks. The rules live in the task's TASK.md, so you can read (`collie show`) or
 edit (`collie edit`) them before `collie run`; replace them for all tasks with
 `~/.config/collie/SHIP.md`.
+
+### Folder tasks
+
+A directory that is not a git repository (given with `-r <path>`, or the
+current one when `new` runs outside a repo) joins a task as a **folder**: the
+agent works in it in place, with no branch and no copy. collie never writes
+into it (no `.collie` link: the run prompt names the task dir instead), and
+`done` / `archive` only close the session, without checks or removal. `gc`
+never finishes a folder-only task; `review` lists the folder's files
+modified since the task's first run. A folder another unfinished task already
+uses (or a parent or child of it) is allowed with a warning. Folders and repos
+can be mixed in one task. See [docs/FOLDER-TASKS.md](docs/FOLDER-TASKS.md).
 
 ### Repository layouts
 
