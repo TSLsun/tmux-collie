@@ -53,14 +53,15 @@ tasks:
   set [<id>] field=value...   priority (P0..P3), title; a bare field name
                       reads stdin
   review [<id>] [-p]  per-repo commits, diff stat (-p: patch), dirty files, REPORT.md
-  spike <id> [--title text] [--no-window]
+  spike <id> [-u] [--title text] [--no-window]
                       new exp/<id> task from the current worktree, carrying its
-                      uncommitted changes (the source is left untouched)
+                      uncommitted changes (-u: untracked files too; the source
+                      is left untouched)
   gc [-n]             finish tasks whose branches are merged into base (-n: list)
   sync [<id>...] [-n] merge base into active task branches and push them;
                       conflicts go to the task's idle agent (-n: predict only)
   done [<id>] [--force]     accept: remove worktrees + session, keep branches
-  archive [<id>] [--force]  abandon: same cleanup, status archived
+  archive [<id>] [--force]  abandon: same cleanup, status archived (unmerged ok)
 
 agents:
   run [<id>] [--agent name] [-r repo] [-p prompt] [-- args]
@@ -357,6 +358,7 @@ create_repos() { # id default_branch from specs
   local name c b p created=""
   while IFS=$TAB read -r name c b p; do
     [ -n "$name" ] || continue
+    fetch_origin "$c" "$name" || true
     if ! add_worktree "$c" "$p" "$b" "$from"; then
       rollback "$created"
       return 1
@@ -542,11 +544,13 @@ task_top() {
 # Task status: done/archived as written by done/archive/gc, else derived:
 # todo (no run yet), review (no agent working or waiting, and REPORT.md
 # written since the last run started), else active. Other stored values
-# (old records: todo, blocked, ...) are ignored. Sets STATUS, and LAST_EVENT
-# (the last event's time, empty for done/archived).
+# (old records: todo, blocked, ...) are ignored. Sets STATUS, LAST_EVENT
+# (the last event's time, empty for done/archived), and STATUS_NOTE when
+# agents are quiet but the last run left no REPORT.md (stays active).
 task_status() { # id top_state [stored_status]
-  local d st last
+  local d st last runs
   d="$TASKS_DIR/$1"
+  STATUS_NOTE=""
   LAST_EVENT=""
   if [ $# -ge 3 ]; then
     st=$3
@@ -555,16 +559,21 @@ task_status() { # id top_state [stored_status]
     st=$FM
   fi
   case $st in done | archived) STATUS=$st; return ;; esac
-  last=$(awk -F'\t' '$2 == "run_started" { t = $1 } END { print t "\t" $1 }' "$d/events.log")
+  last=$(awk -F'\t' '$2 == "run_started" { t = $1; n++ } END { print n + 0 "\t" t "\t" $1 }' "$d/events.log")
+  runs=${last%%"$TAB"*}
+  last=${last#*"$TAB"}
   LAST_EVENT=${last#*"$TAB"}
   last=${last%%"$TAB"*}
   if [ -z "$last" ]; then
     STATUS=todo
-  elif [ "$2" != working ] && [ "$2" != waiting ] && [ -f "$d/REPORT.md" ] &&
+  elif [ "$2" = working ] || [ "$2" = waiting ]; then
+    STATUS=active
+  elif [ -f "$d/REPORT.md" ] &&
     ! [[ $(date -u -r "$d/REPORT.md" +%Y-%m-%dT%H:%M:%SZ) < $last ]]; then
     STATUS=review
   else
     STATUS=active
+    STATUS_NOTE="no REPORT.md since run $runs"
   fi
 }
 
@@ -805,7 +814,7 @@ cmd_show() {
   awk 'NR == 1 { next } $0 == "---" { exit } /^(status|next):/ { next } { print }' "$d/TASK.md"
   top=$(task_top "$id")
   task_status "$id" "${top%%"$TAB"*}"
-  printf 'status: %s\n' "$STATUS"
+  printf 'status: %s%s\n' "$STATUS" "${STATUS_NOTE:+ ($STATUS_NOTE)}"
   echo
   # the contract: TASK.md after its frontmatter
   awk 'NR == 1 && $0 == "---" { f = 1; next }
@@ -876,6 +885,8 @@ finish_task() { # final_status args...
       die "refusing to $final '$id': $p/.collie is not a symlink to the task dir; move it aside first"
     fi
     [ -z "$(git -C "$p" status --porcelain)" ] || problems="$problems  dirty: $name ($p)"$'\n'
+    # Abandoned work is unmerged by definition and branches are kept anyway.
+    [ "$final" = archived ] && continue
     fetch_origin "$c" "$name" || true
     default_base "$c"
     base=$BASE
@@ -1574,6 +1585,7 @@ cmd__preview() {
   task_status "$id" "${top%%"$TAB"*}"
   fm_get "$d/TASK.md" priority
   printf '%s  [%s %s]\n' "$title" "$STATUS" "$FM"
+  [ -z "$STATUS_NOTE" ] || echo "$STATUS_NOTE"
   echo
   echo "objective:"
   awk '$0 == "## Objective" { f = 1; next }
@@ -1690,11 +1702,13 @@ cmd_review() {
 }
 
 # Branch off the current worktree into a new exp/<id> task, carrying its
-# uncommitted (tracked) changes; the source worktree is not modified.
+# uncommitted tracked changes (-u: and untracked, non-ignored files, copied
+# as-is); the source worktree is not modified.
 cmd_spike() {
-  local id="" args=() src head stash owner path
+  local id="" args=() untracked=0 src head stash owner path
   while [ $# -gt 0 ]; do
     case $1 in
+      -u | --include-untracked) untracked=1 ;;
       --no-window) args+=("$1") ;;
       --title) args+=("$1" "${2:?--title needs text}"); shift ;;
       -*) die "spike: unknown option $1" ;;
@@ -1702,18 +1716,23 @@ cmd_spike() {
     esac
     shift
   done
-  [ -n "$id" ] || die "usage: collie spike <id> [--title text] [--no-window]"
+  [ -n "$id" ] || die "usage: collie spike <id> [-u] [--title text] [--no-window]"
   src=$(git rev-parse --show-toplevel 2>/dev/null) || die "spike: run it inside a worktree"
   head=$(git -C "$src" rev-parse HEAD)
   stash=$(git -C "$src" stash create)
-  if git -C "$src" status --porcelain | grep -q '^??'; then
-    warn "untracked files are not carried over"
+  if [ "$untracked" = 0 ] && git -C "$src" status --porcelain | grep -q '^??'; then
+    warn "untracked files are not carried over (use -u)"
   fi
   owner=$(task_owning "$src")
   cmd_new "$id" -t exp -r "$src" --from "$head" ${args[@]+"${args[@]}"}
   path=${NEW_PATHS%%$'\n'*}
   if [ -n "$stash" ]; then
     git -C "$path" stash apply -q --index "$stash" || warn "could not apply changes in $path (stash $stash)"
+  fi
+  if [ "$untracked" = 1 ]; then
+    git -C "$src" ls-files -z --others --exclude-standard |
+      tar -C "$src" --null -T - -cf - | tar -C "$path" -xf - ||
+      warn "could not copy untracked files to $path"
   fi
   log_event "$id" spiked_from "task=${owner:--} path=$src head=$head"
 }
