@@ -53,6 +53,7 @@ stub_tmux() {
   [ "$status" -eq 0 ]
   [[ "$output" == *"display-menu"* && "$output" == *"collie dash"* && "$output" == *"review x"* && "$output" == *"_popup "*"done x"* ]]
   [[ "$output" == *"edit task"$'\n'"e"$'\n'*"_popup "*"edit x"* ]]
+  [[ "$output" == *"run agent"$'\n'"r"$'\n'"run-shell '"*"collie run x -s -c cl'"* ]]
   [[ "$output" == *"adopt agent"$'\n'"a"$'\n'*"_popup "*"adopt x"* ]]
   [[ "$output" == *"archive"$'\n'"x"$'\n'"confirm-before -p 'archive x? (y/n)'"*"_popup "*"archive x"* ]]
   [[ "$output" == *"jump to alert"*"_jump - cl"* ]]
