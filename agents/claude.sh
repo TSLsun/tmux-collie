@@ -1,7 +1,7 @@
 # shellcheck shell=bash
 # Claude Code adapter. Hooks come in via --settings, so they only fire in
 # sessions started by `collie run`; the user's own settings stay untouched.
-# Sourced by bin/collie; reads RUN_PROMPT and RUN_DIRS, sets AGENT_ARGV.
+# Sourced by bin/collie; reads RUN_PROMPT, RUN_NAME and RUN_DIRS, sets AGENT_ARGV.
 
 # shellcheck disable=SC2034  # read by bin/collie
 AGENT_HOOKS=1
@@ -19,7 +19,7 @@ agent_argv() {
   AGENT_ARGV=(claude)
   # the prompt goes first: --add-dir is variadic and would swallow it
   [ -z "$RUN_PROMPT" ] || AGENT_ARGV+=("$RUN_PROMPT")
-  AGENT_ARGV+=(--settings "$settings")
+  AGENT_ARGV+=(--name "$RUN_NAME" --settings "$settings")
   while IFS= read -r d; do
     [ -z "$d" ] || AGENT_ARGV+=(--add-dir "$d")
   done <<<"$RUN_DIRS"

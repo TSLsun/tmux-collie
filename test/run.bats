@@ -27,6 +27,24 @@ teardown() { teardown_env; }
   [ "$(agent_of x)" = working ]
 }
 
+@test "run: retries a window whose pty open hit the macOS ptmx race" {
+  # fail the first new-session and the first new-window like xnu's ENXIO race
+  mkdir -p "$TMP/stub"
+  cat >"$TMP/stub/tmux" <<EOF
+#!/bin/sh
+case \$1 in new-session | new-window)
+  [ -e "$TMP/failed-\$1" ] || { touch "$TMP/failed-\$1"; echo "create window failed: fork failed: Device not configured" >&2; exit 1; } ;;
+esac
+exec $(command -v tmux) "\$@"
+EOF
+  chmod +x "$TMP/stub/tmux"
+  collie new x --no-window
+  PATH="$TMP/stub:$PATH" run collie run x -- 300
+  [ "$status" -eq 0 ]
+  [ -e "$TMP/failed-new-session" ] && [ -e "$TMP/failed-new-window" ]
+  [ "$(agent_of x)" = working ]
+}
+
 @test "run: -r picks the repo; unknown repo or agent command fails" {
   make_normal_repo B
   cd "$TMP"
@@ -205,10 +223,11 @@ EOF
   export PATH="$TMP/bin:$PATH" CLAUDE_ARGS="$TMP/args"
   make_normal_repo B
   cd "$TMP"
-  collie new x -r A -r B --no-window
+  collie new x -r A -r B --title 'fix the widget' --no-window
   collie run x --agent claude
   wait_for '[ -s "$TMP/args" ]'
-  [[ "$(head -n 1 "$TMP/args")" == *".collie/TASK.md"* ]]
+  [[ "$(head -n 1 "$TMP/args")" == "Task x: fix the widget. "*".collie/TASK.md"* ]]
+  [ "$(grep -A1 -xF -- --name "$TMP/args" | tail -n 1)" = "x: fix the widget" ]
   grep -qxF -- --settings "$TMP/args"
   grep -q '"Stop".*state idle' "$TMP/args"
   grep -q '"Notification".*state waiting' "$TMP/args"
@@ -220,8 +239,26 @@ EOF
   rm "$TMP/args"
   collie run x --agent claude -p ''
   wait_for '[ -s "$TMP/args" ]'
-  [ "$(head -n 1 "$TMP/args")" = --settings ]
+  [ "$(head -n 1 "$TMP/args")" = --name ]
+  grep -qxF "x: fix the widget" "$TMP/args"
   [ "$(tmux display -p -t "$(run_pane x 2)" '#{@collie_state}')" = idle ]
+
+  rm "$TMP/args"
+  collie run x --agent claude -p 'just go'
+  wait_for '[ -s "$TMP/args" ]'
+  [ "$(head -n 1 "$TMP/args")" = "just go" ]
+}
+
+@test "claude adapter: an untitled task is named by its id alone" {
+  mkdir "$TMP/bin"
+  printf '#!/bin/sh\nprintf "%%s\\n" "$@" >"$CLAUDE_ARGS"\nexec sleep 300\n' >"$TMP/bin/claude"
+  chmod +x "$TMP/bin/claude"
+  export PATH="$TMP/bin:$PATH" CLAUDE_ARGS="$TMP/args"
+  collie new x --no-window
+  collie run x --agent claude
+  wait_for '[ -s "$TMP/args" ]'
+  [[ "$(head -n 1 "$TMP/args")" == "Task x. Your task contract is .collie/TASK.md."* ]]
+  [ "$(grep -A1 -xF -- --name "$TMP/args" | tail -n 1)" = x ]
 }
 
 @test "run: a failed launch leaves no run behind" {

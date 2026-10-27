@@ -4,6 +4,8 @@ Herd coding agents across git worktrees, from tmux.
 
 > **Status: 0.x, experimental.** Interfaces may change without notice.
 
+New here? [docs/USAGE.md](docs/USAGE.md) shows the task lifecycle, states and
+where each action lives in diagrams and tables.
 See [docs/DESIGN.md](docs/DESIGN.md) for goals, data model and roadmap, and
 [docs/UNVERIFIED.md](docs/UNVERIFIED.md) for what has not been checked yet.
 
@@ -18,7 +20,7 @@ all of these.
 With [tpm](https://github.com/tmux-plugins/tpm):
 
 ```tmux
-set -g @plugin 'TSLsun/tmux-collie'          # or 'TSLsun/tmux-collie#v0.1.0' to pin
+set -g @plugin 'TSLsun/tmux-collie'          # or 'TSLsun/tmux-collie#v0.2.0' to pin
 ```
 
 Then `prefix + I`. The plugin prepends its `bin/` to tmux's global `PATH`, so
@@ -41,7 +43,7 @@ collie new deploy-v2 -r A -r B         # cross-repo task (repos by name or path)
 collie new deploy-v2 -r A -r B:release/v2   # per-repo branch
 collie new checkout-fix -w shop        # all repos of a workspace
 collie add deploy-v2 -r C              # pull another repo in mid-task
-collie ls                              # id  status  priority  session(*|-)  agent  repos
+collie ls                              # id  status  priority  session(*|-)  agent  repos  needs
 collie show deploy-v2                  # fields, TASK.md contract, repos, runs, events
 collie edit deploy-v2                  # adjust TASK.md in $EDITOR (also: dash ? e, prefix h e)
 collie go deploy-v2                    # switch/attach (fzf picker if no id)
@@ -66,6 +68,8 @@ collie ls                              # agent column: waiting/idle/working/exit
 collie review deploy-v2                # commits, diff stat, dirty files, REPORT.md
 collie spike try-cache                 # from a dirty worktree: exp/try-cache task with the same changes
 collie gc                              # finish tasks whose branches were merged
+collie sync -n                         # after a merge: which task branches would conflict
+collie sync                            # merge base into them; agents resolve conflicts
 ```
 
 `collie run`'s default prompt asks the agent to write `.collie/REPORT.md`.
@@ -78,19 +82,36 @@ a manual fetch (progress is reported per repo on stderr), and also recognize
 squash merges with git >= 2.38. A client viewing a finished task's session
 switches to its last session (else the most recently used one) instead of
 detaching; it detaches only when no other session exists.
+`collie sync` merges the base branch (fetched first) into every active task
+branch, so open PRs stay mergeable after one lands. A clean merge is committed
+and pushed if the branch has an upstream. On a conflict the merge is started
+and the agent is told which files to resolve: typed into it if idle, or a new
+run if it exited; with no agent the worktree is left alone. Tasks whose agent
+is working or waiting, dirty worktrees and branches without commits of their
+own are skipped. It merges instead of rebasing: no force-push, conflicts are
+resolved once, and squash merges discard the merge commits anyway.
 `hooks/pre-push` refuses to push `exp/*` branches:
 `ln -s ~/.tmux/plugins/tmux-collie/hooks/pre-push "$(git rev-parse --git-common-dir)/hooks/pre-push"`.
 
 ### Dashboard and menu
 
 ```sh
-collie dash                            # fzf: waiting > idle > review > working
+collie dash                            # fzf: needs you > active > todo; tab regroups
 collie set deploy-v2 priority=P1 "title=Ship v2"
 ```
 
-Dashboard rows start with a status glyph (red `●` an agent waits for you or
-finished its turn, yellow `◐` working, dim `○` no agent) and show a colored
-badge per running agent; rows that need you come first. `enter` goes to the
+`ls`'s last column says what a task needs from you: `answer` (an agent waits
+for permission or input), `review` (fresh REPORT.md), `reply` (an agent
+finished its turn without one), `stalled` (active, no live agent), `start`
+(todo), or `-` (an agent is working, or the task is finished).
+
+Dashboard rows start with a glyph (red `●` needs you: answer, review, reply,
+stalled; yellow `◐` working; dim `○` todo), then aligned columns: id, state
+(the needs value, or `working`), priority (P0 red, P1 yellow, P3 dim), a colored badge per
+running agent, the age of the last event, repos. Rows come in groups under a
+`── <group> (<n>) ──` line, the most urgent next to the prompt: needs you,
+active, todo. `tab` / `shift-tab` switch the grouping (status, priority,
+repo); it is kept for the next dashboard. `enter` goes to the
 task; `?` opens an action menu above the selected row (run agent, adopt agent,
 edit task, review, terminal, done, new task): press its key, or move with ↑↓ and
 press enter; esc closes it. The preview shows the start of TASK.md's Objective.
@@ -118,7 +139,9 @@ zsh completion: `fpath+=(~/.tmux/plugins/tmux-collie/completions)` before
 
 ### Agent details
 
-`collie run` points the agent at `.collie/TASK.md` (`-p ''` for no prompt).
+`collie run` points the agent at `.collie/TASK.md` with a prompt that starts with
+the task id and title, so sessions are told apart in the agent's history (`-p ''`
+for no prompt; claude also gets `--name "<id>: <title>"`).
 Claude Code, Codex and Gemini CLI report their state through hooks that
 collie passes per run (`--settings`, `-c hooks...`, a generated system
 settings file); omp through an extension loaded with `-e agents/omp.ts`
