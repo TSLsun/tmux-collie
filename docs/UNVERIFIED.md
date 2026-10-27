@@ -67,6 +67,10 @@ delete an item only when it is covered by a test.
 - [ ] `ancestor_pane` on Linux (`ps -o ppid=`), and with deep process trees
       (gives up after 10 levels).
 - [ ] `collie doctor` version parsing for tmux builds like `next-3.6` / `3.3a`.
+- [ ] tmux kill guard in real agents: Claude `PreToolUse` exit 2 blocks the
+      Bash call and shows the reason; Codex `PreToolUse` with matcher `Bash`
+      (after trust in `/hooks`); Gemini `BeforeTool` on `run_shell_command`
+      blocks on exit 2. Tests only run the hook command a fake agent was given.
 
 ## P5 — Review & lifecycle
 - [ ] `gc` against a real remote: PR merge commits (non-ff) detected after
