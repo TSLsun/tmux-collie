@@ -10,7 +10,9 @@ AGENT_RESUME=(--continue)
 
 agent_argv() {
   local d settings
-  settings=$(printf '{"hooks":{%s,%s,%s,%s,%s}}' \
+  # PreToolUse: hooks/tmux-guard denies killing the user's tmux server
+  settings=$(printf '{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"'"'"'%s'"'"'"}]}],%s,%s,%s,%s,%s}}' \
+    "$PLUGIN_DIR/hooks/tmux-guard" \
     "$(claude_hook UserPromptSubmit '' working)" \
     "$(claude_hook PostToolUse '*' working)" \
     "$(claude_hook Notification 'permission_prompt|elicitation_dialog' waiting)" \
