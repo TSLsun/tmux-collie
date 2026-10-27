@@ -4,6 +4,7 @@
 cmd_new() {
   local id="" specs="" ws="" type=feat title="" from="" edit=0 window=1
   local goal="" asked=0 t ship=${COLLIE_SHIP-$(tmux_opt @collie-ship)}
+  local run=0 agent="" runargs=()
   case $ship in on | 1 | yes | true) ship=1 ;; *) ship=0 ;; esac
   while [ $# -gt 0 ]; do
     case $1 in
@@ -17,6 +18,10 @@ cmd_new() {
       --no-window) window=0 ;;
       --ship) ship=1 ;;
       --no-ship) ship=0 ;;
+      --run) run=1 ;;
+      --agent) agent=${2:?--agent needs a name}; run=1; shift ;;
+      -p) [ $# -ge 2 ] || die "-p needs a prompt"; runargs+=(-p "$2"); run=1; shift ;;
+      --) shift; runargs+=(-- "$@"); run=1; break ;;
       -*) die "new: unknown option $1" ;;
       *) [ -z "$id" ] || die "new: too many arguments"; id=$1 ;;
     esac
@@ -25,6 +30,7 @@ cmd_new() {
   # no id on a terminal (e.g. the menu popup): show what will be asked, then ask
   if [ -z "$id" ] && [ -t 0 ]; then
     local where base=${from:-}
+    [ -n "$agent" ] || { run_agent; agent=$RUN_AGENT; }
     if [ -n "$ws" ]; then
       where="workspace $ws"
     elif [ -n "$specs" ]; then
@@ -42,16 +48,25 @@ cmd_new() {
       id required '[a-z0-9-], max 40' \
       type "$type" 'e.g. fix, refactor, docs' \
       objective optional 'goes into TASK.md' \
-      ship "$([ "$ship" = 1 ] && echo on || echo off)" 'agent pushes, opens a PR, checks CI'
+      ship "$([ "$ship" = 1 ] && echo on || echo off)" 'agent pushes, opens a PR, checks CI' \
+      agent "$agent" "$([ "$run" = 1 ] && echo 'starts after creation' || echo 'asked if an objective is given')"
     echo
     read -r -e -p "task id: " id
     read -r -e -p "type [$type]: " t && type=${t:-$type}
     [ -n "$goal" ] || read -r -e -p "objective (optional): " goal
     read -r -e -p "ship [$([ "$ship" = 1 ] && echo Y/n || echo y/N)]: " t
     case $t in [yY]*) ship=1 ;; [nN]*) ship=0 ;; esac
+    if [ -n "$goal" ] && [ "$run" = 0 ] && command -v tmux >/dev/null; then
+      read -r -e -p "start $agent now [Y/n]: " t
+      case $t in [nN]*) ;; *) run=1 ;; esac
+    fi
     asked=1
   fi
   [ -n "$id" ] || die "usage: collie new <id> [-r repo[:branch]]... [-w workspace] ..."
+  if [ "$run" = 1 ]; then
+    [ "$window" = 1 ] || die "new: --run needs a session; drop --no-window"
+    command -v tmux >/dev/null || die "new: --run needs tmux"
+  fi
   valid_id "$id" || die "invalid id '$id' (use [a-z0-9-], max 40, no leading '-')"
   local tdir r
   tdir="$TASKS_DIR/$id"
@@ -74,7 +89,16 @@ cmd_new() {
   printf '%s\n' "${NEW_PATHS%%$'\n'*}"
   if [ "$window" -eq 1 ] && command -v tmux >/dev/null; then
     ensure_session "$id"
+    # the task exists either way: a failed run is reported, not rolled back
+    local rc=0
+    [ "$run" = 0 ] || (cmd_run "$id" ${agent:+--agent "$agent"} ${runargs[@]+"${runargs[@]}"}) || rc=$?
     [ "$asked" -eq 0 ] || [ -z "${TMUX:-}" ] || tmux switch-client -t "=$id"
+    if [ "$rc" -ne 0 ]; then
+      warn "task '$id' created; start the agent with: collie run $id"
+      # the popup closes on exit: keep the error on screen until a key
+      [ "$asked" -eq 0 ] || read -rsn1 -p '[press any key]' _ || true
+      exit "$rc"
+    fi
   fi
 }
 
@@ -103,7 +127,24 @@ cmd_add() {
   fi
 }
 
+# What a task needs from you, first match: answer (an agent waits for
+# permission or input), review (status review), reply (an agent finished its
+# turn without a fresh report), - (an agent is working, or the task is
+# finished), start (todo), else stalled (active, no live agent). Sets NEEDS.
+task_needs() { # status top_state
+  case $1:$2 in
+    done:* | archived:*) NEEDS=- ;;
+    *:waiting) NEEDS=answer ;;
+    review:*) NEEDS=review ;;
+    *:idle) NEEDS=reply ;;
+    *:working) NEEDS=- ;;
+    todo:*) NEEDS=start ;;
+    *) NEEDS=stalled ;;
+  esac
+}
+
 # shellcheck disable=SC2120  # -a comes from the CLI; internal callers pass none
+# Columns: id, status, priority, session (*|-), agent, repos, needs.
 # LS_AGENTS=1 (dash rows) adds two columns: the live agents from task_top and
 # the last event's time.
 cmd_ls() {
@@ -124,9 +165,10 @@ cmd_ls() {
     repos=""
     while IFS=$TAB read -r name _ || [ -n "$name" ]; do repos="$repos${repos:+,}$name"; done <"$d/repos.tsv"
     task_status "$id" "$top" "$st"
+    task_needs "$STATUS" "$top"
     fm_get "$d/TASK.md" priority
-    printf '%s\t%s\t%s\t%s\t%s\t%s' "$id" "$STATUS" "$FM" "$mark" \
-      "$top" "$repos"
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s' "$id" "$STATUS" "$FM" "$mark" \
+      "$top" "$repos" "$NEEDS"
     if [ -n "${LS_AGENTS:-}" ]; then printf '\t%s\t%s\n' "$agents" "$LAST_EVENT"; else echo; fi
   done
 }
@@ -138,7 +180,7 @@ cmd_show() {
   awk 'NR == 1 { next } $0 == "---" { exit } /^(status|next):/ { next } { print }' "$d/TASK.md"
   top=$(task_top "$id")
   task_status "$id" "${top%%"$TAB"*}"
-  printf 'status: %s\n' "$STATUS"
+  printf 'status: %s%s\n' "$STATUS" "${STATUS_NOTE:+ ($STATUS_NOTE)}"
   echo
   # the contract: TASK.md after its frontmatter
   awk 'NR == 1 && $0 == "---" { f = 1; next }

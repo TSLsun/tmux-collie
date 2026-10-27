@@ -8,9 +8,12 @@ usage: collie <command> [args]
 tasks:
   new [<id>] [-r repo[:branch]]... [-w workspace] [-t type] [--title text]
            [-m objective] [--from ref] [--edit] [--no-window]
-           [--ship|--no-ship]
+           [--ship|--no-ship] [--run] [--agent name] [-p prompt] [-- args]
                       create a task: worktree per repo + tmux session;
-                      no id on a tty prompts for id, type, objective, ship;
+                      no id on a tty prompts for id, type, objective, ship,
+                      and (given an objective) whether to start the agent;
+                      --run starts the agent as `run` does; --agent, -p and
+                      -- pass through to run and imply --run;
                       --ship adds commit/push/PR/CI rules to TASK.md
                       (default: $COLLIE_SHIP, @collie-ship, else off)
   add [<id>] -r repo[:branch]... [--from ref] [--no-window]
@@ -26,14 +29,15 @@ tasks:
   set [<id>] field=value...   priority (P0..P3), title; a bare field name
                       reads stdin
   review [<id>] [-p]  per-repo commits, diff stat (-p: patch), dirty files, REPORT.md
-  spike <id> [--title text] [--no-window]
+  spike <id> [-u] [--title text] [--no-window]
                       new exp/<id> task from the current worktree, carrying its
-                      uncommitted changes (the source is left untouched)
+                      uncommitted changes (-u: untracked files too; the source
+                      is left untouched)
   gc [-n]             finish tasks whose branches are merged into base (-n: list)
   sync [<id>...] [-n] merge base into active task branches and push them;
                       conflicts go to the task's idle agent (-n: predict only)
   done [<id>] [--force]     accept: remove worktrees + session, keep branches
-  archive [<id>] [--force]  abandon: same cleanup, status archived
+  archive [<id>] [--force]  abandon: same cleanup, status archived (unmerged ok)
 
 agents:
   run [<id>] [--agent name] [-r repo] [-p prompt] [-- args]
@@ -41,6 +45,8 @@ agents:
                       $COLLIE_AGENT, @collie-agent, else claude); -p '' = no prompt
   adopt [<id>] [-y]   restart an agent you started by hand in the task's session
                       under collie run, resuming its conversation (claude, omp)
+  restore [<id>] [-n]  restart the agents lost with the tmux server (all tasks
+                      if no id), each resuming its conversation (-n: list)
   state <working|waiting|idle|exited>
                       called by agent hooks; no-op outside a collie window
   status              agent counts for the status bar (#{collie_status})

@@ -35,13 +35,15 @@ per repo involved, and one tmux session (one window per repo).
 collie new login                       # task in the current repo, branch feat/login
 collie new typo -t fix                 # branch fix/typo
 collie new login -m 'add OAuth login'  # pre-fill TASK.md's Objective
-collie new                             # on a terminal: prompts for id, type, objective, ship
+collie new                             # on a terminal: prompts for id, type, objective, ship,
+                                       # and with an objective, whether to start the agent
+collie new login -m 'add OAuth login' --run   # create and start the agent (see collie run)
 collie new login --ship                # agent ships it: commits, PR, CI (see below)
 collie new deploy-v2 -r A -r B         # cross-repo task (repos by name or path)
 collie new deploy-v2 -r A -r B:release/v2   # per-repo branch
 collie new checkout-fix -w shop        # all repos of a workspace
 collie add deploy-v2 -r C              # pull another repo in mid-task
-collie ls                              # id  status  priority  session(*|-)  agent  repos
+collie ls                              # id  status  priority  session(*|-)  agent  repos  needs
 collie show deploy-v2                  # fields, TASK.md contract, repos, runs, events
 collie edit deploy-v2                  # adjust TASK.md in $EDITOR (also: dash ? e, prefix h e)
 collie go deploy-v2                    # switch/attach (fzf picker if no id)
@@ -65,6 +67,7 @@ collie ls                              # agent column: waiting/idle/working/exit
 ```sh
 collie review deploy-v2                # commits, diff stat, dirty files, REPORT.md
 collie spike try-cache                 # from a dirty worktree: exp/try-cache task with the same changes
+collie spike try-cache -u              # ...plus untracked (non-ignored) files
 collie gc                              # finish tasks whose branches were merged
 collie sync -n                         # after a merge: which task branches would conflict
 collie sync                            # merge base into them; agents resolve conflicts
@@ -74,7 +77,9 @@ collie sync                            # merge base into them; agents resolve co
 Task status is derived, never set by hand: `todo` until the first agent run,
 `active` after it, `review` once no agent is working or waiting and REPORT.md
 was written since the last run started; `done` / `archived` come from
-`done`, `gc` and `archive`.
+`done`, `gc` and `archive`. If the agents are quiet but the last run left no
+REPORT.md, the task stays `active` and `show` and the dashboard preview say
+`no REPORT.md since run N`.
 `done` and `gc` fetch `origin` first, so a PR merged on GitHub counts without
 a manual fetch (progress is reported per repo on stderr), and also recognize
 squash merges with git >= 2.38. A client viewing a finished task's session
@@ -98,9 +103,14 @@ collie dash                            # fzf: needs you > active > todo; tab reg
 collie set deploy-v2 priority=P1 "title=Ship v2"
 ```
 
-Dashboard rows start with a status glyph (red `●` an agent waits for you or
-finished its turn, yellow `◐` working, dim `○` no agent), then aligned
-columns: id, status, priority (P0 red, P1 yellow, P3 dim), a colored badge per
+`ls`'s last column says what a task needs from you: `answer` (an agent waits
+for permission or input), `review` (fresh REPORT.md), `reply` (an agent
+finished its turn without one), `stalled` (active, no live agent), `start`
+(todo), or `-` (an agent is working, or the task is finished).
+
+Dashboard rows start with a glyph (red `●` needs you: answer, review, reply,
+stalled; yellow `◐` working; dim `○` todo), then aligned columns: id, state
+(the needs value, or `working`), priority (P0 red, P1 yellow, P3 dim), a colored badge per
 running agent, the age of the last event, repos. Rows come in groups under a
 `── <group> (<n>) ──` line, the most urgent next to the prompt: needs you,
 active, todo. `tab` / `shift-tab` switch the grouping (status, priority,
@@ -141,17 +151,26 @@ settings file); omp through an extension loaded with `-e agents/omp.ts`
 (tool approvals and the `ask` tool count as waiting); nothing to install.
 Codex asks you to trust the hooks once in `/hooks`. Other agents count as
 idle after 30s without output (`@collie-silence`).
+The same three also get `hooks/tmux-guard`, which blocks shell commands that
+would kill your tmux server (`tmux kill-server`/`kill-session`, `pkill tmux`)
+unless they name a private server with `-L`/`-S`; limits in DESIGN.md.
 Agents you start by hand in a task's session (`claude`, `codex`, `gemini`,
 `omp`, `aider`) are found by process and show up the same way, but without
 hooks they are only working or idle (by output silence) and do not notify.
 `collie adopt` (dashboard `?` → `a`) stops such a Claude or omp and restarts
 it with `collie run … -- --continue` (omp: `-c`): same conversation, now with
 hooks.
+When the tmux server dies, `collie restore` (`-n` to list) restarts every
+agent run that was live, each resuming its own conversation: claude by the
+session id its `SessionStart` hook logged (`--resume <id>`), omp by the
+latest one in its worktree (`-c`, one run per worktree); other agents are
+skipped. `set -g @collie-restore on` runs it when the plugin loads.
 
 ```tmux
 set -g status-right '#{collie_status} %H:%M'   # ●waiting ●idle ●working counts
 set -g @collie-agent 'claude'                  # default agent ($COLLIE_AGENT wins)
 set -g @collie-notify 'on'                     # on | off | command "title" "body"
+set -g @collie-restore 'off'                   # on: collie restore at plugin load
 ```
 
 With [terminal-notifier](https://github.com/julienXX/terminal-notifier)
@@ -177,8 +196,9 @@ Task data lives in `~/.local/state/collie/tasks/<id>/` (`TASK.md`, `repos.tsv`,
 `events.log`) and survives worktree removal. Each worktree gets a `.collie`
 symlink to it, excluded via the repo's `info/exclude`.
 
-`done`/`archive` refuse dirty worktrees or commits not in the base branch
-(`--force` overrides; branches are always kept). `new` is all-or-nothing:
+`done` refuses dirty worktrees or commits not in the base branch; `archive`
+refuses only dirty worktrees, since abandoned work is unmerged by definition
+(`--force` overrides and discards uncommitted changes; branches are always kept). `new` is all-or-nothing:
 a failure rolls back worktrees and branches it already created.
 
 ### Ship workflow
@@ -210,7 +230,9 @@ edit (`collie edit`) them before `collie run`; replace them for all tasks with
 Windows are tagged with `@collie_path` / `@collie_task`; sessions export
 `COLLIE_TASK` and `COLLIE_TASK_DIR`.
 
-`collie new` does not fetch; run `git fetch` first if you want a fresh base.
+`collie new` and `collie add` fetch `origin` before creating worktrees, so a
+new branch starts from origin's latest default branch. Offline, they warn and
+start from local refs.
 
 ## Development
 

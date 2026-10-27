@@ -69,7 +69,7 @@ task_runs() {
     }
     FNR == NR { seen[$1] = 1; next }
     $2 == "run_started" { r = kv("run"); agent[r] = kv("agent"); order[++n] = r }
-    $2 == "run_exited" { ended[kv("run")] = 1 }
+    $2 == "run_exited" || $2 == "run_restored" { ended[kv("run")] = 1 }
     END {
       for (i = 1; i <= n; i++) {
         r = order[i]
@@ -92,11 +92,13 @@ task_top() {
 # Task status: done/archived as written by done/archive/gc, else derived:
 # todo (no run yet), review (no agent working or waiting, and REPORT.md
 # written since the last run started), else active. Other stored values
-# (old records: todo, blocked, ...) are ignored. Sets STATUS, and LAST_EVENT
-# (the last event's time, empty for done/archived).
+# (old records: todo, blocked, ...) are ignored. Sets STATUS, LAST_EVENT
+# (the last event's time, empty for done/archived), and STATUS_NOTE when
+# agents are quiet but the last run left no REPORT.md (stays active).
 task_status() { # id top_state [stored_status]
-  local d st last
+  local d st last runs
   d="$TASKS_DIR/$1"
+  STATUS_NOTE=""
   LAST_EVENT=""
   if [ $# -ge 3 ]; then
     st=$3
@@ -105,16 +107,21 @@ task_status() { # id top_state [stored_status]
     st=$FM
   fi
   case $st in done | archived) STATUS=$st; return ;; esac
-  last=$(awk -F'\t' '$2 == "run_started" { t = $1 } END { print t "\t" $1 }' "$d/events.log")
+  last=$(awk -F'\t' '$2 == "run_started" { t = $1; n++ } END { print n + 0 "\t" t "\t" $1 }' "$d/events.log")
+  runs=${last%%"$TAB"*}
+  last=${last#*"$TAB"}
   LAST_EVENT=${last#*"$TAB"}
   last=${last%%"$TAB"*}
   if [ -z "$last" ]; then
     STATUS=todo
-  elif [ "$2" != working ] && [ "$2" != waiting ] && [ -f "$d/REPORT.md" ] &&
+  elif [ "$2" = working ] || [ "$2" = waiting ]; then
+    STATUS=active
+  elif [ -f "$d/REPORT.md" ] &&
     ! [[ $(date -u -r "$d/REPORT.md" +%Y-%m-%dT%H:%M:%SZ) < $last ]]; then
     STATUS=review
   else
     STATUS=active
+    STATUS_NOTE="no REPORT.md since run $runs"
   fi
 }
 

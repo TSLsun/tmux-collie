@@ -1,16 +1,16 @@
 # shellcheck shell=bash
 # Sourced by bin/collie: dashboard, menu and popups.
 
-# Active tasks in `ls` format, most urgent first (see DESIGN §3.3: needs you,
-# then active, then todo), then by priority and id.
+# Active tasks in `ls` format, most urgent first (see DESIGN §3.3: answer >
+# reply > review > stalled > working > start), then by priority and id.
 dash_rows() {
   cmd_ls | awk -F'\t' '{
       r = 6
-      if ($5 == "waiting") r = 1
-      else if ($5 == "idle") r = 2
-      else if ($2 == "review") r = 3
-      else if ($5 == "working") r = 4
-      else if ($2 == "active") r = 5
+      if ($7 == "answer") r = 1
+      else if ($7 == "reply") r = 2
+      else if ($7 == "review") r = 3
+      else if ($7 == "stalled") r = 4
+      else if ($7 == "-") r = 5
       print r "\t" $0
     }' | sort -t "$TAB" -k1,1n -k4,4 -k2,2 | cut -f2-
 }
@@ -31,9 +31,9 @@ dash_header() { # group
 # dash_rows for fzf, in groups (DASH_GROUPS; status: needs you, active, todo;
 # priority: P0..P3; repo: most urgent first), each topped by a dim
 # "── <group> (<n>) ──" line (fzf lists bottom-up, so it follows its rows).
-# A row is the id, then aligned columns: a status glyph (red ● needs you,
-# yellow ◐ working, dim ○ none) and id, status, colored priority, a badge per
-# live agent, the last event's age, repos. The first line holds the column
+# A row is the id, then aligned columns: a glyph (red ● needs you, yellow ◐
+# working, dim ○ todo) and id, state (what it needs from you, or working),
+# colored priority, a badge per live agent, the last event's age, repos. The first line holds the column
 # names (fzf --header-lines=1); separators and it have an empty id.
 # $STATE_DIR/dash-rows gets the ids in order (empty for separators), for _key.
 # shellcheck disable=SC2120  # group comes from the CLI; internal callers pass none
@@ -66,25 +66,24 @@ cmd__rows() { # [group]
       pc["P0"] = "1;31"; pc["P1"] = "33"; pc["P3"] = "2"
       e = "\033["
       srand(); now = srand()
-      wi = 4; ws = 6; wp = 3; wa = 5; wg = 3; wr = 5
+      wi = 4; ws = 5; wp = 3; wa = 5; wg = 3; wr = 5
     }
     {
-      n++; id[n] = $1; st[n] = $2; pr[n] = $3; rp[n] = $6
-      gl[n] = e "2m○"
-      if ($5 == "waiting" || $5 == "idle") gl[n] = e "31m●"
-      else if ($5 == "working") gl[n] = e "33m◐"
-      k = split($7, a, " "); b = ""
+      n++; id[n] = $1; st[n] = $7 == "-" ? "working" : $7; pr[n] = $3; rp[n] = $6
+      you = $7 != "-" && $7 != "start"
+      gl[n] = you ? e "31m●" : $7 == "-" ? e "33m◐" : e "2m○"
+      k = split($8, a, " "); b = ""
       for (i = 1; i <= k; i++) b = b (i > 1 ? " " : "") e "1;" (a[i] in c ? c[a[i]] : "37") "m" a[i] e "0m"
-      al[n] = k ? length($7) - 1 : 1
+      al[n] = k ? length($8) - 1 : 1
       ag[n] = b == "" ? e "2m-" e "0m" : b
-      ad[n] = $8 == "" ? "-" : age(now - epoch($8))
+      ad[n] = $9 == "" ? "-" : age(now - epoch($9))
       if (g == "priority") k = $3
       else if (g == "repo") k = $6
-      else if ($5 == "waiting" || $5 == "idle" || $2 == "review") k = "needs you"
+      else if (you) k = "needs you"
       else k = $2
       if (!(k in cnt)) seen[++ns] = k
       cnt[k]++; key[n] = k
-      wi = max(wi, length($1)); ws = max(ws, length($2)); wp = max(wp, length($3))
+      wi = max(wi, length($1)); ws = max(ws, length(st[n])); wp = max(wp, length($3))
       wa = max(wa, al[n]); wg = max(wg, length(ad[n])); wr = max(wr, length($6))
     }
     END {
@@ -92,7 +91,7 @@ cmd__rows() { # [group]
       if (g == "priority") for (i = 0; i <= 3; i++) if (("P" i) in cnt) { ord[++no] = "P" i; done["P" i] = 1 }
       for (i = 1; i <= ns; i++) if (!(seen[i] in done)) ord[++no] = seen[i]
       w = 2 + wi + 2 + ws + 2 + wp + 2 + wa + 2 + wg + 2 + wr
-      print "\t" e "2m  " pad("TASK", wi, 4) "  " pad("STATUS", ws, 6) "  " pad("PRI", wp, 3) "  " \
+      print "\t" e "2m  " pad("TASK", wi, 4) "  " pad("STATE", ws, 5) "  " pad("PRI", wp, 3) "  " \
         pad("AGENT", wa, 5) "  " sprintf("%" wg "s", "AGE") "  REPOS" e "0m"
       printf "" >cache
       for (j = 1; j <= no; j++) {
@@ -344,6 +343,7 @@ cmd__preview() {
   task_status "$id" "${top%%"$TAB"*}"
   fm_get "$d/TASK.md" priority
   printf '%s  [%s %s]\n' "$title" "$STATUS" "$FM"
+  [ -z "$STATUS_NOTE" ] || echo "$STATUS_NOTE"
   echo
   echo "objective:"
   awk '$0 == "## Objective" { f = 1; next }

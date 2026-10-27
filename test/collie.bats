@@ -1,6 +1,7 @@
 #!/usr/bin/env bats
 
 load helper
+bats_require_minimum_version 1.5.0
 
 setup() { setup_env; }
 teardown() { teardown_env; }
@@ -93,6 +94,26 @@ two_repos() {
   run collie new x --no-window
   [ "$status" -eq 0 ]
   [ "$(git -C "$REPO/feat-x" rev-parse HEAD)" = "$(git -C "$REPO" rev-parse feat/x)" ]
+}
+
+@test "new: fetches origin first, so the branch starts at origin's latest" {
+  make_bare_repo A
+  git -C "$TMP/origin-A" commit -q --allow-empty -m later
+  cd "$REPO/main"
+  run --separate-stderr collie new x --no-window
+  [ "$status" -eq 0 ]
+  [ "$(git -C "$REPO/feat-x" rev-parse HEAD)" = "$(git -C "$TMP/origin-A" rev-parse main)" ]
+  [[ "$stderr" == "collie: A: fetching origin…"$'\n'"collie: A: fetched (base origin/"* ]]
+}
+
+@test "new: a failed fetch warns and starts from local refs" {
+  make_bare_repo A
+  git -C "$REPO" remote set-url origin "$TMP/nowhere"
+  cd "$REPO/main"
+  run --separate-stderr collie new x --no-window
+  [ "$status" -eq 0 ]
+  [ "$(git -C "$REPO/feat-x" branch --show-current)" = feat/x ]
+  [[ "$stderr" == *"A: git fetch origin failed (fatal: "* ]]
 }
 
 @test "new: fails outside a repo without -r" {
@@ -197,11 +218,11 @@ two_repos() {
   run collie ls
   [ "$status" -eq 0 ]
   [ "${#lines[@]}" -eq 2 ]
-  [[ "${lines[0]}" == "x	todo	P2	*	-	A,B" ]]
-  [[ "${lines[1]}" == "y	todo	P2	-	-	A" ]]
+  [[ "${lines[0]}" == "x	todo	P2	*	-	A,B	start" ]]
+  [[ "${lines[1]}" == "y	todo	P2	-	-	A	start" ]]
   run collie ls -a
   [ "${#lines[@]}" -eq 3 ]
-  [[ "${lines[2]}" == "z	archived	P2	-	-	B" ]]
+  [[ "${lines[2]}" == "z	archived	P2	-	-	B	-" ]]
 }
 
 # run 1 of a task, started in 2020 and exited (no session)
@@ -232,7 +253,7 @@ past_run() {
   awk 'NR == 2 { print "status: blocked"; print "next: ask about retries" } { print }' "$f" >"$f.tmp" && mv "$f.tmp" "$f"
   run collie ls
   [ "$status" -eq 0 ]
-  [ "$output" = "x	todo	P2	-	-	A" ]
+  [ "$output" = "x	todo	P2	-	-	A	start" ]
   run collie show x
   [ "$status" -eq 0 ]
   [[ "$output" == *"status: todo"* && "$output" != *blocked* && "$output" != *"next:"* ]]
@@ -328,6 +349,25 @@ past_run() {
   [ "$status" -eq 0 ]
   [ "$(fm x status)" = archived ]
   [ ! -e "$REPO/feat-x" ]
+}
+
+@test "archive: allows unmerged commits, refuses dirty worktrees without --force" {
+  make_bare_repo A
+  cd "$REPO/main"
+  collie new x --no-window
+  echo work >"$REPO/feat-x/w"
+  git -C "$REPO/feat-x" add w
+  git -C "$REPO/feat-x" commit -q -m work
+  echo wip >"$REPO/feat-x/f"
+  run collie archive x
+  [ "$status" -ne 0 ]
+  [[ "$output" == *dirty* && "$output" != *unmerged* ]]
+  rm "$REPO/feat-x/f"
+  run collie archive x
+  [ "$status" -eq 0 ]
+  [ "$(fm x status)" = archived ]
+  [ ! -e "$REPO/feat-x" ]
+  git -C "$REPO/main" show-ref -q --verify refs/heads/feat/x
 }
 
 @test "done: refuses when standing inside one of the task's worktrees (outside its session)" {

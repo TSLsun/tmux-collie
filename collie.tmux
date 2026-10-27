@@ -34,6 +34,10 @@ for side in status-left status-right; do
   esac
 done
 
+# @collie-restore on: restart the agents lost with the previous server
+# (bin/collie restore; restored runs are logged, so a reload starts nothing).
+[ "$(tmux show-options -gqv @collie-restore)" != on ] || tmux run-shell -b "'$BIN/collie' restore >/dev/null 2>&1"
+
 # prefix <@collie-key> (default h) opens the collie menu (bin/collie _menu);
 # prefix h h = dashboard.
 key=$(tmux show-options -gqv @collie-key)

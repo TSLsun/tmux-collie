@@ -23,6 +23,8 @@ finish_task() { # final_status args...
       die "refusing to $final '$id': $p/.collie is not a symlink to the task dir; move it aside first"
     fi
     [ -z "$(git -C "$p" status --porcelain)" ] || problems="$problems  dirty: $name ($p)"$'\n'
+    # Abandoned work is unmerged by definition and branches are kept anyway.
+    [ "$final" = archived ] && continue
     fetch_origin "$c" "$name" || true
     default_base "$c"
     base=$BASE
@@ -113,11 +115,13 @@ cmd_review() {
 }
 
 # Branch off the current worktree into a new exp/<id> task, carrying its
-# uncommitted (tracked) changes; the source worktree is not modified.
+# uncommitted tracked changes (-u: and untracked, non-ignored files, copied
+# as-is); the source worktree is not modified.
 cmd_spike() {
-  local id="" args=() src head stash owner path
+  local id="" args=() untracked=0 src head stash owner path
   while [ $# -gt 0 ]; do
     case $1 in
+      -u | --include-untracked) untracked=1 ;;
       --no-window) args+=("$1") ;;
       --title) args+=("$1" "${2:?--title needs text}"); shift ;;
       -*) die "spike: unknown option $1" ;;
@@ -125,18 +129,23 @@ cmd_spike() {
     esac
     shift
   done
-  [ -n "$id" ] || die "usage: collie spike <id> [--title text] [--no-window]"
+  [ -n "$id" ] || die "usage: collie spike <id> [-u] [--title text] [--no-window]"
   src=$(git rev-parse --show-toplevel 2>/dev/null) || die "spike: run it inside a worktree"
   head=$(git -C "$src" rev-parse HEAD)
   stash=$(git -C "$src" stash create)
-  if git -C "$src" status --porcelain | grep -q '^??'; then
-    warn "untracked files are not carried over"
+  if [ "$untracked" = 0 ] && git -C "$src" status --porcelain | grep -q '^??'; then
+    warn "untracked files are not carried over (use -u)"
   fi
   owner=$(task_owning "$src")
   cmd_new "$id" -t exp -r "$src" --from "$head" ${args[@]+"${args[@]}"}
   path=${NEW_PATHS%%$'\n'*}
   if [ -n "$stash" ]; then
     git -C "$path" stash apply -q --index "$stash" || warn "could not apply changes in $path (stash $stash)"
+  fi
+  if [ "$untracked" = 1 ]; then
+    git -C "$src" ls-files -z --others --exclude-standard |
+      tar -C "$src" --null -T - -cf - | tar -C "$path" -xf - ||
+      warn "could not copy untracked files to $path"
   fi
   log_event "$id" spiked_from "task=${owner:--} path=$src head=$head"
 }
