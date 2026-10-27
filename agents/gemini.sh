@@ -14,6 +14,9 @@ agent_argv() {
   mkdir -p "$STATE_DIR"
   {
     echo '{"hooks":{'
+    # hooks/tmux-guard denies killing the user's tmux server (exit 2)
+    printf '"BeforeTool":[{"matcher":"run_shell_command","hooks":[{"name":"collie-tmux-guard","type":"command","command":"'"'"'%s'"'"' && echo {}"}]}],\n' \
+      "$PLUGIN_DIR/hooks/tmux-guard"
     gemini_hook BeforeAgent '' working ,
     gemini_hook AfterTool '' working ,
     gemini_hook Notification ToolPermission waiting ,
