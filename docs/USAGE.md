@@ -127,7 +127,9 @@ stateDiagram-v2
 
 A task's `agent` column shows its most urgent run (`waiting` > `idle` >
 `working` > `exited` > `unknown`). The dashboard sorts tasks by
-`waiting` > `idle` > task `review` > `working` > the rest.
+`waiting` > `idle` > task `review` > `working` > other `active` > `todo`, then
+priority, and shows them in groups (needs you, active, todo); `tab` /
+`shift-tab` regroup by priority or repo.
 
 Agents get hooks per run, nothing installed: claude, codex, gemini, omp.
 Any other command (`--agent aider`) runs without hooks. Agents you start by
@@ -153,6 +155,7 @@ notifications); `collie adopt` restarts a hand-started claude or omp under
 | Archive | `collie archive` | — | — |
 | Finish merged tasks | `collie gc` | — | — |
 | Show details | `collie show` | — | preview pane (Objective) |
+| Group by status / priority / repo | — | — | `tab` / `shift-tab` |
 | Priority / title | `collie set` | — | — |
 | Extra repo mid-task | `collie add` | — | — |
 | Branch off dirty work | `collie spike` | — | — |
