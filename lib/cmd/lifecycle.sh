@@ -271,6 +271,25 @@ cmd_gc() {
   done
 }
 
+# Menu gc (in a popup): list what gc would finish, run it only after y.
+cmd__gc() {
+  local ids k
+  echo "checking for merged tasks…"
+  ids=$(cmd_gc -n)
+  if [ -z "$ids" ]; then
+    printf 'no merged tasks — press any key'
+    read -rsn1 _ || true
+    return 0
+  fi
+  printf 'merged:\n%s\n\ngc these? (y/n) ' "$ids"
+  read -rsn1 k || return 0
+  echo
+  [ "$k" = y ] || return 0
+  cmd_gc
+  printf '\npress any key'
+  read -rsn1 _ || true
+}
+
 # Merges base into each active task branch, so PRs stay mergeable after
 # another one lands. Clean merges are committed and pushed (if the branch has
 # an upstream); a conflicting merge is started and handed to the task's agent:
