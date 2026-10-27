@@ -12,7 +12,9 @@ AGENT_RESUME_ID=(--resume)
 
 agent_argv() {
   local d settings
-  settings=$(printf '{"hooks":{%s,%s,%s,%s,%s,%s}}' \
+  # PreToolUse: hooks/tmux-guard denies killing the user's tmux server
+  settings=$(printf '{"hooks":{"PreToolUse":[{"matcher":"Bash","hooks":[{"type":"command","command":"'"'"'%s'"'"'"}]}],%s,%s,%s,%s,%s,%s}}' \
+    "$PLUGIN_DIR/hooks/tmux-guard" \
     "$(claude_hook SessionStart '' _session)" \
     "$(claude_hook UserPromptSubmit '' state working)" \
     "$(claude_hook PostToolUse '*' state working)" \
