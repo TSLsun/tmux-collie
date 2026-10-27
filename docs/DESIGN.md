@@ -178,7 +178,7 @@ created: 2026-01-01
 | `collie review [<id>] [-p]` | Per-repo commits, diff stat (`-p` patch), dirty files, then REPORT.md |
 | `collie spike <id>` | New `exp/<id>` task from the current worktree, carrying its uncommitted tracked changes (`git stash create`); source untouched |
 | `collie done [<id>] [--force]` | Accept: safety checks, then remove worktrees and session |
-| `collie archive [<id>] [--force]` | Abandon: same cleanup |
+| `collie archive [<id>] [--force]` | Abandon: same cleanup; unmerged commits are fine (branch kept), only dirty worktrees refuse |
 | `collie gc [-n]` | Finish (`done`) tasks whose branches all moved past their start and are contained in base; dirty ones are skipped |
 | `collie sync [<id>...] [-n]` | Merge base into active task branches (clean: commit + push if tracked; conflict: start the merge and hand it to the idle or exited agent); busy agents, dirty worktrees and untouched branches are skipped |
 
@@ -324,7 +324,8 @@ unless marked *manual*.
   - failure midway (e.g. second repo can't be created) rolls back worktrees and
     branches already created
   - a branch already checked out elsewhere is rejected up front, naming the task
-  - `done` / `archive` refuse dirty worktrees or commits not in the base branch
+  - `done` refuses dirty worktrees or commits not in the base branch; `archive`
+    refuses only dirty worktrees
   - `new -w` creates all repos of a workspace; `add` extends an existing task
   - small change in two commands: `collie new fix-typo` → commit, merge → `collie done`
 
@@ -409,7 +410,7 @@ unless marked *manual*.
 |---|---|
 | Creation fails midway | Track created worktrees/branches; roll back in reverse |
 | Branch already used by another worktree | Preflight check; reject and name the owning task |
-| Losing valuable work | `done` / `archive` refuse dirty or unmerged; `--force` required; branches always kept |
+| Losing valuable work | `done` refuses dirty or unmerged, `archive` refuses dirty; `--force` required; branches always kept |
 | Modifying the main checkout | Only ever `worktree add`; never checkout inside existing worktrees |
 | State drifting from reality | Derive on every `ls`; show `unknown` when unsure |
 | Agent sandbox rejects symlinks | Launch in the primary repo + adapter `extra_dirs`; symlinks are a fallback |

@@ -60,7 +60,7 @@ tasks:
   sync [<id>...] [-n] merge base into active task branches and push them;
                       conflicts go to the task's idle agent (-n: predict only)
   done [<id>] [--force]     accept: remove worktrees + session, keep branches
-  archive [<id>] [--force]  abandon: same cleanup, status archived
+  archive [<id>] [--force]  abandon: same cleanup, status archived (unmerged ok)
 
 agents:
   run [<id>] [--agent name] [-r repo] [-p prompt] [-- args]
@@ -877,6 +877,8 @@ finish_task() { # final_status args...
       die "refusing to $final '$id': $p/.collie is not a symlink to the task dir; move it aside first"
     fi
     [ -z "$(git -C "$p" status --porcelain)" ] || problems="$problems  dirty: $name ($p)"$'\n'
+    # Abandoned work is unmerged by definition and branches are kept anyway.
+    [ "$final" = archived ] && continue
     fetch_origin "$c" "$name" || true
     default_base "$c"
     base=$BASE

@@ -351,6 +351,25 @@ past_run() {
   [ ! -e "$REPO/feat-x" ]
 }
 
+@test "archive: allows unmerged commits, refuses dirty worktrees without --force" {
+  make_bare_repo A
+  cd "$REPO/main"
+  collie new x --no-window
+  echo work >"$REPO/feat-x/w"
+  git -C "$REPO/feat-x" add w
+  git -C "$REPO/feat-x" commit -q -m work
+  echo wip >"$REPO/feat-x/f"
+  run collie archive x
+  [ "$status" -ne 0 ]
+  [[ "$output" == *dirty* && "$output" != *unmerged* ]]
+  rm "$REPO/feat-x/f"
+  run collie archive x
+  [ "$status" -eq 0 ]
+  [ "$(fm x status)" = archived ]
+  [ ! -e "$REPO/feat-x" ]
+  git -C "$REPO/main" show-ref -q --verify refs/heads/feat/x
+}
+
 @test "done: refuses when standing inside one of the task's worktrees (outside its session)" {
   make_bare_repo A
   cd "$REPO/main"
