@@ -49,6 +49,7 @@ collie edit deploy-v2                  # adjust TASK.md in $EDITOR (also: dash c
 collie go deploy-v2                    # switch/attach (fzf picker if no id)
 collie done deploy-v2                  # accept: remove worktrees + session, keep branches
 collie archive deploy-v2               # abandon: same cleanup
+collie reopen deploy-v2                # closed by mistake: worktrees back on the kept branches
 ```
 
 ### Agents
@@ -77,9 +78,9 @@ collie sync                            # merge base into them; agents resolve co
 Task status is derived, never set by hand: `todo` until the first agent run,
 `active` after it, `review` once no agent is working or waiting and REPORT.md
 was written since the last run started; `done` / `archived` come from
-`done`, `gc` and `archive`. If the agents are quiet but the last run left no
-REPORT.md, the task stays `active` and `show` and the dashboard preview say
-`no REPORT.md since run N`.
+`done`, `gc` and `archive`, and `reopen` undoes them. If the agents are quiet
+but the last run left no REPORT.md, the task stays `active` and `show` and the
+dashboard preview say `no REPORT.md since run N`.
 `done` and `gc` fetch `origin` first, so a PR merged on GitHub counts without
 a manual fetch (progress is reported per repo on stderr), and also recognize
 squash merges with git >= 2.38. A client viewing a finished task's session

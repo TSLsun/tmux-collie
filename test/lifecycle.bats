@@ -134,6 +134,20 @@ squash_upstream() {
   [ -z "$(fm n status)" ]
 }
 
+@test "gc: a reopened task is not finished again until it has new work" {
+  collie new m --no-window
+  commit_in "$TMP/repos/A/feat-m" m
+  merge_upstream feat/m
+  collie gc >/dev/null
+  collie reopen m --no-window
+  run --separate-stderr collie gc -n
+  [ -z "$output" ]
+  commit_in "$TMP/repos/A/feat-m" m2
+  merge_upstream feat/m
+  run --separate-stderr collie gc -n
+  [ "$output" = m ]
+}
+
 @test "gc: skips a merged task with uncommitted changes" {
   collie new m --no-window
   commit_in "$TMP/repos/A/feat-m" m

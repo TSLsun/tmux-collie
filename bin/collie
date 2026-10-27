@@ -65,6 +65,8 @@ tasks:
                       conflicts go to the task's idle agent (-n: predict only)
   done [<id>] [--force]     accept: remove worktrees + session, keep branches
   archive [<id>] [--force]  abandon: same cleanup, status archived (unmerged ok)
+  reopen [<id>] [--no-window]
+                      undo done/archive: worktrees back on the kept branches
 
 agents:
   run [<id>] [--agent name] [-r repo] [-p prompt] [-- args]
@@ -250,6 +252,12 @@ fm_set() {
   mv "$1.tmp" "$1"
 }
 
+fm_del() { # file key
+  awk -v k="$2" 'NR > 1 && !end && $0 == "---" { end = 1 }
+    NR == 1 || end || index($0, k ":") != 1' "$1" >"$1.tmp"
+  mv "$1.tmp" "$1"
+}
+
 # NOW: the current time in a strftime format (stamp_utc: in UTC). bash 4.2+
 # formats it without forking date; bash 3.2 still runs date.
 if [ $((BASH_VERSINFO[0] * 100 + BASH_VERSINFO[1])) -ge 402 ]; then
@@ -283,12 +291,15 @@ write_task_md() { # dir id title [objective] [ship]
   } >"$1/TASK.md"
 }
 
-# Which task (if any) owns a worktree path.
+# Which open task (if any) owns a worktree path; a done/archived task keeps
+# its old paths in repos.tsv but owns nothing.
 task_owning() {
   local f
   for f in "$TASKS_DIR"/*/repos.tsv; do
     [ -f "$f" ] || continue
     if awk -F'\t' -v p="$1" '$4 == p { found = 1 } END { exit !found }' "$f"; then
+      fm_get "${f%/*}/TASK.md" status
+      case $FM in done | archived) continue ;; esac
       f=${f%/*}
       printf '%s\n' "${f##*/}"
       return
@@ -326,7 +337,7 @@ add_worktree() { # common path branch from
 # Plans, preflights and creates worktrees for SPECS (newline-separated) into
 # task <id>; all-or-nothing. Appends to repos.tsv and links on success.
 create_repos() { # id default_branch from specs
-  local id=$1 default_branch=$2 from=$3 specs=$4 tdir plan="" spec branch path line dup n wt
+  local id=$1 default_branch=$2 from=$3 specs=$4 tdir plan="" spec branch path dup n
   tdir="$TASKS_DIR/$id"
 
   while IFS= read -r spec; do
@@ -340,20 +351,7 @@ create_repos() { # id default_branch from specs
       while IFS=$TAB read -r n _; do [ "$n" != "$R_NAME" ] || dup=1; done <"$tdir/repos.tsv"
     fi
     [ "$dup" -eq 0 ] || die "repo '$R_NAME' is already part of task '$id'"
-    # worktree path that has the branch checked out
-    line="" wt=""
-    while IFS= read -r n; do
-      case $n in
-        "worktree "*) wt=${n#worktree } ;;
-        "branch refs/heads/$branch") line=$wt; break ;;
-      esac
-    done <<<"$(git --git-dir="$R_COMMON" worktree list --porcelain)"
-    if [ -n "$line" ]; then
-      local owner
-      owner=$(task_owning "$line")
-      [ -z "$owner" ] || owner=" (task '$owner')"
-      die "branch '$branch' in $R_NAME is checked out at $line$owner"
-    fi
+    checked_out "$R_COMMON" "$R_NAME" "$branch"
     [ ! -e "$path" ] || die "$path already exists"
     plan="$plan$R_NAME$TAB$R_COMMON$TAB$branch$TAB$path"$'\n'
   done <<<"$specs"
@@ -375,12 +373,33 @@ create_repos() { # id default_branch from specs
     [ -n "$name" ] || continue
     NEW_PATHS="$NEW_PATHS${NEW_PATHS:+$'\n'}$p"
     printf '%s\t%s\t%s\t%s\n' "$name" "$c" "$b" "$p" >>"$tdir/repos.tsv"
-    ln -s "$p" "$tdir/repos/$name"
-    ln -s "$tdir" "$p/.collie"
-    [ -d "$c/info" ] || mkdir -p "$c/info"
-    excluded "$c/info/exclude" || echo '/.collie' >>"$c/info/exclude"
-    log_event "$id" worktree_created "repo=$name branch=$b path=$p start=$(git -C "$p" rev-parse HEAD)"
+    link_worktree "$id" "$name" "$c" "$b" "$p"
   done <<<"$plan"
+}
+
+# Dies if a branch is checked out in some worktree, naming the owning task.
+checked_out() { # common name branch
+  local n wt="" at=""
+  while IFS= read -r n; do
+    case $n in
+      "worktree "*) wt=${n#worktree } ;;
+      "branch refs/heads/$3") at=$wt; break ;;
+    esac
+  done <<<"$(git --git-dir="$1" worktree list --porcelain)"
+  [ -n "$at" ] || return 0
+  n=$(task_owning "$at")
+  [ -z "$n" ] || n=" (task '$n')"
+  die "branch '$3' in $2 is checked out at $at$n"
+}
+
+# Links a new worktree and the task dir both ways and logs where it started.
+link_worktree() { # id name common branch path
+  local tdir="$TASKS_DIR/$1"
+  ln -s "$5" "$tdir/repos/$2"
+  ln -s "$tdir" "$5/.collie"
+  [ -d "$3/info" ] || mkdir -p "$3/info"
+  excluded "$3/info/exclude" || echo '/.collie' >>"$3/info/exclude"
+  log_event "$1" worktree_created "repo=$2 branch=$4 path=$5 start=$(git -C "$5" rev-parse HEAD)"
 }
 
 # Whether an info/exclude file has the /.collie line.
@@ -942,6 +961,50 @@ leave_session() { # id
     [ "$(tmux display-message -c "$client" -p '#{client_session}')" != "$1" ] ||
       tmux switch-client -c "$client" -t "=$other"
   done
+}
+
+# Undoes done/archive: worktrees back on the kept branches, stored status
+# cleared, session rebuilt. All-or-nothing, like new.
+cmd_reopen() {
+  local id="" window=1
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --no-window) window=0 ;;
+      -*) die "reopen: unknown option $1" ;;
+      *) [ -z "$id" ] || die "reopen: too many arguments"; id=$1 ;;
+    esac
+    shift
+  done
+  task_id "$id"
+  local d st name c b p created="" first=""
+  d="$TASKS_DIR/$id"
+  fm_get "$d/TASK.md" status
+  st=$FM
+  case $st in done | archived) ;; *) die "task '$id' is not done or archived" ;; esac
+
+  while IFS=$TAB read -r name c b p; do
+    git --git-dir="$c" show-ref -q --verify "refs/heads/$b" ||
+      die "branch '$b' in $name no longer exists"
+    checked_out "$c" "$name" "$b"
+    [ ! -e "$p" ] || die "$p already exists"
+  done <"$d/repos.tsv"
+
+  while IFS=$TAB read -r name c b p; do
+    if ! { mkdir -p "${p%/*}" && git --git-dir="$c" worktree add -q "$p" "$b" </dev/null; }; then
+      rollback "$created"
+      exit 1
+    fi
+    created="$created$c$TAB$p$TAB$b${TAB}0"$'\n'
+  done <"$d/repos.tsv"
+  while IFS=$TAB read -r name c b p; do
+    rm -f "$d/repos/$name"
+    link_worktree "$id" "$name" "$c" "$b" "$p"
+    [ -n "$first" ] || first=$p
+  done <"$d/repos.tsv"
+  fm_del "$d/TASK.md" status
+  log_event "$id" task_reopened "from=$st"
+  printf '%s\n' "$first"
+  if [ "$window" -eq 1 ] && command -v tmux >/dev/null; then ensure_session "$id"; fi
 }
 
 # Sets RUN_AGENT, the agent `collie run` starts without --agent.
@@ -1910,7 +1973,7 @@ cmd_workspaces() {
 }
 
 case "${1:-help}" in
-  new | add | ls | show | edit | go | run | adopt | restore | state | status | set | dash | review | spike | gc | sync | doctor | _exec | _session | _target | _preview | _rows | _group | _pick | _key | _actions | _jump | _menu | _popup | _dev | repos | workspaces)
+  new | add | ls | show | edit | go | reopen | run | adopt | restore | state | status | set | dash | review | spike | gc | sync | doctor | _exec | _session | _target | _preview | _rows | _group | _pick | _key | _actions | _jump | _menu | _popup | _dev | repos | workspaces)
     cmd=$1
     shift
     "cmd_$cmd" "$@"
