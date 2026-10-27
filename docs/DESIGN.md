@@ -167,7 +167,7 @@ created: 2026-01-01
 | `collie run [<id>] [--agent X] [-r repo] [-p prompt] [-- args]` | Launch an agent in a new task window; records a run |
 | `collie dash [-n]` | fzf dashboard, most urgent first; enter jumps to the most urgent agent window |
 | `collie set [<id>] priority=P1 title="..."` | Update priority or title; a bare field reads stdin |
-| `collie edit [<id>]` | Open TASK.md in `$EDITOR` (also `new --edit`, dash `e`, menu `e`) |
+| `collie edit [<id>]` | Open TASK.md in `$EDITOR` (also `new --edit`, dash `ctrl-e` or `? e`, menu `e`) |
 | `collie review [<id>] [-p]` | Per-repo commits, diff stat (`-p` patch), dirty files, then REPORT.md |
 | `collie spike <id>` | New `exp/<id>` task from the current worktree, carrying its uncommitted tracked changes (`git stash create`); source untouched |
 | `collie done [<id>] [--force]` | Accept: safety checks, then remove worktrees and session |

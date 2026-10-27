@@ -143,15 +143,15 @@ notifications); `collie adopt` restarts a hand-started claude or omp under
 |---|---|---|---|
 | Dashboard | `collie dash` | `h` | — |
 | New task | `collie new` | `c` (prompts, switches to it) | `?` `c` |
-| Edit TASK.md | `collie edit` | `e` | `?` `e` |
-| Run agent | `collie run` | `r` | `?` `r` |
+| Edit TASK.md | `collie edit` | `e` | `ctrl-e` or `?` `e` |
+| Run agent | `collie run` | `r` | `ctrl-r` or `?` `r` |
 | Adopt hand-started agent | `collie adopt` | — | `?` `a` |
 | Go to task | `collie go` | — | `enter` (most urgent agent window) |
 | Jump to last alert | — | `j` | — |
-| Review | `collie review` | `v` | `?` `v` |
+| Review | `collie review` | `v` | `ctrl-v` or `?` `v` |
 | Shell in worktree | — | `t` (popup) | `?` `t` |
 | lazygit | — | `g` | — |
-| Done | `collie done` | `d` (confirms) | `?` `d` (confirms) |
+| Done | `collie done` | `d` (confirms) | `ctrl-d` or `?` `d` (confirms) |
 | Archive | `collie archive` | — | — |
 | Finish merged tasks | `collie gc` | — | — |
 | Show details | `collie show` | — | preview pane (Objective) |
@@ -161,6 +161,8 @@ notifications); `collie adopt` restarts a hand-started claude or omp under
 | Branch off dirty work | `collie spike` | — | — |
 
 The menu's task entries (`e v r d`) appear only inside a task's session.
+On the dashboard the `ctrl-` keys act on the selected row at once, so plain
+keys keep filtering; `?` lists every action.
 `<id>` may be omitted anywhere inside a task session (`$COLLIE_TASK`).
 
 ## 6. Variations
