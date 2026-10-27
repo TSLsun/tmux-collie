@@ -31,7 +31,8 @@ teardown_env() {
   # the fifo writers of attach_client would otherwise keep bats waiting
   # shellcheck disable=SC2086
   [ -z "${CLIENT_PIDS:-}" ] || kill $CLIENT_PIDS 2>/dev/null || true
-  tmux kill-server 2>/dev/null || true
+  # name the test socket: a bare kill-server could reach the user's server
+  tmux -S "$TMUX_TMPDIR/tmux-$(id -u)/default" kill-server 2>/dev/null || true
 }
 
 collie() {

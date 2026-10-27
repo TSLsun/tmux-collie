@@ -243,6 +243,10 @@ EOF
   grep -qxF -- --settings "$TMP/args"
   grep -q '"Stop".*state idle' "$TMP/args"
   grep -q '"Notification".*state waiting' "$TMP/args"
+  # the Bash guard denies killing the user's tmux server
+  c=$(sed -n 's/.*"PreToolUse":\[{"matcher":"Bash","hooks":\[{"type":"command","command":"\([^"]*\)".*/\1/p' "$TMP/args")
+  run sh -c "$c" <<<'{"tool_input":{"command":"tmux kill-server"}}'
+  [ "$status" -eq 2 ]
   grep -qxF "$TMP/repos/B.worktrees/feat-x" "$TMP/args"
   grep -qxF "$(task_dir x)" "$TMP/args"
   ! grep -qxF "$TMP/repos/A/feat-x" "$TMP/args"

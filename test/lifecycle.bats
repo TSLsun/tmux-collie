@@ -76,6 +76,32 @@ squash_upstream() {
   grep -q "spiked_from	task=src" "$(task_dir try-x)/events.log"
 }
 
+@test "spike: untracked files are left behind with a warning, copied with -u" {
+  collie new src --no-window
+  wt="$TMP/repos/A/feat-src"
+  commit_in "$wt" base
+  echo .ignored >"$wt/.gitignore"
+  git -C "$wt" add .gitignore
+  git -C "$wt" commit -qm ignore
+  mkdir -p "$wt/dir"
+  echo loose >"$wt/dir/loose"
+  echo junk >"$wt/.ignored"
+  before=$(git -C "$wt" status --porcelain)
+  cd "$wt"
+  run collie spike try-a --no-window
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"untracked files are not carried over"* ]]
+  [ ! -e "$TMP/repos/A/exp-try-a/dir/loose" ]
+  run collie spike try-b -u --no-window
+  [ "$status" -eq 0 ]
+  [[ "$output" != *"not carried over"* ]]
+  sp="$TMP/repos/A/exp-try-b"
+  [ "$(cat "$sp/dir/loose")" = loose ]
+  [ ! -e "$sp/.ignored" ]
+  [ "$(git -C "$wt" status --porcelain)" = "$before" ]
+  [ "$(cat "$wt/dir/loose")" = loose ]
+}
+
 @test "spike: clean worktree just branches off HEAD" {
   collie new src --no-window
   commit_in "$TMP/repos/A/feat-src" base
