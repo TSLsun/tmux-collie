@@ -1,0 +1,63 @@
+#!/usr/bin/env bash
+# PreToolUse guard for the agents collie runs. They inherit $TMUX, so a bare
+# `tmux kill-server` (or pkill/killall tmux) takes down the user's server and
+# every agent on it. Reads the hook's JSON on stdin and checks
+# tool_input.command; exit 2 with the reason on stderr denies the call.
+#
+# Denied unless the statement names a private server (-L or -S):
+#   tmux ... kill-server | kill-session (and their prefixes)
+#   pkill | killall ... with tmux in their arguments
+# Not caught: kill <pid>, kill $(pgrep tmux), -S pointing at the user's own
+# socket, scripts written to a file and run.
+
+in=$(cat)
+re='"command"[[:space:]]*:[[:space:]]*"(([^"\\]|\\.)*)"'
+[[ $in =~ $re ]] || exit 0
+cmd=${BASH_REMATCH[1]}
+# undo the JSON escapes that matter here
+cmd=${cmd//\\\\/$'\1'}
+cmd=${cmd//\\n/$'\n'}
+cmd=${cmd//\\t/ }
+cmd=${cmd//\\\"/\"}
+cmd=${cmd//$'\1'/\\}
+
+# one statement: deny if it kills tmux without naming a private server
+check() {
+  local w i=0 a kill=0
+  set -f
+  # shellcheck disable=SC2206  # word splitting is the point
+  w=($1)
+  set +f
+  while [ "$i" -lt "${#w[@]}" ]; do
+    case ${w[i]} in
+      sudo | env | command | exec | nohup | time | '{' | '!' | *=*) ;;
+      -*) [ "$i" -gt 0 ] || break ;;
+      *) break ;;
+    esac
+    i=$((i + 1))
+  done
+  case ${w[i]##*/} in
+    tmux) for a in "${w[@]:i+1}"; do case $a in kill-ser* | kill-ses*) kill=1 ;; esac; done ;;
+    pkill | killall) for a in "${w[@]:i+1}"; do case $a in *tmux*) kill=1 ;; esac; done ;;
+  esac
+  [ "$kill" = 1 ] || return 0
+  for a in "${w[@]:i+1}"; do
+    case $a in -L* | -S*) return 0 ;; esac
+  done
+  echo "collie: blocked, this would kill the user's tmux server (agents inherit \$TMUX)." \
+    "Use a private server on every call: tmux -L <name> ..., then tmux -L <name> kill-server." >&2
+  exit 2
+}
+
+# statements: split on shell separators (\; is tmux's own, keep it)
+cmd=${cmd//\\;/ }
+cmd=${cmd//[;|&()\`]/$'\n'}
+# each statement with its quotes dropped, then each quoted piece on its own
+# (bash -c 'tmux kill-server'), so a quoted message like -m "fix tmux
+# kill-server" only trips when it starts with tmux
+stripped=${cmd//[\"\']/}
+pieces=${cmd//[\"\']/$'\n'}
+while IFS= read -r s; do
+  check "$s"
+done <<<"$stripped"$'\n'"$pieces"
+exit 0
