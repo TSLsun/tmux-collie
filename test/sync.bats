@@ -112,6 +112,39 @@ wt() { echo "$TMP/repos/A/feat-$1"; }
   grep -q "sync_conflict	repo=A base=.* files=f" "$(task_dir c)/events.log"
 }
 
+@test "sync: a conflict is typed into the agent's pane of a split window, not the active pane" {
+  collie new c --no-window
+  commit_in "$(wt c)" f mine
+  collie run c -- 300
+  hook c idle
+  local agent other
+  agent=$(run_pane c)
+  other=$(tmux split-window -P -F '#{pane_id}' -t "$agent")
+  [ "$(run_pane c)" = "$other" ]
+  land f theirs
+  run --separate-stderr collie sync
+  [ "$output" = "c A: conflict in f; sent to the agent in $(tmux display -p -t "$agent" '#{window_id}')" ]
+  wait_for "tmux capture-pane -p -J -t '$agent' | grep -q 'conflicts in: f. Resolve them'"
+  ! tmux capture-pane -p -J -t "$other" | grep -q 'Resolve them'
+}
+
+@test "sync: a conflict for an idle agent whose pane is gone sends no keys" {
+  collie new c --no-window
+  commit_in "$(wt c)" f mine
+  collie run c -- 300
+  hook c idle
+  local agent other
+  agent=$(run_pane c)
+  other=$(tmux split-window -P -F '#{pane_id}' -t "$agent")
+  tmux kill-pane -t "$agent"
+  land f theirs
+  run --separate-stderr collie sync
+  [ "$output" = "c A: conflict in f; agent pane not found, resolve it in $(wt c)" ]
+  git -C "$(wt c)" rev-parse -q --verify MERGE_HEAD
+  sleep 0.5
+  ! tmux capture-pane -p -J -t "$other" | grep -q 'Resolve them'
+}
+
 @test "sync: a conflict for an exited agent starts a new run of it" {
   collie new c --no-window
   commit_in "$(wt c)" f mine
