@@ -35,7 +35,9 @@ per repo involved, and one tmux session (one window per repo).
 collie new login                       # task in the current repo, branch feat/login
 collie new typo -t fix                 # branch fix/typo
 collie new login -m 'add OAuth login'  # pre-fill TASK.md's Objective
-collie new                             # on a terminal: prompts for id, type, objective, ship
+collie new                             # on a terminal: prompts for id, type, objective, ship,
+                                       # and with an objective, whether to start the agent
+collie new login -m 'add OAuth login' --run   # create and start the agent (see collie run)
 collie new login --ship                # agent ships it: commits, PR, CI (see below)
 collie new deploy-v2 -r A -r B         # cross-repo task (repos by name or path)
 collie new deploy-v2 -r A -r B:release/v2   # per-repo branch
