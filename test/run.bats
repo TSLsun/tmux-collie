@@ -27,6 +27,24 @@ teardown() { teardown_env; }
   [ "$(agent_of x)" = working ]
 }
 
+@test "run: retries a window whose pty open hit the macOS ptmx race" {
+  # fail the first new-session and the first new-window like xnu's ENXIO race
+  mkdir -p "$TMP/stub"
+  cat >"$TMP/stub/tmux" <<EOF
+#!/bin/sh
+case \$1 in new-session | new-window)
+  [ -e "$TMP/failed-\$1" ] || { touch "$TMP/failed-\$1"; echo "create window failed: fork failed: Device not configured" >&2; exit 1; } ;;
+esac
+exec $(command -v tmux) "\$@"
+EOF
+  chmod +x "$TMP/stub/tmux"
+  collie new x --no-window
+  PATH="$TMP/stub:$PATH" run collie run x -- 300
+  [ "$status" -eq 0 ]
+  [ -e "$TMP/failed-new-session" ] && [ -e "$TMP/failed-new-window" ]
+  [ "$(agent_of x)" = working ]
+}
+
 @test "run: -r picks the repo; unknown repo or agent command fails" {
   make_normal_repo B
   cd "$TMP"

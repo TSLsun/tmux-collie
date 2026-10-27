@@ -407,13 +407,26 @@ load_tmux_state() {
   fi
 }
 
+# tmux new-window/new-session, retried when the pane's pty open fails with
+# ENXIO: macOS /dev/ptmx races with a pty freed concurrently (xnu tty_ptmx.c
+# picks a minor past the slot vector, then skips growing it). Prints stdout.
+tmux_spawn() {
+  local out i
+  for i in 1 2 3; do
+    out=$(tmux "$@" 2>&1 </dev/null) && { printf '%s\n' "$out"; return 0; }
+    case $out in *"Device not configured"*) sleep 0.2 ;; *) break ;; esac
+  done
+  printf '%s\n' "$out" >&2
+  return 1
+}
+
 open_window() { # id name path
   local wid
   if has_session "$1"; then
-    wid=$(tmux new-window -d -P -F '#{window_id}' -t "=$1:" -n "$2" -c "$3" </dev/null)
+    wid=$(tmux_spawn new-window -d -P -F '#{window_id}' -t "=$1:" -n "$2" -c "$3")
   else
-    wid=$(tmux new-session -d -P -F '#{window_id}' -s "$1" -n "$2" -c "$3" \
-      -e "COLLIE_TASK=$1" -e "COLLIE_TASK_DIR=$TASKS_DIR/$1" </dev/null)
+    wid=$(tmux_spawn new-session -d -P -F '#{window_id}' -s "$1" -n "$2" -c "$3" \
+      -e "COLLIE_TASK=$1" -e "COLLIE_TASK_DIR=$TASKS_DIR/$1")
   fi
   tmux set-option -w -t "$wid" @collie_path "$3" \; set-option -w -t "$wid" @collie_task "$1"
 }
@@ -911,8 +924,8 @@ cmd_run() {
   [ "$AGENT_HOOKS" = 0 ] || [ -n "$prompt" ] || st=idle
   run=$(($(awk -F'\t' '$2 == "run_started" { n++ } END { print n + 0 }' "$d/events.log") + 1))
   ensure_session "$id"
-  wid=$(tmux new-window -d -P -F '#{window_id}' -t "=$id:" -n "$agent" -c "$path" \
-    "$BASH" "$PLUGIN_DIR/bin/collie" _exec "$id" "$run" "${AGENT_ARGV[@]}" ${extra[@]+"${extra[@]}"} </dev/null)
+  wid=$(tmux_spawn new-window -d -P -F '#{window_id}' -t "=$id:" -n "$agent" -c "$path" \
+    "$BASH" "$PLUGIN_DIR/bin/collie" _exec "$id" "$run" "${AGENT_ARGV[@]}" ${extra[@]+"${extra[@]}"})
   # @collie_run last: the wrapper starts the agent once it is set
   tmux set-option -w -t "$wid" @collie_task "$id" \; set-option -w -t "$wid" @collie_path "$path" \; \
     set-option -w -t "$wid" @collie_agent "$agent" \; set-option -w -t "$wid" @collie_hooks "$AGENT_HOOKS" \; \
