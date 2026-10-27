@@ -1,6 +1,7 @@
 #!/usr/bin/env bats
 
 load helper
+bats_require_minimum_version 1.5.0
 
 setup() { setup_env; }
 teardown() { teardown_env; }
@@ -93,6 +94,26 @@ two_repos() {
   run collie new x --no-window
   [ "$status" -eq 0 ]
   [ "$(git -C "$REPO/feat-x" rev-parse HEAD)" = "$(git -C "$REPO" rev-parse feat/x)" ]
+}
+
+@test "new: fetches origin first, so the branch starts at origin's latest" {
+  make_bare_repo A
+  git -C "$TMP/origin-A" commit -q --allow-empty -m later
+  cd "$REPO/main"
+  run --separate-stderr collie new x --no-window
+  [ "$status" -eq 0 ]
+  [ "$(git -C "$REPO/feat-x" rev-parse HEAD)" = "$(git -C "$TMP/origin-A" rev-parse main)" ]
+  [[ "$stderr" == "collie: A: fetching origin…"$'\n'"collie: A: fetched (base origin/"* ]]
+}
+
+@test "new: a failed fetch warns and starts from local refs" {
+  make_bare_repo A
+  git -C "$REPO" remote set-url origin "$TMP/nowhere"
+  cd "$REPO/main"
+  run --separate-stderr collie new x --no-window
+  [ "$status" -eq 0 ]
+  [ "$(git -C "$REPO/feat-x" branch --show-current)" = feat/x ]
+  [[ "$stderr" == *"A: git fetch origin failed (fatal: "* ]]
 }
 
 @test "new: fails outside a repo without -r" {
