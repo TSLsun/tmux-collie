@@ -154,11 +154,17 @@ hooks they are only working or idle (by output silence) and do not notify.
 `collie adopt` (dashboard `?` → `a`) stops such a Claude or omp and restarts
 it with `collie run … -- --continue` (omp: `-c`): same conversation, now with
 hooks.
+When the tmux server dies, `collie restore` (`-n` to list) restarts every
+agent run that was live, each resuming its own conversation: claude by the
+session id its `SessionStart` hook logged (`--resume <id>`), omp by the
+latest one in its worktree (`-c`, one run per worktree); other agents are
+skipped. `set -g @collie-restore on` runs it when the plugin loads.
 
 ```tmux
 set -g status-right '#{collie_status} %H:%M'   # ●waiting ●idle ●working counts
 set -g @collie-agent 'claude'                  # default agent ($COLLIE_AGENT wins)
 set -g @collie-notify 'on'                     # on | off | command "title" "body"
+set -g @collie-restore 'off'                   # on: collie restore at plugin load
 ```
 
 With [terminal-notifier](https://github.com/julienXX/terminal-notifier)

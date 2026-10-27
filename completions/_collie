@@ -33,6 +33,7 @@ _collie() {
     'set:set priority or title'
     'run:start an agent'
     'adopt:restart an agent started by hand under collie run'
+    'restore:restart agents lost with the tmux server'
     'review:per-repo commits and diffs'
     'spike:branch the current worktree into an exp/ task'
     'gc:finish merged tasks'
@@ -62,7 +63,7 @@ _collie() {
     ls) compadd -- -a ;;
     new) compadd -- -r -w -t -m --title --from --edit --no-window --ship --no-ship --run --agent -p ;;
     gc) compadd -- -n ;;
-    sync) compadd -- -n; _collie_tasks ;;
+    sync | restore) compadd -- -n; _collie_tasks ;;
     add | show | edit | go | run | adopt | review | done | archive) _collie_tasks ;;
   esac
 }
