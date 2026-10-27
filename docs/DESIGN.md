@@ -166,18 +166,19 @@ created: 2026-01-01
 
 | Command | Purpose |
 |---|---|
-| `collie new <id> [-r repo[:branch]]... [-w workspace] [-t type] [--title ..] [--from ref] [--edit] [--no-window]` | Create task, worktrees and session; defaults to the current repo |
+| `collie new [<id>] [-r repo[:branch]]... [-w workspace] [-t type] [--title ..] [-m objective] [--from ref] [--edit] [--no-window] [--ship\|--no-ship]` | Create task, worktrees and session; defaults to the current repo. No id on a tty prompts for id, type, objective and ship. `-m` fills the Objective; `--ship` adds commit/push/PR/CI rules to TASK.md (default `$COLLIE_SHIP`, `@collie-ship`, else off) |
 | `collie add [<id>] -r repo[:branch]...` | Pull another repo into an existing task |
 | `collie ls [-a]` | Active tasks: id, derived status, priority, session, agent, repos, needs |
 | `collie go [<id>]` | Switch to the task session (fzf if no id); recreate it if missing |
 | `collie run [<id>] [--agent X] [-r repo] [-p prompt] [-- args]` | Launch an agent in a new task window; records a run |
+| `collie adopt [<id>] [-y]` | Restart an agent started by hand in the task's session under `collie run`, resuming its conversation (claude, omp) |
 | `collie dash [-n]` | fzf dashboard, most urgent first; enter jumps to the most urgent agent window |
 | `collie set [<id>] priority=P1 title="..."` | Update priority or title; a bare field reads stdin |
 | `collie edit [<id>]` | Open TASK.md in `$EDITOR` (also `new --edit`, dash `e`, menu `e`) |
 | `collie review [<id>] [-p]` | Per-repo commits, diff stat (`-p` patch), dirty files, then REPORT.md |
 | `collie spike <id>` | New `exp/<id>` task from the current worktree, carrying its uncommitted tracked changes (`git stash create`); `-u` also copies untracked, non-ignored files; source untouched |
 | `collie done [<id>] [--force]` | Accept: safety checks, then remove worktrees and session |
-| `collie archive [<id>] [--force]` | Abandon: same cleanup |
+| `collie archive [<id>] [--force]` | Abandon: same cleanup; unmerged commits are fine (branch kept), only dirty worktrees refuse |
 | `collie gc [-n]` | Finish (`done`) tasks whose branches all moved past their start and are contained in base; dirty ones are skipped |
 | `collie sync [<id>...] [-n]` | Merge base into active task branches (clean: commit + push if tracked; conflict: start the merge and hand it to the idle or exited agent); busy agents, dirty worktrees and untouched branches are skipped |
 
@@ -204,13 +205,21 @@ prefix h →  ┌ collie ─────────────┐
             │ h  dashboard        │   ← prefix h h: the most used action
             │ g  lazygit          │
             │ t  terminal         │
-            │ c  new task         │
-            │ e  edit task        │
-            │ v  review           │
-            │ r  run agent        │
-            │ d  done             │
+            │ c  new task         │   ← `collie new` without id: prompts
+            │ e  edit task        │ ┐
+            │ v  review           │ │ task sessions only
+            │ ─────────────────── │ │
+            │ r  run agent        │ │
+            │ d  done             │ ┘
+            │ ─────────────────── │
+            │ j  jump to alert    │   ← last agent that notified
             └─────────────────────┘
 ```
+
+In a session that isn't a collie task, the task-only entries (`e v r d`) are
+replaced by a disabled "not a collie task — use collie new" line. With
+`@collie-dev on`, two dev entries (`D` load this checkout, `B` back to
+installed) are appended.
 
 Terminal-level shortcuts (e.g. a `Cmd+…` key sending `prefix h h`) belong in
 the user's own terminal config.
@@ -269,6 +278,28 @@ Known gap: folder-trust dialogs on a new worktree (Claude; Gemini asks twice,
 once for the folder and once for `--include-directories`) are not reported by
 any hook, so the run shows `working` until they are answered.
 
+### tmux kill guard
+
+Agents inherit `$TMUX`, so a bare `tmux kill-server` in an agent's shell kills
+the user's server and every agent on it. claude (`PreToolUse` on `Bash`), codex
+(`PreToolUse` on `Bash`) and gemini (`BeforeTool` on `run_shell_command`) get
+`hooks/tmux-guard` with their other hooks. It reads the hook JSON on stdin and
+exits 2 (deny, reason on stderr: use `tmux -L <name>`) when a statement of the
+command runs `tmux … kill-server|kill-session` (or a prefix such as
+`kill-ses`) or `pkill`/`killall` with `tmux` in its arguments, unless that
+statement has a `-L`/`-S` word. Statements are split on `;`, `&`, `|`,
+newlines, `(`, `)` and backticks (`\;` stays: it is tmux's own separator), then
+checked once with quotes dropped and once per quoted piece, which catches
+`bash -c 'tmux kill-server'`. Leading `VAR=x`, `sudo`, `env`, `command`,
+`exec`, `nohup` and `time` are skipped.
+
+Limits: a best-effort net against mistakes, not a sandbox. Not caught: `kill
+<pid>`, `kill $(pgrep tmux)`, `xargs kill`, `-S` pointing at the user's own
+socket, scripts written to a file and then run, `sudo -u <user> tmux …`, and
+`kill-window`/`kill-pane` (out of scope). omp has no blocking hook and runs
+unguarded. A quoted string that starts with `tmux kill-server` (`echo "tmux
+kill-server"`) is a false positive.
+
 ---
 
 ## 6. Phases
@@ -293,7 +324,8 @@ unless marked *manual*.
   - failure midway (e.g. second repo can't be created) rolls back worktrees and
     branches already created
   - a branch already checked out elsewhere is rejected up front, naming the task
-  - `done` / `archive` refuse dirty worktrees or commits not in the base branch
+  - `done` refuses dirty worktrees or commits not in the base branch; `archive`
+    refuses only dirty worktrees
   - `new -w` creates all repos of a workspace; `add` extends an existing task
   - small change in two commands: `collie new fix-typo` → commit, merge → `collie done`
 
@@ -378,7 +410,7 @@ unless marked *manual*.
 |---|---|
 | Creation fails midway | Track created worktrees/branches; roll back in reverse |
 | Branch already used by another worktree | Preflight check; reject and name the owning task |
-| Losing valuable work | `done` / `archive` refuse dirty or unmerged; `--force` required; branches always kept |
+| Losing valuable work | `done` refuses dirty or unmerged, `archive` refuses dirty; `--force` required; branches always kept |
 | Modifying the main checkout | Only ever `worktree add`; never checkout inside existing worktrees |
 | State drifting from reality | Derive on every `ls`; show `unknown` when unsure |
 | Agent sandbox rejects symlinks | Launch in the primary repo + adapter `extra_dirs`; symlinks are a fallback |
