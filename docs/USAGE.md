@@ -64,7 +64,7 @@ flowchart TB
 | Worktree + `.collie` symlink | repo in the task | `new`, `add`, `spike` | `done`, `archive`, `gc` | yes |
 | tmux session `<id>` | task | `new`, `go` (rebuilds it) | `done`, `archive`, `gc` | no; `go` rebuilds it |
 | Shell window | repo in the task | with the session | with the session | no |
-| Agent window (a *run*) | `collie run` / `adopt` | `run`, `adopt` | closing the window | no; its run becomes `unknown` |
+| Agent window (a *run*) | `collie run` / `adopt` | `run`, `adopt` | closing the window | no; its run becomes `unknown` until `collie restore` |
 
 ## 3. Task status
 
@@ -147,7 +147,10 @@ Agents get hooks per run, nothing installed: claude, codex, gemini, omp.
 Any other command (`--agent aider`) runs without hooks. Agents you start by
 hand in a task's session are detected by process (working/idle only, no
 notifications); `collie adopt` restarts a hand-started claude or omp under
-`collie run` with its conversation resumed.
+`collie run` with its conversation resumed. `collie restore` restarts the
+runs lost with a dead tmux server (claude by its logged session id, omp by
+the worktree's latest conversation); agents started by hand are not
+recorded, so they are not restored.
 
 ## 5. Where each action lives
 
@@ -158,6 +161,7 @@ notifications); `collie adopt` restarts a hand-started claude or omp under
 | Edit TASK.md | `collie edit` | `e` | `?` `e` |
 | Run agent | `collie run` | `r` | `?` `r` |
 | Adopt hand-started agent | `collie adopt` | — | `?` `a` |
+| Restore agents after the server died | `collie restore` | — | — |
 | Go to task | `collie go` | — | `enter` (most urgent agent window) |
 | Jump to last alert | — | `j` | — |
 | Review | `collie review` | `v` | `?` `v` |

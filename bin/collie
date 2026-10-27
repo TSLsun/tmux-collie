@@ -32,9 +32,12 @@ usage: collie <command> [args]
 tasks:
   new [<id>] [-r repo[:branch]]... [-w workspace] [-t type] [--title text]
            [-m objective] [--from ref] [--edit] [--no-window]
-           [--ship|--no-ship]
+           [--ship|--no-ship] [--run] [--agent name] [-p prompt] [-- args]
                       create a task: worktree per repo + tmux session;
-                      no id on a tty prompts for id, type, objective, ship;
+                      no id on a tty prompts for id, type, objective, ship,
+                      and (given an objective) whether to start the agent;
+                      --run starts the agent as `run` does; --agent, -p and
+                      -- pass through to run and imply --run;
                       --ship adds commit/push/PR/CI rules to TASK.md
                       (default: $COLLIE_SHIP, @collie-ship, else off)
   add [<id>] -r repo[:branch]... [--from ref] [--no-window]
@@ -65,6 +68,8 @@ agents:
                       $COLLIE_AGENT, @collie-agent, else claude); -p '' = no prompt
   adopt [<id>] [-y]   restart an agent you started by hand in the task's session
                       under collie run, resuming its conversation (claude, omp)
+  restore [<id>] [-n]  restart the agents lost with the tmux server (all tasks
+                      if no id), each resuming its conversation (-n: list)
   state <working|waiting|idle|exited>
                       called by agent hooks; no-op outside a collie window
   status              agent counts for the status bar (#{collie_status})
@@ -514,7 +519,7 @@ task_runs() {
     }
     FNR == NR { seen[$1] = 1; next }
     $2 == "run_started" { r = kv("run"); agent[r] = kv("agent"); order[++n] = r }
-    $2 == "run_exited" { ended[kv("run")] = 1 }
+    $2 == "run_exited" || $2 == "run_restored" { ended[kv("run")] = 1 }
     END {
       for (i = 1; i <= n; i++) {
         r = order[i]
@@ -624,6 +629,7 @@ cmd__jump() { # [pane|-] [client]
 cmd_new() {
   local id="" specs="" ws="" type=feat title="" from="" edit=0 window=1
   local goal="" asked=0 t ship=${COLLIE_SHIP-$(tmux_opt @collie-ship)}
+  local run=0 agent="" runargs=()
   case $ship in on | 1 | yes | true) ship=1 ;; *) ship=0 ;; esac
   while [ $# -gt 0 ]; do
     case $1 in
@@ -637,6 +643,10 @@ cmd_new() {
       --no-window) window=0 ;;
       --ship) ship=1 ;;
       --no-ship) ship=0 ;;
+      --run) run=1 ;;
+      --agent) agent=${2:?--agent needs a name}; run=1; shift ;;
+      -p) [ $# -ge 2 ] || die "-p needs a prompt"; runargs+=(-p "$2"); run=1; shift ;;
+      --) shift; runargs+=(-- "$@"); run=1; break ;;
       -*) die "new: unknown option $1" ;;
       *) [ -z "$id" ] || die "new: too many arguments"; id=$1 ;;
     esac
@@ -645,6 +655,7 @@ cmd_new() {
   # no id on a terminal (e.g. the menu popup): show what will be asked, then ask
   if [ -z "$id" ] && [ -t 0 ]; then
     local where base=${from:-}
+    [ -n "$agent" ] || { run_agent; agent=$RUN_AGENT; }
     if [ -n "$ws" ]; then
       where="workspace $ws"
     elif [ -n "$specs" ]; then
@@ -662,16 +673,25 @@ cmd_new() {
       id required '[a-z0-9-], max 40' \
       type "$type" 'e.g. fix, refactor, docs' \
       objective optional 'goes into TASK.md' \
-      ship "$([ "$ship" = 1 ] && echo on || echo off)" 'agent pushes, opens a PR, checks CI'
+      ship "$([ "$ship" = 1 ] && echo on || echo off)" 'agent pushes, opens a PR, checks CI' \
+      agent "$agent" "$([ "$run" = 1 ] && echo 'starts after creation' || echo 'asked if an objective is given')"
     echo
     read -r -e -p "task id: " id
     read -r -e -p "type [$type]: " t && type=${t:-$type}
     [ -n "$goal" ] || read -r -e -p "objective (optional): " goal
     read -r -e -p "ship [$([ "$ship" = 1 ] && echo Y/n || echo y/N)]: " t
     case $t in [yY]*) ship=1 ;; [nN]*) ship=0 ;; esac
+    if [ -n "$goal" ] && [ "$run" = 0 ] && command -v tmux >/dev/null; then
+      read -r -e -p "start $agent now [Y/n]: " t
+      case $t in [nN]*) ;; *) run=1 ;; esac
+    fi
     asked=1
   fi
   [ -n "$id" ] || die "usage: collie new <id> [-r repo[:branch]]... [-w workspace] ..."
+  if [ "$run" = 1 ]; then
+    [ "$window" = 1 ] || die "new: --run needs a session; drop --no-window"
+    command -v tmux >/dev/null || die "new: --run needs tmux"
+  fi
   valid_id "$id" || die "invalid id '$id' (use [a-z0-9-], max 40, no leading '-')"
   local tdir r
   tdir="$TASKS_DIR/$id"
@@ -694,7 +714,16 @@ cmd_new() {
   printf '%s\n' "${NEW_PATHS%%$'\n'*}"
   if [ "$window" -eq 1 ] && command -v tmux >/dev/null; then
     ensure_session "$id"
+    # the task exists either way: a failed run is reported, not rolled back
+    local rc=0
+    [ "$run" = 0 ] || (cmd_run "$id" ${agent:+--agent "$agent"} ${runargs[@]+"${runargs[@]}"}) || rc=$?
     [ "$asked" -eq 0 ] || [ -z "${TMUX:-}" ] || tmux switch-client -t "=$id"
+    if [ "$rc" -ne 0 ]; then
+      warn "task '$id' created; start the agent with: collie run $id"
+      # the popup closes on exit: keep the error on screen until a key
+      [ "$asked" -eq 0 ] || read -rsn1 -p '[press any key]' _ || true
+      exit "$rc"
+    fi
   fi
 }
 
@@ -901,6 +930,12 @@ leave_session() { # id
   done
 }
 
+# Sets RUN_AGENT, the agent `collie run` starts without --agent.
+run_agent() {
+  RUN_AGENT=${COLLIE_AGENT:-$(tmux_opt @collie-agent)}
+  RUN_AGENT=${RUN_AGENT:-claude}
+}
+
 cmd_run() {
   local id="" agent="" repo="" prompt=$DEFAULT_PROMPT custom=0 extra=()
   while [ $# -gt 0 ]; do
@@ -916,8 +951,7 @@ cmd_run() {
   done
   task_id "$id"
   command -v tmux >/dev/null || die "run: tmux required"
-  agent=${agent:-${COLLIE_AGENT:-$(tmux_opt @collie-agent)}}
-  agent=${agent:-claude}
+  [ -n "$agent" ] || { run_agent; agent=$RUN_AGENT; }
 
   local d name c b p rname="" path=""
   d="$TASKS_DIR/$id"
@@ -950,18 +984,20 @@ cmd_run() {
   command -v "$agent" >/dev/null || die "agent command '$agent' not found"
 
   # an agent with hooks and no prompt sits at its input box
-  local st=working run wid
+  local st=working run wid server
   [ "$AGENT_HOOKS" = 0 ] || [ -n "$prompt" ] || st=idle
   run=$(($(awk -F'\t' '$2 == "run_started" { n++ } END { print n + 0 }' "$d/events.log") + 1))
   ensure_session "$id"
-  wid=$(tmux_spawn new-window -d -P -F '#{window_id}' -t "=$id:" -n "$agent" -c "$path" \
+  # the server pid tells `restore` a run lost with its server from a closed window
+  wid=$(tmux_spawn new-window -d -P -F '#{window_id} #{pid}' -t "=$id:" -n "$agent" -c "$path" \
     "$BASH" "$PLUGIN_DIR/bin/collie" _exec "$id" "$run" "${AGENT_ARGV[@]}" ${extra[@]+"${extra[@]}"})
+  server=${wid#* } wid=${wid%% *}
   # @collie_run last: the wrapper starts the agent once it is set
   tmux set-option -w -t "$wid" @collie_task "$id" \; set-option -w -t "$wid" @collie_path "$path" \; \
     set-option -w -t "$wid" @collie_agent "$agent" \; set-option -w -t "$wid" @collie_hooks "$AGENT_HOOKS" \; \
     set-option -w -t "$wid" @collie_state "$st" \; set-option -w -t "$wid" @collie_run "$run"
   # an instant agent exit may log run_exited first; task_runs is order-free
-  log_event "$id" run_started "run=$run agent=$agent repo=$rname window=$wid"
+  log_event "$id" run_started "run=$run agent=$agent repo=$rname window=$wid server=$server"
 }
 
 # Restarts an agent started by hand in the task's session as a `collie run`
@@ -1002,6 +1038,97 @@ cmd_adopt() {
   cmd_run "$id" -r "$repo" --agent "$agent" -p '' -- "${AGENT_RESUME[@]}"
 }
 
+# Runs of a task lost with their tmux server as "run<TAB>agent<TAB>repo<TAB>
+# conversation id" (id "-" if none was logged): started, never seen exiting or
+# restored, no window, and started by another server than the current one
+# (runs logged without a server: only when the task has no session). Runs
+# with a window come first, with id "=".
+lost_runs() { # id current-server-pid
+  local wins="" up=0
+  if has_session "$1"; then
+    up=1
+    wins=$(win_states -t "=$1" | cut -f3)
+  fi
+  awk -F'\t' -v srv="$2" -v up="$up" '
+    function kv(k,  a, i, n) {
+      n = split($3, a, " ")
+      for (i = 1; i <= n; i++) if (index(a[i], k "=") == 1) return substr(a[i], length(k) + 2)
+    }
+    FNR == NR { seen[$1] = 1; next }
+    $2 == "run_started" { r = kv("run"); agent[r] = kv("agent"); repo[r] = kv("repo"); server[r] = kv("server"); order[++n] = r }
+    $2 == "run_exited" || $2 == "run_restored" { ended[kv("run")] = 1 }
+    $2 == "agent_session" { sid[kv("run")] = kv("id") }
+    END {
+      for (i = 1; i <= n; i++) {
+        r = order[i]
+        if (r in seen) print r "\t" agent[r] "\t" repo[r] "\t="
+        else if (!(r in ended) && (server[r] == "" ? !up : server[r] != srv)) lost[++m] = r
+      }
+      for (i = 1; i <= m; i++) {
+        r = lost[i]
+        print r "\t" agent[r] "\t" repo[r] "\t" (r in sid ? sid[r] : "-")
+      }
+    }' - "$TASKS_DIR/$1/events.log" <<<"$wins"
+}
+
+# Restarts the agents lost with the tmux server under `collie run`, each
+# resuming its own conversation (AGENT_RESUME_ID + the logged id), else the
+# latest one in its worktree (AGENT_RESUME, unless another run of that agent
+# there is live or resumes it already). Restored runs
+# are logged, so running it again starts nothing.
+cmd_restore() {
+  local dry=0 ids="" id d server run agent repo sid used args out
+  while [ $# -gt 0 ]; do
+    case $1 in
+      -n) dry=1 ;;
+      -*) die "restore: unknown option $1" ;;
+      *) [ -z "$ids" ] || die "restore: too many arguments"; task_id "$1"; ids=$1 ;;
+    esac
+    shift
+  done
+  if [ -z "$ids" ]; then
+    for d in "$TASKS_DIR"/*; do
+      [ -f "$d/TASK.md" ] || continue
+      fm_get "$d/TASK.md" status
+      case $FM in done | archived) continue ;; esac
+      ids="$ids${d##*/}"$'\n'
+    done
+  fi
+  server=$(tmux display-message -p '#{pid}' 2>/dev/null || true)
+  while IFS= read -r id; do
+    [ -n "$id" ] || continue
+    used=" "
+    while IFS=$TAB read -r run agent repo sid; do
+      [ "$sid" != = ] || { used="$used$agent:$repo=$run "; continue; }
+      AGENT_RESUME=() AGENT_RESUME_ID=()
+      # shellcheck source=/dev/null
+      [[ $agent == */* ]] || [ ! -f "$PLUGIN_DIR/agents/$agent.sh" ] || . "$PLUGIN_DIR/agents/$agent.sh"
+      out="$id run $run: $agent in $repo:"
+      if [ "$sid" != - ] && [ ${#AGENT_RESUME_ID[@]} -gt 0 ]; then
+        args=("${AGENT_RESUME_ID[@]}" "$sid")
+      elif [ ${#AGENT_RESUME[@]} -eq 0 ]; then
+        echo "$out skipped: collie cannot resume $agent sessions"
+        continue
+      elif [[ $used == *" $agent:$repo="* ]]; then
+        out=${used#*" $agent:$repo="}
+        echo "$id run $run: $agent in $repo: skipped: run ${out%% *} already resumes the latest conversation"
+        continue
+      else
+        args=("${AGENT_RESUME[@]}")
+        used="$used$agent:$repo=$run "
+      fi
+      if [ "$dry" -eq 1 ]; then
+        echo "$out ${args[*]}"
+      elif ("$BASH" "$PLUGIN_DIR/bin/collie" run "$id" -r "$repo" --agent "$agent" -p '' -- "${args[@]}"); then
+        log_event "$id" run_restored "run=$run as=$(awk -F'\t' '$2 == "run_started" { n++ } END { print n + 0 }' "$TASKS_DIR/$id/events.log")"
+        echo "$out restored (${args[*]})"
+      else
+        echo "$out skipped: collie run failed"
+      fi
+    done < <(lost_runs "$id" "$server")
+  done <<<"$ids"
+}
+
 # Window command of a run: runs the agent, records its exit, leaves a shell.
 cmd__exec() { # id run argv...
   local id=$1 run=$2 code=0 i
@@ -1026,6 +1153,21 @@ cmd_state() {
   esac
   local pane=${TMUX_PANE:-$(ancestor_pane)}
   [ -z "$pane" ] || set_state "$pane" "$1"
+}
+
+# SessionStart hook: logs the run's conversation id (session_id in the hook's
+# JSON on stdin) for `collie restore`, when it changed (new, /clear).
+cmd__session() {
+  local json sid info id run re='"session_id" *: *"([A-Za-z0-9_-]+)"' pane=${TMUX_PANE:-$(ancestor_pane)}
+  [ -n "$pane" ] && [ ! -t 0 ] || return 0
+  json=$(cat)
+  [[ $json =~ $re ]] || return 0
+  sid=${BASH_REMATCH[1]}
+  info=$(tmux display-message -p -t "$pane" '#{@collie_task}|#{@collie_run}' 2>/dev/null) || return 0
+  IFS='|' read -r id run <<<"$info"
+  [ -n "$id" ] && [ -n "$run" ] && [ -f "$TASKS_DIR/$id/TASK.md" ] || return 0
+  [ "$(awk -F'\t' -v r="run=$run id=" '$2 == "agent_session" && index($3, r) == 1 { s = substr($3, length(r) + 1) } END { print s }' "$TASKS_DIR/$id/events.log")" != "$sid" ] || return 0
+  log_event "$id" agent_session "run=$run id=$sid"
 }
 
 # Pane whose process is an ancestor of this one, for agents that strip
@@ -1728,7 +1870,7 @@ cmd_workspaces() {
 }
 
 case "${1:-help}" in
-  new | add | ls | show | edit | go | run | adopt | state | status | set | dash | review | spike | gc | sync | doctor | _exec | _target | _preview | _rows | _group | _pick | _key | _actions | _jump | _menu | _popup | _dev | repos | workspaces)
+  new | add | ls | show | edit | go | run | adopt | restore | state | status | set | dash | review | spike | gc | sync | doctor | _exec | _session | _target | _preview | _rows | _group | _pick | _key | _actions | _jump | _menu | _popup | _dev | repos | workspaces)
     cmd=$1
     shift
     "cmd_$cmd" "$@"

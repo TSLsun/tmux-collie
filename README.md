@@ -35,7 +35,9 @@ per repo involved, and one tmux session (one window per repo).
 collie new login                       # task in the current repo, branch feat/login
 collie new typo -t fix                 # branch fix/typo
 collie new login -m 'add OAuth login'  # pre-fill TASK.md's Objective
-collie new                             # on a terminal: prompts for id, type, objective, ship
+collie new                             # on a terminal: prompts for id, type, objective, ship,
+                                       # and with an objective, whether to start the agent
+collie new login -m 'add OAuth login' --run   # create and start the agent (see collie run)
 collie new login --ship                # agent ships it: commits, PR, CI (see below)
 collie new deploy-v2 -r A -r B         # cross-repo task (repos by name or path)
 collie new deploy-v2 -r A -r B:release/v2   # per-repo branch
@@ -155,11 +157,17 @@ hooks they are only working or idle (by output silence) and do not notify.
 `collie adopt` (dashboard `?` → `a`) stops such a Claude or omp and restarts
 it with `collie run … -- --continue` (omp: `-c`): same conversation, now with
 hooks.
+When the tmux server dies, `collie restore` (`-n` to list) restarts every
+agent run that was live, each resuming its own conversation: claude by the
+session id its `SessionStart` hook logged (`--resume <id>`), omp by the
+latest one in its worktree (`-c`, one run per worktree); other agents are
+skipped. `set -g @collie-restore on` runs it when the plugin loads.
 
 ```tmux
 set -g status-right '#{collie_status} %H:%M'   # ●waiting ●idle ●working counts
 set -g @collie-agent 'claude'                  # default agent ($COLLIE_AGENT wins)
 set -g @collie-notify 'on'                     # on | off | command "title" "body"
+set -g @collie-restore 'off'                   # on: collie restore at plugin load
 ```
 
 With [terminal-notifier](https://github.com/julienXX/terminal-notifier)
