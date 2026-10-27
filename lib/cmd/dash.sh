@@ -1,18 +1,64 @@
 # shellcheck shell=bash
 # Sourced by bin/collie: dashboard, menu and popups.
 
+# Each task's PRs, one per repo with one: <task>/pr.tsv holds
+# "repo<TAB>number<TAB>open|draft|merged|closed" lines. gh is slow and needs
+# the network, so the dashboard only reads the file and refreshes it in the
+# background once it is PR_TTL minutes old; sync and gc refresh it inline.
+PR_TTL=5
+
+# Refreshes <task>/pr.tsv; a repo whose lookup fails keeps its last entry.
+cmd__pr() { # id
+  local d="$TASKS_DIR/$1" name c b p line out=""
+  command -v gh >/dev/null || return 0
+  [ -f "$d/repos.tsv" ] || return 0
+  while IFS=$TAB read -r name c b p; do
+    # folders have no branch
+    [ "$c" != - ] && [ -d "$p" ] || continue
+    # newest first; a draft is open too
+    if ! line=$(cd "$p" && gh pr list --state all --head "$b" --limit 1 --json number,state,isDraft \
+      --jq '.[] | "\(.number)\t\(if .isDraft and .state == "OPEN" then "draft" else .state | ascii_downcase end)"' \
+      </dev/null 2>/dev/null); then
+      line=$(awk -F'\t' -v n="$name" '$1 == n { print $2 "\t" $3 }' "$d/pr.tsv" 2>/dev/null) || line=""
+    fi
+    [ -z "$line" ] || out="$out$name$TAB$line"$'\n'
+  done <"$d/repos.tsv"
+  printf '%s' "$out" >"$d/pr.tsv.$$" && mv "$d/pr.tsv.$$" "$d/pr.tsv"
+}
+
+# Starts a background cmd__pr for each task (rows in `ls` format) whose pr.tsv
+# is missing or stale, touching it first so the next reload does not start another.
+pr_refresh_stale() { # rows
+  local fresh id _
+  command -v gh >/dev/null || return 0
+  fresh=$(find "$TASKS_DIR" -mindepth 2 -maxdepth 2 -name pr.tsv -mmin "-$PR_TTL" 2>/dev/null) || true
+  while IFS=$TAB read -r id _; do
+    case $'\n'"$fresh"$'\n' in *"/$id/pr.tsv"$'\n'*) continue ;; esac
+    touch "$TASKS_DIR/$id/pr.tsv"
+    "$BASH" "$PLUGIN_DIR/bin/collie" _pr "$id" </dev/null >/dev/null 2>&1 &
+  done <<<"$1"
+}
+
 # Active tasks in `ls` format, most urgent first (see DESIGN §3.3: answer >
-# reply > review > stalled > working > start), then by priority and id.
+# reply > review > stalled > working > start), then by priority and id, plus
+# a last field: the cached PRs ("#<number>:<state> ...", or -).
 dash_rows() {
-  cmd_ls | awk -F'\t' '{
+  local rows
+  rows=$(cmd_ls)
+  [ -n "$rows" ] || return 0
+  pr_refresh_stale "$rows"
+  awk -F'\t' -v tasks="$TASKS_DIR" '{
       r = 6
       if ($7 == "answer") r = 1
       else if ($7 == "reply") r = 2
       else if ($7 == "review") r = 3
       else if ($7 == "stalled") r = 4
       else if ($7 == "-") r = 5
-      print r "\t" $0
-    }' | sort -t "$TAB" -k1,1n -k4,4 -k2,2 | cut -f2-
+      f = tasks "/" $1 "/pr.tsv"; s = ""
+      while ((getline l <f) > 0) if (split(l, x, "\t") == 3) s = s (s == "" ? "" : " ") "#" x[2] ":" x[3]
+      close(f)
+      print r "\t" $0 "\t" (s == "" ? "-" : s)
+    }' <<<"$rows" | sort -t "$TAB" -k1,1n -k4,4 -k2,2 | cut -f2-
 }
 
 DASH_GROUPS=(status priority repo)
@@ -34,7 +80,8 @@ dash_header() { # group
 # "── <group> (<n>) ──" line (fzf lists bottom-up, so it follows its rows).
 # A row is the id, then aligned columns: a glyph (red ● needs you, yellow ◐
 # working, dim ○ todo) and id, state (what it needs from you, or working),
-# colored priority, a badge per live agent, the last event's age, repos. The first line holds the column
+# colored priority, a badge per live agent, the last event's age, repos, PRs
+# (green open, dim draft, purple merged, red closed). The first line holds the column
 # names (fzf --header-lines=1); separators and it have an empty id.
 # $STATE_DIR/dash-rows gets the ids in order (empty for separators), for _key.
 # shellcheck disable=SC2120  # group comes from the CLI; internal callers pass none
@@ -67,7 +114,8 @@ cmd__rows() { # [group]
       pc["P0"] = "1;31"; pc["P1"] = "33"; pc["P3"] = "2"
       e = "\033["
       srand(); now = srand()
-      wi = 4; ws = 5; wp = 3; wa = 5; wg = 3; wr = 5
+      qc["open"] = "32"; qc["draft"] = "2"; qc["merged"] = "35"; qc["closed"] = "31"
+      wi = 4; ws = 5; wp = 3; wa = 5; wg = 3; wr = 5; wq = 2
     }
     {
       n++; id[n] = $1; st[n] = $7 == "-" ? "working" : $7; pr[n] = $3; rp[n] = $6
@@ -78,6 +126,11 @@ cmd__rows() { # [group]
       al[n] = k ? length($8) - 1 : 1
       ag[n] = b == "" ? e "2m-" e "0m" : b
       ad[n] = $9 == "" ? "-" : age(now - epoch($9))
+      k = $10 == "-" ? 0 : split($10, a, " "); b = ""; ql[n] = k ? -1 : 1
+      for (i = 1; i <= k; i++) {
+        split(a[i], x, ":"); b = b (i > 1 ? " " : "") e (x[2] in qc ? qc[x[2]] : "0") "m" x[1] e "0m"; ql[n] += length(x[1]) + 1
+      }
+      pq[n] = b == "" ? e "2m-" e "0m" : b
       if (g == "priority") k = $3
       else if (g == "repo") k = $6
       else if (you) k = "needs you"
@@ -85,22 +138,23 @@ cmd__rows() { # [group]
       if (!(k in cnt)) seen[++ns] = k
       cnt[k]++; key[n] = k
       wi = max(wi, length($1)); ws = max(ws, length(st[n])); wp = max(wp, length($3))
-      wa = max(wa, al[n]); wg = max(wg, length(ad[n])); wr = max(wr, length($6))
+      wa = max(wa, al[n]); wg = max(wg, length(ad[n])); wr = max(wr, length($6)); wq = max(wq, ql[n])
     }
     END {
       if (!n) exit
       if (g == "priority") for (i = 0; i <= 3; i++) if (("P" i) in cnt) { ord[++no] = "P" i; done["P" i] = 1 }
       for (i = 1; i <= ns; i++) if (!(seen[i] in done)) ord[++no] = seen[i]
-      w = 2 + wi + 2 + ws + 2 + wp + 2 + wa + 2 + wg + 2 + wr
+      w = 2 + wi + 2 + ws + 2 + wp + 2 + wa + 2 + wg + 2 + wr + 2 + wq
       print "\t" e "2m  " pad("TASK", wi, 4) "  " pad("STATE", ws, 5) "  " pad("PRI", wp, 3) "  " \
-        pad("AGENT", wa, 5) "  " sprintf("%" wg "s", "AGE") "  REPOS" e "0m"
+        pad("AGENT", wa, 5) "  " sprintf("%" wg "s", "AGE") "  " pad("REPOS", wr, 5) "  PR" e "0m"
       printf "" >cache
       for (j = 1; j <= no; j++) {
         for (i = 1; i <= n; i++) {
           if (key[i] != ord[j]) continue
           p = pr[i] in pc ? e pc[pr[i]] "m" pr[i] e "0m" : pr[i]
           print id[i] "\t" gl[i] e "0m " pad(id[i], wi, length(id[i])) "  " pad(st[i], ws, length(st[i])) "  " \
-            pad(p, wp, length(pr[i])) "  " pad(ag[i], wa, al[i]) "  " e "2m" sprintf("%" wg "s", ad[i]) e "0m  " rp[i]
+            pad(p, wp, length(pr[i])) "  " pad(ag[i], wa, al[i]) "  " e "2m" sprintf("%" wg "s", ad[i]) e "0m  " \
+            pad(rp[i], wr, length(rp[i])) "  " pq[i]
           print id[i] >cache
         }
         l = "── " ord[j] " (" cnt[ord[j]] ") "

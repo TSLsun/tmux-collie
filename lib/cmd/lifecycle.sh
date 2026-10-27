@@ -241,6 +241,7 @@ cmd_gc() {
     fm_get "$d/TASK.md" status
     case $FM in done | archived) continue ;; esac
     id=${d##*/}
+    cmd__pr "$id" || true
     # folders have no branch: a task needs at least one merged repo
     merged=0
     while IFS=$TAB read -r name c b p; do
@@ -375,5 +376,6 @@ cmd_sync() {
         echo "$id $name: conflict in $files; $out"
       fi
     done <"$d/repos.tsv"
+    cmd__pr "$id" || true
   done <<<"$ids"
 }
