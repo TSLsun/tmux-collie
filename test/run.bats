@@ -169,10 +169,11 @@ EOF
   export PATH="$TMP/bin:$PATH" CLAUDE_ARGS="$TMP/args"
   make_normal_repo B
   cd "$TMP"
-  collie new x -r A -r B --no-window
+  collie new x -r A -r B --title 'fix the widget' --no-window
   collie run x --agent claude
   wait_for '[ -s "$TMP/args" ]'
-  [[ "$(head -n 1 "$TMP/args")" == *".collie/TASK.md"* ]]
+  [[ "$(head -n 1 "$TMP/args")" == "Task x: fix the widget. "*".collie/TASK.md"* ]]
+  [ "$(grep -A1 -xF -- --name "$TMP/args" | tail -n 1)" = "x: fix the widget" ]
   grep -qxF -- --settings "$TMP/args"
   grep -q '"Stop".*state idle' "$TMP/args"
   grep -q '"Notification".*state waiting' "$TMP/args"
@@ -184,8 +185,26 @@ EOF
   rm "$TMP/args"
   collie run x --agent claude -p ''
   wait_for '[ -s "$TMP/args" ]'
-  [ "$(head -n 1 "$TMP/args")" = --settings ]
+  [ "$(head -n 1 "$TMP/args")" = --name ]
+  grep -qxF "x: fix the widget" "$TMP/args"
   [ "$(tmux display -p -t "$(run_pane x 2)" '#{@collie_state}')" = idle ]
+
+  rm "$TMP/args"
+  collie run x --agent claude -p 'just go'
+  wait_for '[ -s "$TMP/args" ]'
+  [ "$(head -n 1 "$TMP/args")" = "just go" ]
+}
+
+@test "claude adapter: an untitled task is named by its id alone" {
+  mkdir "$TMP/bin"
+  printf '#!/bin/sh\nprintf "%%s\\n" "$@" >"$CLAUDE_ARGS"\nexec sleep 300\n' >"$TMP/bin/claude"
+  chmod +x "$TMP/bin/claude"
+  export PATH="$TMP/bin:$PATH" CLAUDE_ARGS="$TMP/args"
+  collie new x --no-window
+  collie run x --agent claude
+  wait_for '[ -s "$TMP/args" ]'
+  [[ "$(head -n 1 "$TMP/args")" == "Task x. Your task contract is .collie/TASK.md."* ]]
+  [ "$(grep -A1 -xF -- --name "$TMP/args" | tail -n 1)" = x ]
 }
 
 @test "run: a failed launch leaves no run behind" {

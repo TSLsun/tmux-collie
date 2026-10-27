@@ -122,7 +122,9 @@ zsh completion: `fpath+=(~/.tmux/plugins/tmux-collie/completions)` before
 
 ### Agent details
 
-`collie run` points the agent at `.collie/TASK.md` (`-p ''` for no prompt).
+`collie run` points the agent at `.collie/TASK.md` with a prompt that starts with
+the task id and title, so sessions are told apart in the agent's history (`-p ''`
+for no prompt; claude also gets `--name "<id>: <title>"`).
 Claude Code, Codex and Gemini CLI report their state through hooks that
 collie passes per run (`--settings`, `-c hooks...`, a generated system
 settings file); omp through an extension loaded with `-e agents/omp.ts`
