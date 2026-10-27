@@ -148,6 +148,9 @@ settings file); omp through an extension loaded with `-e agents/omp.ts`
 (tool approvals and the `ask` tool count as waiting); nothing to install.
 Codex asks you to trust the hooks once in `/hooks`. Other agents count as
 idle after 30s without output (`@collie-silence`).
+The same three also get `hooks/tmux-guard`, which blocks shell commands that
+would kill your tmux server (`tmux kill-server`/`kill-session`, `pkill tmux`)
+unless they name a private server with `-L`/`-S`; limits in DESIGN.md.
 Agents you start by hand in a task's session (`claude`, `codex`, `gemini`,
 `omp`, `aider`) are found by process and show up the same way, but without
 hooks they are only working or idle (by output silence) and do not notify.
@@ -224,7 +227,9 @@ edit (`collie edit`) them before `collie run`; replace them for all tasks with
 Windows are tagged with `@collie_path` / `@collie_task`; sessions export
 `COLLIE_TASK` and `COLLIE_TASK_DIR`.
 
-`collie new` does not fetch; run `git fetch` first if you want a fresh base.
+`collie new` and `collie add` fetch `origin` before creating worktrees, so a
+new branch starts from origin's latest default branch. Offline, they warn and
+start from local refs.
 
 ## Development
 
