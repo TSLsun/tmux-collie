@@ -1082,6 +1082,7 @@ dash_header() { # group
 # live agent, the last event's age, repos. The first line holds the column
 # names (fzf --header-lines=1); separators and it have an empty id.
 # $STATE_DIR/dash-rows gets the ids in order (empty for separators), for _key.
+# shellcheck disable=SC2120  # group comes from the CLI; internal callers pass none
 cmd__rows() { # [group]
   local g=${1:-}
   if [ -z "$g" ]; then
