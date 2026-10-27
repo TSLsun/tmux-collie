@@ -1,6 +1,7 @@
 #!/usr/bin/env bats
 
 load helper
+bats_require_minimum_version 1.5.0
 
 setup() { setup_env; }
 teardown() { teardown_env; }
@@ -93,6 +94,26 @@ two_repos() {
   run collie new x --no-window
   [ "$status" -eq 0 ]
   [ "$(git -C "$REPO/feat-x" rev-parse HEAD)" = "$(git -C "$REPO" rev-parse feat/x)" ]
+}
+
+@test "new: fetches origin first, so the branch starts at origin's latest" {
+  make_bare_repo A
+  git -C "$TMP/origin-A" commit -q --allow-empty -m later
+  cd "$REPO/main"
+  run --separate-stderr collie new x --no-window
+  [ "$status" -eq 0 ]
+  [ "$(git -C "$REPO/feat-x" rev-parse HEAD)" = "$(git -C "$TMP/origin-A" rev-parse main)" ]
+  [[ "$stderr" == "collie: A: fetching origin…"$'\n'"collie: A: fetched (base origin/"* ]]
+}
+
+@test "new: a failed fetch warns and starts from local refs" {
+  make_bare_repo A
+  git -C "$REPO" remote set-url origin "$TMP/nowhere"
+  cd "$REPO/main"
+  run --separate-stderr collie new x --no-window
+  [ "$status" -eq 0 ]
+  [ "$(git -C "$REPO/feat-x" branch --show-current)" = feat/x ]
+  [[ "$stderr" == *"A: git fetch origin failed (fatal: "* ]]
 }
 
 # --- new: multi repo --------------------------------------------------------
@@ -321,6 +342,25 @@ past_run() {
   [ "$status" -eq 0 ]
   [ "$(fm x status)" = archived ]
   [ ! -e "$REPO/feat-x" ]
+}
+
+@test "archive: allows unmerged commits, refuses dirty worktrees without --force" {
+  make_bare_repo A
+  cd "$REPO/main"
+  collie new x --no-window
+  echo work >"$REPO/feat-x/w"
+  git -C "$REPO/feat-x" add w
+  git -C "$REPO/feat-x" commit -q -m work
+  echo wip >"$REPO/feat-x/f"
+  run collie archive x
+  [ "$status" -ne 0 ]
+  [[ "$output" == *dirty* && "$output" != *unmerged* ]]
+  rm "$REPO/feat-x/f"
+  run collie archive x
+  [ "$status" -eq 0 ]
+  [ "$(fm x status)" = archived ]
+  [ ! -e "$REPO/feat-x" ]
+  git -C "$REPO/main" show-ref -q --verify refs/heads/feat/x
 }
 
 @test "done: refuses when standing inside one of the task's worktrees (outside its session)" {
