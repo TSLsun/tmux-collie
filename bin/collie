@@ -1258,8 +1258,9 @@ dash_group() {
   case " ${DASH_GROUPS[*]} " in *" $GROUP "*) ;; *) GROUP=status ;; esac
 }
 
+# Two lines so narrow popups do not cut the keys off.
 dash_header() { # group
-  printf 'enter: go  ^r: run  ^v: review  ^e: edit  ^d: done  ?: more  tab: group by %s' "$1"
+  printf 'enter: go  ^r: run  ^v: review  ^e: edit  ^d: done\n?: more  tab: group by %s' "$1"
 }
 
 # dash_rows for fzf, in groups (DASH_GROUPS; status: needs you, active, todo;
@@ -1391,13 +1392,13 @@ cmd__pick() { # [id]
 }
 
 # Draws the menu with row <sel> highlighted on /dev/tty, just above the
-# selected dashboard row (fzf's default layout: prompt, info, header and the
-# column names take the last 4 lines, list row 1 sits above them).
+# selected dashboard row (fzf's default layout: prompt, info, the 2-line header
+# and the column names take the last 5 lines, list row 1 sits above them).
 pick_draw() { # id sel
   local items n w=30 top left=2 line i=0 t=${1:-collie} hl
   items=$(action_items "$1")
   n=$(printf '%s\n' "$items" | wc -l)
-  top=$((${FZF_LINES:-24} - ${FZF_POS:-1} - n - 5))
+  top=$((${FZF_LINES:-24} - ${FZF_POS:-1} - n - 6))
   [ "$top" -ge 1 ] || top=1
   {
     printf '\033[%d;%dH\033[0;34m╭─ \033[1m%s\033[22m %s╮' "$top" "$left" "$t" "$(rule $((w - 5 - ${#t})) ─)"
