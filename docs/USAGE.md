@@ -160,7 +160,7 @@ recorded, so they are not restored.
 | New task | `collie new` | `c` (prompts, switches to it) | `?` `c` |
 | Edit TASK.md | `collie edit` | `e` | `ctrl-e` or `?` `e` |
 | Run agent | `collie run` | `r` | `ctrl-r` or `?` `r` |
-| Adopt hand-started agent | `collie adopt` | — | `?` `a` |
+| Adopt hand-started agent | `collie adopt` | `a` | `?` `a` |
 | Restore agents after the server died | `collie restore` | — | — |
 | Go to task | `collie go` | — | `enter` (most urgent agent window) |
 | Jump to last alert | — | `j` | — |
@@ -168,7 +168,7 @@ recorded, so they are not restored.
 | Shell in worktree | — | `t` (popup) | `?` `t` |
 | lazygit | — | `g` | — |
 | Done | `collie done` | `d` (confirms) | `ctrl-d` or `?` `d` (confirms) |
-| Archive | `collie archive` | — | — |
+| Archive | `collie archive` | `x` (confirms) | `?` `x` (confirms) |
 | Finish merged tasks | `collie gc` | — | — |
 | Show details | `collie show` | — | preview pane (Objective) |
 | Group by status / priority / repo | — | — | `tab` / `shift-tab` |
@@ -176,7 +176,7 @@ recorded, so they are not restored.
 | Extra repo mid-task | `collie add` | — | — |
 | Branch off dirty work | `collie spike` | — | — |
 
-The menu's task entries (`e v r d`) appear only inside a task's session.
+The menu's task entries (`e v r a d x`) appear only inside a task's session.
 On the dashboard the `ctrl-` keys act on the selected row at once, so plain
 keys keep filtering; `?` lists every action.
 `<id>` may be omitted anywhere inside a task session (`$COLLIE_TASK`).

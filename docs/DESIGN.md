@@ -218,13 +218,15 @@ prefix h →  ┌ collie ─────────────┐
             │ v  review           │ │ task sessions only
             │ ─────────────────── │ │
             │ r  run agent        │ │
-            │ d  done             │ ┘
+            │ a  adopt agent      │ │
+            │ d  done             │ │
+            │ x  archive          │ ┘
             │ ─────────────────── │
             │ j  jump to alert    │   ← last agent that notified
             └─────────────────────┘
 ```
 
-In a session that isn't a collie task, the task-only entries (`e v r d`) are
+In a session that isn't a collie task, the task-only entries (`e v r a d x`) are
 replaced by a disabled "not a collie task — use collie new" line. With
 `@collie-dev on`, two dev entries (`D` load this checkout, `B` back to
 installed) are appended.
