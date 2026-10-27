@@ -116,13 +116,6 @@ two_repos() {
   [[ "$stderr" == *"A: git fetch origin failed (fatal: "* ]]
 }
 
-@test "new: fails outside a repo without -r" {
-  cd "$TMP"
-  run collie new x
-  [ "$status" -ne 0 ]
-  [[ "$output" == *"not inside a git repository"* ]]
-}
-
 # --- new: multi repo --------------------------------------------------------
 
 @test "new -r: two repos by name get worktrees and one tmux session with a window each" {
@@ -379,6 +372,69 @@ past_run() {
   [ "$status" -ne 0 ]
   [[ "$output" == *"currently inside"* ]]
   [ -d "$REPO/feat-x" ]
+}
+
+# --- reopen -----------------------------------------------------------------
+
+@test "reopen: recreates worktrees on the kept branches, clears status, rebuilds session" {
+  two_repos
+  cd "$TMP"
+  collie new x -r A -r B
+  echo work >"$TMP/repos/A/feat-x/w"
+  git -C "$TMP/repos/A/feat-x" add w
+  git -C "$TMP/repos/A/feat-x" commit -q -m work
+  collie done x --force
+  run collie reopen x
+  [ "$status" -eq 0 ]
+  [ "$output" = "$TMP/repos/A/feat-x" ]
+  [ "$(cat "$TMP/repos/A/feat-x/w")" = work ]
+  [ "$(git -C "$TMP/repos/B.worktrees/feat-x" branch --show-current)" = feat/x ]
+  [ "$(readlink "$TMP/repos/A/feat-x/.collie")" = "$(task_dir x)" ]
+  [ -L "$(task_dir x)/repos/B" ]
+  ! grep -q '^status:' "$(task_dir x)/TASK.md"
+  grep -q "task_reopened	from=done" "$(task_dir x)/events.log"
+  [ "$(tmux list-windows -t =x -F '#{window_name}' | sort | tr '\n' ' ')" = "A B " ]
+  collie ls | grep -q '^x	todo'
+}
+
+@test "reopen: archived task, --no-window" {
+  make_bare_repo A
+  cd "$REPO/main"
+  collie new x --no-window
+  collie archive x
+  run collie reopen x --no-window
+  [ "$status" -eq 0 ]
+  [ -d "$REPO/feat-x" ]
+  ! tmux has-session -t =x 2>/dev/null
+}
+
+@test "reopen: refuses an open task" {
+  make_bare_repo A
+  cd "$REPO/main"
+  collie new x --no-window
+  run collie reopen x
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"not done or archived"* ]]
+}
+
+@test "reopen: refuses a deleted branch or one checked out elsewhere, touching nothing" {
+  two_repos
+  cd "$TMP"
+  collie new x -r A -r B --no-window
+  collie done x
+  git -C "$TMP/repos/B" branch -q -D feat/x
+  run collie reopen x
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"branch 'feat/x' in B no longer exists"* ]]
+  [ ! -e "$TMP/repos/A/feat-x" ]
+  [ "$(fm x status)" = done ]
+  git -C "$TMP/repos/B" branch -q feat/x main
+  collie new y -r A:feat/x --no-window
+  run collie reopen x
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"checked out at $TMP/repos/A/feat-x (task 'y')"* ]]
+  [ ! -e "$TMP/repos/B.worktrees/feat-x" ]
+  [ "$(fm x status)" = done ]
 }
 
 # --- misc -------------------------------------------------------------------

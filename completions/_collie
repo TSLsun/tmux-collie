@@ -42,6 +42,7 @@ _collie() {
     'doctor:check dependencies and tasks'
     'done:accept and clean up a task'
     'archive:abandon and clean up a task'
+    'reopen:undo done/archive on the kept branches'
     'state:agent hook endpoint'
     'status:status-bar counts'
     'repos:discovered repos'
@@ -64,6 +65,7 @@ _collie() {
     ls) compadd -- -a ;;
     new) compadd -- -r -w -t -m --title --from --edit --no-window --ship --no-ship --run --agent -p ;;
     gc | history) compadd -- -n ;;
+    reopen) compadd -- --no-window; _collie_tasks ;;
     sync | restore) compadd -- -n; _collie_tasks ;;
     add | show | edit | go | run | adopt | review | done | archive) _collie_tasks ;;
   esac

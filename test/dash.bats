@@ -152,6 +152,14 @@ EOF
   [ "$(tail -n 1 "$(task_dir x)/TASK.md")" = edited ]
 }
 
+@test "_key: ctrl keys run their action directly, menu open or not" {
+  [[ "$(FZF_PROMPT='collie> ' collie _key x ctrl-r)" == "change-prompt(collie> )+clear-screen+execute("*"_actions 'x' 'r')+reload("*"_rows)+refresh-preview" ]]
+  [[ "$(FZF_PROMPT='▸ adopt agent ' collie _key x ctrl-v)" == *"_actions 'x' 'v')"* ]]
+  [[ "$(FZF_PROMPT='collie> ' collie _key x ctrl-e)" == *"_actions 'x' 'e')"* ]]
+  [[ "$(FZF_PROMPT='collie> ' collie _key x ctrl-d)" == *"_actions 'x' 'd')"* ]]
+  [ -z "$(FZF_PROMPT='collie> ' collie _key '' ctrl-r)" ]
+}
+
 @test "_rows: column names, then aligned rows grouped needs you > active > todo" {
   for t in a bb ccc-long; do collie new "$t" --no-window; done
   collie run a -- 300
@@ -190,12 +198,12 @@ EOF
 
 @test "_group: tab cycles the grouping, kept across dashboards; not while the menu is up" {
   collie new a --no-window
-  [[ "$(FZF_PROMPT='collie> ' collie _group next)" == "change-header(enter: go   ?: actions   tab: group by priority)+reload("*"_rows)" ]]
+  [[ "$(FZF_PROMPT='collie> ' collie _group next)" == "change-header(enter: go  tab: group by "$'\033[1;33m'"priority"$'\033[0m\n'"^r: run  ^v: review  ^e: edit  ^d: done  ?: more)+reload("*"_rows)" ]]
   [[ "$(collie _rows | sed -n 3p)" == *"── P2 (1) ─"* ]]
   FZF_PROMPT='collie> ' collie _group next >/dev/null
   [ "$(cat "$COLLIE_STATE_DIR/dash-group")" = repo ]
-  [[ "$(FZF_PROMPT='collie> ' collie _group next)" == *"group by status)"* ]]
-  [[ "$(FZF_PROMPT='collie> ' collie _group prev)" == *"group by repo)"* ]]
+  [[ "$(FZF_PROMPT='collie> ' collie _group next)" == *"group by "$'\033[1;33m'"status"$'\033'* ]]
+  [[ "$(FZF_PROMPT='collie> ' collie _group prev)" == *"group by "$'\033[1;33m'"repo"$'\033'* ]]
   [ -z "$(FZF_PROMPT='▸ run agent ' collie _group next)" ]
   [ "$(cat "$COLLIE_STATE_DIR/dash-group")" = repo ]
 }
@@ -260,7 +268,7 @@ EOF
   [ "$(FZF_PROMPT='▸ new task ' collie _key '' r)" = "change-prompt(collie> )+clear-screen" ]
 }
 
-@test "_actions: one key runs an action on the task; done asks first" {
+@test "_actions: one key runs an action on the task; done and archive ask first" {
   collie new x --no-window
   collie _actions x r
   [ -n "$(run_pane x)" ]
@@ -271,6 +279,14 @@ EOF
   chmod +x "$TMP/sh"
   SHELL="$TMP/sh" collie _actions x t
   [ "$(cat "$TMP/pwd")" = "$TMP/repos/A/feat-x" ]
+  echo n | collie _actions x x
+  [ -z "$(fm x status)" ]
+  echo y | collie _actions x x
+  [ "$(fm x status)" = archived ]
+}
+
+@test "_actions: done after confirm" {
+  collie new x --no-window
   echo y | collie _actions x d
   [ "$(fm x status)" = done ]
 }
