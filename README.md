@@ -144,6 +144,11 @@ with ↑↓ and press enter; esc closes it. `sync` (`s`) shows `collie sync -n` 
 tasks (or the selected one when none is marked), asks y/n, then syncs only
 those; switching the grouping clears the marks. The header lists the direct keys. The preview shows
 the start of TASK.md's Objective.
+The preview sits right of the list from 120 columns, below it otherwise, and
+wraps long lines. Rows and header fit the list's width: when it is narrow the
+age goes first, then repos, then a long id is shortened to its start and end
+(`luwa-201…-runbook`), then the agents; state, priority and PR stay. The
+header's key hints wrap instead of being cut.
 
 `prefix h` opens a menu (dashboard, lazygit, terminal, new
 task, edit task, review, run agent, adopt agent, done, archive, jump to alert, gc merged tasks) for the current session's task; outside a
