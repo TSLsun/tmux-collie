@@ -193,7 +193,7 @@ created: 2026-01-01
 | `collie history [-n] [pattern]` | Finished tasks, newest first: date, status, id, title, branches, PR (from REPORT.md); pattern greps TASK.md/REPORT.md; fzf picker with preview, enter pages `show` |
 | `collie reopen [<id>] [--no-window]` | Undo done/archive/gc: worktrees back on the kept branches, stored status cleared, session rebuilt; refuses a deleted or checked-out branch |
 | `collie gc [-n]` | Finish (`done`) tasks whose branches all moved past their start and are contained in base; tasks `done` refuses (dirty, unmerged) are skipped with the first reason |
-| `collie sync [<id>...] [-n]` | Merge base into active task branches (clean: commit + push if tracked; conflict: start the merge and hand it to the idle or exited agent); busy agents, dirty worktrees and untouched branches are skipped |
+| `collie sync [<id>...] [-n]` | Merge base into active task branches (clean: commit + push if tracked; conflict: start the merge and hand it to the idle or exited agent); busy agents, dirty worktrees and untouched branches are skipped; `-n` also predicts conflicts between task pairs (cached for the dash `⚡N`) |
 
 ### Admin
 

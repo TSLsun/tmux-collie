@@ -177,3 +177,38 @@ wt() { echo "$TMP/repos/A/feat-$1"; }
   run --separate-stderr collie _actions b s <<<y
   [ -f "$(wt b)/other" ] && [ ! -f "$(wt a)/other" ]
 }
+
+@test "sync -n: predicts conflicts between tasks; dash shows them until a branch moves" {
+  for t in x y z u m; do collie new "$t" --no-window; done
+  commit_in "$(wt x)" f from-x
+  commit_in "$(wt y)" f from-y
+  commit_in "$(wt z)" z
+  # merged (squash) and untouched (u) branches take no part
+  commit_in "$(wt m)" g
+  git -C "$TMP/origin-A" fetch -q "$REPO/.bare" feat/m
+  git -C "$TMP/origin-A" merge -q --squash FETCH_HEAD >/dev/null
+  git -C "$TMP/origin-A" commit -q -m "squash feat/m"
+  run --separate-stderr collie sync -n
+  [ "$status" -eq 0 ]
+  [[ "$output" == *$'\n'"between tasks (whichever lands first, the other conflicts):"$'\n'"  x × y A: conflict in f" ]]
+  [[ "$output" != *"× m"* && "$output" != *"× u"* && "$output" != *"z ×"* && "$output" != *"× z"* ]]
+  [ "$(collie dash -n | awk -F'\t' '{ print $1 ":" $9 }' | sort | paste -s -d, -)" = "m:-,u:-,x:1,y:1,z:-" ]
+  plain=$(collie _rows | sed $'s/\033\\[[0-9;]*m//g' | cut -f2)
+  [[ "$plain" == *$'\n'"○ x     start  P2   -      now  A      -   ⚡1"$'\n'* ]]
+  [[ "$plain" == *$'\n'"○ z     start  P2   -      now  A      -"$'\n'* ]]
+  [[ "$(collie _preview y)" == *$'\n'"conflicts with: x (f)" ]]
+  [[ "$(collie _preview z)" != *"conflicts with"* ]]
+  # a new commit on x: the caches are stale, nothing shows; a background refresh fixes it
+  commit_in "$(wt x)" f from-x-2
+  [ "$(collie dash -n | awk -F'\t' '$9 != "-"' | wc -l | tr -d ' ')" = 0 ]
+  [[ "$(collie _preview y)" != *"conflicts with"* ]]
+  wait_for "grep -q '$(git -C "$(wt x)" rev-parse HEAD)' '$(task_dir y)/conflicts.tsv'"
+  wait_for "[ ! -d '$COLLIE_STATE_DIR/conflicts.lock' ]"
+  [[ "$(collie _preview y)" == *$'\n'"conflicts with: x (f)" ]]
+  # a branch that conflicts with base shows that alone and skips pairs
+  land f theirs
+  run --separate-stderr collie sync -n
+  [[ "$output" == *"x A: conflict in f"* && "$output" == *"y A: conflict in f"* ]]
+  [[ "$output" == *$'\n'"between tasks: no conflicts" ]]
+  [[ "$(collie _preview x)" == *$'\n'"conflicts with: base (f)" ]]
+}

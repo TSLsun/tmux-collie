@@ -97,6 +97,12 @@ run if it exited; with no agent the worktree is left alone. Tasks whose agent
 is working or waiting, dirty worktrees and branches without commits of their
 own are skipped. It merges instead of rebasing: no force-push, conflicts are
 resolved once, and squash merges discard the merge commits anyway.
+`collie sync -n` also predicts conflicts between tasks: for each two branches
+of a repo, whether the second conflicts once the first has landed, and in which
+files (read-only: `git merge-tree` on a dangling merge of base and the first).
+Merged branches and branches without commits of their own are left out; one
+that conflicts with base is shown as that alone. It helps pick the merge order
+or spot tasks to combine.
 `hooks/pre-push` refuses to push `exp/*` branches:
 `ln -s ~/.tmux/plugins/tmux-collie/hooks/pre-push "$(git rev-parse --git-common-dir)/hooks/pre-push"`.
 
@@ -116,7 +122,11 @@ Dashboard rows start with a glyph (red `●` needs you: answer, review, reply,
 stalled; yellow `◐` working; dim `○` todo), then aligned columns: id, state
 (the needs value, or `working`), priority (P0 red, P1 yellow, P3 dim), a colored badge per
 running agent, the age of the last event, repos, and the task branch's PR per
-repo (`#N`: open green, draft dim, merged purple, closed red; `-` for none).
+repo (`#N`: open green, draft dim, merged purple, closed red; `-` for none),
+then a yellow `⚡N` when the task is predicted to conflict with N others (base
+counts as one; the preview names them and their files). The prediction is
+cached per task by `sync`, `sync -n` and `gc`; once a branch or base moves, it
+is hidden and recomputed in the background.
 PRs come from `gh`, cached per task for 5 minutes and refreshed in the
 background (and by `sync` and `gc`). Rows come in groups under a
 `── <group> (<n>) ──` line, the most urgent next to the prompt: needs you,
