@@ -138,14 +138,15 @@ EOF
   run collie _actions x N
   [ -z "$output" ]
   [ -z "$(FZF_PROMPT='collie> ' collie _key N x)" ]
-  [[ "$(collie _pick x 2>/dev/null)" != *notes* ]]
+  [[ "$(FZF_PROMPT='▸ run agent ' COLLIE_DASH="$TMP/dash" collie _preview x)" == *"run agent"*"new task"* ]]
+  [[ "$(FZF_PROMPT='▸ run agent ' COLLIE_DASH="$TMP/dash" collie _preview x)" != *notes* ]]
 }
 
 @test "dash actions: e edits the task's TASK.md" {
   collie new x --no-window
-  [ "$(FZF_PROMPT='▸ adopt agent ' collie _key down x)" = "change-prompt(▸ edit task )" ]
+  [ "$(FZF_PROMPT='▸ adopt agent ' collie _key down x)" = "change-prompt(▸ edit task )+refresh-preview" ]
   [[ "$(FZF_PROMPT='▸ run agent ' collie _key e x)" == *"_actions 'x' 'e')+reload("*"_rows)+refresh-preview" ]]
-  [ "$(FZF_PROMPT='▸ new task ' collie _key e '')" = "change-prompt(collie> )+clear-screen" ]
+  [ "$(FZF_PROMPT='▸ new task ' collie _key e '')" = "change-prompt(collie> )+refresh-preview" ]
   printf '#!/bin/sh\necho edited >>"$1"\n' >"$TMP/ed"
   chmod +x "$TMP/ed"
   EDITOR="$TMP/ed" collie _actions x e
@@ -153,10 +154,12 @@ EOF
 }
 
 @test "_key: action keys run their action directly, lazygit style" {
-  [[ "$(FZF_PROMPT='collie> ' collie _key r x)" == "change-prompt(collie> )+clear-screen+execute("*"_actions 'x' 'r')+reload("*"_rows)+refresh-preview" ]]
-  [[ "$(FZF_PROMPT='collie> ' collie _key v x)" == *"_actions 'x' 'v')"* ]]
-  [[ "$(FZF_PROMPT='collie> ' collie _key e x)" == *"_actions 'x' 'e')"* ]]
-  [[ "$(FZF_PROMPT='collie> ' collie _key d x)" == *"_actions 'x' 'd')"* ]]
+  [[ "$(FZF_PROMPT='collie> ' collie _key r x)" == "change-prompt(collie> )+refresh-preview+bg-transform("*"_bg r x)" ]]
+  [ "$(FZF_PROMPT='collie> ' collie _key v x)" = "change-prompt(collie> )+change-preview-label( review )+refresh-preview" ]
+  [ "$(FZF_PROMPT='collie> ' FZF_PREVIEW_LABEL=' review ' collie _key v x)" = "change-prompt(collie> )+change-preview-label()+refresh-preview" ]
+  [[ "$(FZF_PROMPT='collie> ' collie _key e x)" == "change-prompt(collie> )+clear-screen+execute("*"_actions 'x' 'e')+reload("*"_rows)+refresh-preview" ]]
+  [ "$(FZF_PROMPT='collie> ' collie _key d x)" = "change-prompt(? d x )+refresh-preview" ]
+  [ "$(FZF_PROMPT='collie> ' collie _key a x)" = "change-prompt(? a x )+refresh-preview" ]
   [ -z "$(FZF_PROMPT='collie> ' collie _key r '')" ]
   [[ "$(FZF_PROMPT='collie> ' collie _key c '')" == *"_actions '' 'c')"* ]]
   [ "$(FZF_PROMPT='collie> ' collie _key q x)" = abort ]
@@ -322,37 +325,65 @@ branch_of() { awk -F'\t' -v r="$2" '$1 == r { print $3 }' "$(task_dir "$1")/repo
   [ "$(FZF_PROMPT='collie> ' collie _key esc x)" = abort ]
   [ "$(FZF_PROMPT='collie> ' collie _key enter x)" = clear-multi+accept ]
   [ "$(FZF_PROMPT='collie> ' collie _key up x)" = up ]
-  [[ "$(FZF_PROMPT='▸ run agent ' collie _key r x)" == "change-prompt(collie> )+clear-screen+execute("*"_actions 'x' 'r')+reload("*"_rows)+refresh-preview" ]]
-  [ "$(FZF_PROMPT='▸ run agent ' collie _key down x)" = "change-prompt(▸ adopt agent )" ]
-  [ "$(FZF_PROMPT='▸ run agent ' collie _key up x)" = "change-prompt(▸ new task )" ]
-  [ "$(FZF_PROMPT='▸ new task ' collie _key down x)" = "change-prompt(▸ run agent )" ]
-  [ "$(FZF_PROMPT='▸ run agent ' collie _key j x)" = "change-prompt(▸ adopt agent )" ]
-  [[ "$(FZF_PROMPT='▸ review ' collie _key enter x)" == *"_actions 'x' 'v'"* ]]
-  [ "$(FZF_PROMPT='▸ run agent ' collie _key esc x)" = "change-prompt(collie> )+clear-screen" ]
-  [ "$(FZF_PROMPT='▸ new task ' collie _key r '')" = "change-prompt(collie> )+clear-screen" ]
+  [[ "$(FZF_PROMPT='▸ run agent ' collie _key r x)" == "change-prompt(collie> )+refresh-preview+bg-transform("*"_bg r x)" ]]
+  [ "$(FZF_PROMPT='▸ run agent ' collie _key down x)" = "change-prompt(▸ adopt agent )+refresh-preview" ]
+  [ "$(FZF_PROMPT='▸ run agent ' collie _key up x)" = "change-prompt(▸ new task )+refresh-preview" ]
+  [ "$(FZF_PROMPT='▸ new task ' collie _key down x)" = "change-prompt(▸ run agent )+refresh-preview" ]
+  [ "$(FZF_PROMPT='▸ run agent ' collie _key j x)" = "change-prompt(▸ adopt agent )+refresh-preview" ]
+  [[ "$(FZF_PROMPT='▸ review ' collie _key enter x)" == *"change-preview-label( review )"* ]]
+  [ "$(FZF_PROMPT='▸ archive ' collie _key enter x)" = "change-prompt(? x x )+refresh-preview" ]
+  [ "$(FZF_PROMPT='▸ run agent ' collie _key esc x)" = "change-prompt(collie> )+refresh-preview" ]
+  [ "$(FZF_PROMPT='▸ new task ' collie _key r '')" = "change-prompt(collie> )+refresh-preview" ]
 }
 
-@test "_actions: one key runs an action on the task; done and archive ask first" {
+@test "_actions: terminal opens a shell in the task's worktree; other keys do nothing" {
   collie new x --no-window
-  collie _actions x r
-  [ -n "$(run_pane x)" ]
-  echo n | collie _actions x d
-  [ -z "$(fm x status)" ]
   collie _actions x q
+  collie _actions x d
+  [ -z "$(fm x status)" ]
   printf '#!/bin/sh\npwd >"%s/pwd"\nexit 3\n' "$TMP" >"$TMP/sh"
   chmod +x "$TMP/sh"
   SHELL="$TMP/sh" collie _actions x t
   [ "$(cat "$TMP/pwd")" = "$TMP/repos/A/feat-x" ]
-  echo n | collie _actions x x
-  [ -z "$(fm x status)" ]
-  echo y | collie _actions x x
-  [ "$(fm x status)" = archived ]
 }
 
-@test "_actions: done after confirm" {
+@test "_key: a question in the panel; y runs it in the background, any other key cancels" {
   collie new x --no-window
-  echo y | collie _actions x d
+  export COLLIE_DASH="$TMP/dash"
+  mkdir -p "$COLLIE_DASH"
+  [ "$(FZF_PROMPT='? d x ' collie _key n x)" = "change-prompt(collie> )+refresh-preview" ]
+  [ "$(FZF_PROMPT='? d x ' collie _key r x)" = "change-prompt(collie> )+refresh-preview" ]
+  [ ! -f "$COLLIE_DASH/msg" ]
+  [ -z "$(FZF_PROMPT='? d x ' collie _group next)" ]
+  [[ "$(FZF_PROMPT='? d x ' collie _key y x)" == "change-prompt(collie> )+refresh-preview+bg-transform("*"_bg d x)" ]]
+  [ "$(cat "$COLLIE_DASH/msg")" = $'run\n… done x' ]
+  [[ "$(FZF_PROMPT='? d x ' collie _preview x)" == *"done x? (y/n)"*"objective:"* ]]
+  [[ "$(FZF_PROMPT='? a x ' collie _preview x)" == *"adopt x? (y/n)"* ]]
+}
+
+@test "_bg: runs the action; success is one line that fades, failure stays until a key" {
+  collie new x --no-window
+  collie new y --no-window
+  export COLLIE_DASH="$TMP/dash"
+  mkdir -p "$COLLIE_DASH"
+  [[ "$(collie _bg r x)" == "reload("*"_rows)+refresh-preview+bg-transform("*"_fade)" ]]
+  [ -n "$(run_pane x)" ]
+  [[ "$(FZF_PROMPT='collie> ' collie _preview x)" == *"✓ run x"*"objective:"* ]]
+  [ "$(collie _fade)" = refresh-preview ]
+  [ ! -f "$COLLIE_DASH/msg" ]
+  collie _bg d x >/dev/null
   [ "$(fm x status)" = done ]
+  # adopt fails: y has no session
+  [[ "$(collie _bg a y)" == "reload("*"_rows)+refresh-preview" ]]
+  run env FZF_PROMPT='collie> ' bash "$COLLIE_ROOT/bin/collie" _preview y
+  [[ "$output" == *"✗ adopt y (exit 1)"*"has no session"*"[press any key]"* ]]
+  [[ "$output" != *"objective:"* ]]
+  [ -z "$(collie _fade)" ]
+  [ "$(FZF_PROMPT='filter: ' collie _key j y)" = "put(j)" ]
+  [ "$(FZF_PROMPT='collie> ' collie _key j y)" = refresh-preview ]
+  [ ! -f "$COLLIE_DASH/msg" ]
+  collie _bg x y >/dev/null
+  [ "$(fm y status)" = archived ]
 }
 
 @test "_jump: waiting/idle records the pane; nothing recorded is an error" {
@@ -425,10 +456,12 @@ branch_of() { awk -F'\t' -v r="$2" '$1 == r { print $3 }' "$(task_dir "$1")/repo
 }
 
 @test "_key: sync gets the marked ids (separators dropped), other actions only the cursor's" {
-  [[ "$(FZF_PROMPT='▸ run agent ' collie _key s x a '' b)" == *"_actions 'x' 's' 'a' 'b')+reload("* ]]
+  [ "$(FZF_PROMPT='▸ run agent ' collie _key s x a '' b)" = "change-prompt(? s a b )+refresh-preview" ]
   [[ "$(FZF_PROMPT='▸ run agent ' collie _key e x a b)" == *"_actions 'x' 'e')+reload("* ]]
-  [[ "$(FZF_PROMPT='collie> ' collie _key s x a b)" == *"_actions 'x' 's' 'a' 'b')"* ]]
-  [ "$(FZF_PROMPT='▸ archive ' collie _key down x)" = "change-prompt(▸ sync )" ]
+  [ "$(FZF_PROMPT='collie> ' collie _key s x a b)" = "change-prompt(? s a b )+refresh-preview" ]
+  [ "$(FZF_PROMPT='collie> ' collie _key s x)" = "change-prompt(? s x )+refresh-preview" ]
+  [[ "$(FZF_PROMPT='? s a b ' collie _key y x a b)" == *"bg-transform("*"_bg s a b)" ]]
+  [ "$(FZF_PROMPT='▸ archive ' collie _key down x)" = "change-prompt(▸ sync )+refresh-preview" ]
 }
 
 @test "dash: keys work with no tasks (c opens new task, q quits)" {
@@ -445,4 +478,38 @@ branch_of() { awk -F'\t' -v r="$2" '$1 == r { print $3 }' "$(task_dir "$1")/repo
   wait_for "tmux capture-pane -p -t =d: | grep -q 'no tasks'"
   tmux send-keys -t =d: q
   wait_for "tmux capture-pane -p -t =d: | grep -q dash-exit"
+}
+
+@test "dash: actions answer in the panel while the list stays (no full-screen popup)" {
+  command -v fzf >/dev/null || skip "fzf not installed"
+  collie new w --no-window
+  collie new x --no-window
+  tmux -f /dev/null new-session -d -s d -x 140 -y 24 \
+    "'${COLLIE_BASH:-bash}' '$COLLIE_ROOT/bin/collie' dash; echo dash-exit; sleep 60"
+  wait_for "tmux capture-pane -p -t =d: | grep -q '○ x '"
+  tmux send-keys -t =d: '?'
+  wait_for "tmux capture-pane -p -t =d: | grep -q '↑↓ enter · key · esc'"
+  tmux capture-pane -p -t =d: | grep -q '○ x '
+  tmux send-keys -t =d: Escape
+  wait_for "! tmux capture-pane -p -t =d: | grep -q '↑↓ enter · key · esc'"
+  tmux send-keys -t =d: a
+  wait_for "tmux capture-pane -p -t =d: | grep -q 'adopt w? (y/n)'"
+  tmux send-keys -t =d: y
+  # failure: the output stays until a key, which only clears it
+  wait_for "tmux capture-pane -p -t =d: | grep -q 'press any key'"
+  tmux capture-pane -p -t =d: | grep -q '○ x '
+  tmux send-keys -t =d: d
+  wait_for "! tmux capture-pane -p -t =d: | grep -q 'press any key'"
+  [ -z "$(fm w status)" ]
+  tmux send-keys -t =d: d
+  wait_for "tmux capture-pane -p -t =d: | grep -q 'done w? (y/n)'"
+  tmux send-keys -t =d: y
+  wait_for "tmux capture-pane -p -t =d: | grep -q '✓ done w'"
+  [ "$(fm w status)" = done ]
+  wait_for "! tmux capture-pane -p -t =d: | grep -q '○ w '"
+  # the success line fades
+  wait_for "! tmux capture-pane -p -t =d: | grep -q '✓ done w'"
+  tmux send-keys -t =d: q
+  wait_for "tmux capture-pane -p -t =d: | grep -q dash-exit"
+  [ -z "$(find "$COLLIE_STATE_DIR" -maxdepth 1 -name 'dash.*')" ]
 }

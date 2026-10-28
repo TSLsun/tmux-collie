@@ -16,7 +16,7 @@ STATE_DIR=${COLLIE_STATE_DIR:-${XDG_STATE_HOME:-$HOME/.local/state}/collie}
 TASKS_DIR="$STATE_DIR/tasks"
 CONFIG_DIR="${XDG_CONFIG_HOME:-$HOME/.config}/collie"
 TAB=$'\t'
-DASH_PROMPT='collie> ' PICK_MARK='▸ ' SEARCH_PROMPT='filter: '
+DASH_PROMPT='collie> ' PICK_MARK='▸ ' SEARCH_PROMPT='filter: ' ASK_MARK='? ' REVIEW_LABEL=' review '
 # a pull/merge request URL, as agents put it in REPORT.md
 PR_RE='https?://[^ )>]*/(pull|merge_requests)/[0-9]+'
 

@@ -157,15 +157,19 @@ wt() { echo "$TMP/repos/A/feat-$1"; }
   grep -q "run_started	run=2 agent=sleep repo=A" "$(task_dir c)/events.log"
 }
 
-@test "dash sync: shows sync -n for the marked ids, asks, then syncs only those" {
+@test "dash sync: the panel shows sync -n for the marked ids; y syncs only those" {
   for t in a b c; do collie new "$t" --no-window; done
   for t in a b c; do commit_in "$(wt $t)" "$t"; done
   land other
-  run --separate-stderr collie _actions a s a b <<<n
+  export COLLIE_DASH="$TMP/dash"
+  mkdir -p "$COLLIE_DASH"
+  [ "$(FZF_PROMPT='collie> ' collie _key s a a b)" = "change-prompt(? s a b )+refresh-preview" ]
+  run --separate-stderr env FZF_PROMPT='? s a b ' bash "$COLLIE_ROOT/bin/collie" _preview a
+  [[ "$output" == *"sync a b? (y/n)"* ]]
   [[ "$output" == *"a A: would merge 1 commit(s) from origin/main"* ]]
   [[ "$output" == *"b A: would merge"* && "$output" != *"c A:"* ]]
   [ ! -f "$(wt a)/other" ]
-  run --separate-stderr collie _actions a s a b <<<y
+  collie _bg s a b >/dev/null
   [ -f "$(wt a)/other" ] && [ -f "$(wt b)/other" ] && [ ! -f "$(wt c)/other" ]
   [ "$(git -C "$(wt c)" log -1 --format=%s)" = "add c" ]
 }
@@ -174,7 +178,8 @@ wt() { echo "$TMP/repos/A/feat-$1"; }
   for t in a b; do collie new "$t" --no-window; done
   for t in a b; do commit_in "$(wt $t)" "$t"; done
   land other
-  run --separate-stderr collie _actions b s <<<y
+  [ "$(FZF_PROMPT='collie> ' collie _key s b b)" = "change-prompt(? s b )+refresh-preview" ]
+  collie _bg s b >/dev/null
   [ -f "$(wt b)/other" ] && [ ! -f "$(wt a)/other" ]
 }
 
