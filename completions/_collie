@@ -2,9 +2,10 @@
 # zsh completion for collie. Add the directory to fpath before compinit:
 #   fpath+=(~/.tmux/plugins/tmux-collie/completions)
 
+# Live tasks only; pass -a to include done/archived.
 _collie_tasks() {
   local -a tasks
-  tasks=(${(f)"$(collie ls -a 2>/dev/null | cut -f1)"})
+  tasks=(${(f)"$(collie ls "$@" 2>/dev/null | cut -f1)"})
   _describe task tasks
 }
 
@@ -65,9 +66,10 @@ _collie() {
     ls) compadd -- -a ;;
     new) compadd -- -r -w -t -m --title --from --edit --no-window --ship --no-ship --run --agent -p ;;
     gc | history) compadd -- -n ;;
-    reopen) compadd -- --no-window; _collie_tasks ;;
+    reopen) compadd -- --no-window; _collie_tasks -a ;;
     sync | restore) compadd -- -n; _collie_tasks ;;
-    add | show | edit | go | run | adopt | review | done | archive) _collie_tasks ;;
+    show | review) _collie_tasks -a ;;
+    add | edit | go | run | adopt | done | archive) _collie_tasks ;;
   esac
 }
 
