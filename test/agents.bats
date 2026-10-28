@@ -73,6 +73,43 @@ EOF
   grep -qxF "$TMP/repos/B.worktrees/feat-x" "$ARGS"
 }
 
+@test "omp run: assigns a todo task and passes its contract, workspaces and extra args" {
+  cat >"$TMP/bin/omp" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$@" >"$ARGS"
+exec sleep 300
+EOF
+  chmod +x "$TMP/bin/omp"
+  [ "$(collie ls | cut -f2)" = todo ]
+  collie run x --agent omp -- --model test-model
+  wait_for '[ -s "$ARGS" ]'
+  [ "$(collie ls | cut -f2)" = active ]
+  p=$(run_pane x)
+  [ "$(tmux display -p -t "$p" '#{@collie_task} #{@collie_agent} #{@collie_state}')" = "x omp working" ]
+  [ "$(tmux display -p -t "$p" '#{pane_current_path}')" = "$TMP/repos/A/feat-x" ]
+  [ "$(sed -n 1p "$ARGS")" = -e ]
+  [ "$(sed -n 2p "$ARGS")" = "$COLLIE_ROOT/agents/omp.ts" ]
+  grep -qxF "$TMP/repos/B.worktrees/feat-x" "$ARGS"
+  grep -qxF "$(task_dir x)" "$ARGS"
+  grep -q '^Task x\..*\.collie/TASK.md' "$ARGS"
+  [ "$(tail -n 2 "$ARGS" | tr '\n' ' ')" = '--model test-model ' ]
+  grep -q 'run_started.*agent=omp' "$(task_dir x)/events.log"
+}
+
+@test "omp run: configured default starts a todo task from the dashboard" {
+  cat >"$TMP/bin/omp" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$@" >"$ARGS"
+exec sleep 300
+EOF
+  chmod +x "$TMP/bin/omp"
+  export COLLIE_AGENT=omp
+  collie _bg r x
+  wait_for '[ -s "$ARGS" ]'
+  [ "$(collie ls | cut -f2)" = active ]
+  [ "$(tmux display -p -t "$(run_pane x)" '#{@collie_agent}')" = omp ]
+}
+
 @test "omp adapter: the -e extension maps lifecycle events to states" {
   node --experimental-strip-types -e '' 2>/dev/null || skip "node cannot load .ts"
   cat >"$TMP/bin/omp" <<'EOF'
