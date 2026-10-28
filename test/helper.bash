@@ -16,6 +16,11 @@ setup_env() {
   export COLLIE_REPO_ROOTS="$TMP/repos/*"
   export GIT_CONFIG_GLOBAL="$TMP/gitconfig"
   export GIT_CONFIG_NOSYSTEM=1
+  # gh without a GitHub remote: tests must not reach the user's gh
+  mkdir -p "$TMP/stub"
+  printf '#!/bin/sh\nexit 1\n' >"$TMP/stub/gh"
+  chmod +x "$TMP/stub/gh"
+  export PATH="$TMP/stub:$PATH"
   cat >"$GIT_CONFIG_GLOBAL" <<'EOF'
 [user]
 	name = test
