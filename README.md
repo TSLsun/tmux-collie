@@ -120,10 +120,9 @@ finished its turn without one), `stalled` (active, no live agent), `start`
 
 Dashboard rows start with a glyph (red `●` needs you: answer, review, reply,
 stalled; yellow `◐` working; dim `○` todo), then aligned columns: id, state
-(the needs value, or `working`), priority (P0 red, P1 yellow, P3 dim), a colored badge per
-running agent, the age of the last event, repos, and the task branch's PR per
-repo (`#N`: open green, draft dim, merged purple, closed red; `-` for none),
-then a yellow `⚡N` when the task is predicted to conflict with N others (base
+(the needs value, or `working`), priority (P0 red, P1 yellow, P3 dim), and the
+task branch's PR per repo (`#N`: open green, draft dim, merged purple, closed
+red; nothing for none), then a yellow `⚡N` when the task is predicted to conflict with N others (base
 counts as one; the preview names them and their files). The prediction is
 cached per task by `sync`, `sync -n` and `gc`; once a branch or base moves, it
 is hidden and recomputed in the background.
@@ -144,11 +143,10 @@ with ↑↓ and press enter; esc closes it. `sync` (`s`) shows `collie sync -n` 
 tasks (or the selected one when none is marked), asks y/n, then syncs only
 those; switching the grouping clears the marks. The header lists the direct keys. The preview shows
 the start of TASK.md's Objective.
-The preview sits right of the list from 120 columns, below it otherwise, and
-wraps long lines. Rows and header fit the list's width: when it is narrow the
-age goes first, then repos, then a long id is shortened to its start and end
-(`luwa-201…-runbook`), then the agents; state, priority and PR stay. The
-header's key hints wrap instead of being cut.
+The preview also shows the live agents, the age of the last event, and each
+repo's branch and PR. It sits right of the list when the rows fit beside it,
+below it otherwise, and wraps long lines. The header's key hints wrap instead
+of being cut.
 
 `prefix h` opens a menu (dashboard, lazygit, terminal, new
 task, edit task, review, run agent, adopt agent, done, archive, jump to alert, gc merged tasks) for the current session's task; outside a
