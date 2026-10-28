@@ -196,6 +196,11 @@ wt() { echo "$TMP/repos/A/feat-$1"; }
   plain=$(collie _rows | sed $'s/\033\\[[0-9;]*m//g' | cut -f2)
   [[ "$plain" == *$'\n'"○ x     start  P2   -      now  A      -   ⚡1"$'\n'* ]]
   [[ "$plain" == *$'\n'"○ z     start  P2   -      now  A      -"$'\n'* ]]
+  # the badge counts toward the row's width in a narrow list (42 columns)
+  plain=$(COLUMNS=45 collie _rows | sed $'s/\033\\[[0-9;]*m//g' | cut -f2)
+  [[ "$plain" == *$'\n'"○ x     start  P2   -      A      -   ⚡1"$'\n'* ]]
+  local l
+  while IFS= read -r l; do LC_ALL=C.UTF-8 eval '[ "${#l}" -le 42 ]'; done <<<"$plain"
   [[ "$(collie _preview y)" == *$'\n'"conflicts with: x (f)" ]]
   [[ "$(collie _preview z)" != *"conflicts with"* ]]
   # a new commit on x: the caches are stale, nothing shows; a background refresh fixes it

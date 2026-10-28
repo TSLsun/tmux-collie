@@ -208,7 +208,7 @@ cmd__rows() { # [group]
       e = "\033["
       srand(); now = srand()
       qc["open"] = "32"; qc["draft"] = "2"; qc["merged"] = "35"; qc["closed"] = "31"
-      wi = 4; ws = 5; wp = 3; wa = 5; wg = 3; wr = 5; wq = 2
+      wi = 4; ws = 5; wp = 3; wa = 5; wg = 3; wr = 5; wq = 2; wc = 0
     }
     {
       n++; id[n] = $1; st[n] = $7 == "-" ? "working" : $7; pr[n] = $3; rp[n] = $6
@@ -233,6 +233,7 @@ cmd__rows() { # [group]
       cnt[k]++; key[n] = k
       wi = max(wi, length($1)); ws = max(ws, length(st[n])); wp = max(wp, length($3))
       wa = max(wa, al[n]); wg = max(wg, length(ad[n])); wr = max(wr, length($6)); wq = max(wq, ql[n])
+      if (cf[n] != "") wc = max(wc, 3 + length($11))
     }
     END {
       if (!n) exit
@@ -240,7 +241,7 @@ cmd__rows() { # [group]
       for (i = 1; i <= ns; i++) if (!(seen[i] in done)) ord[++no] = seen[i]
       # too wide for the list: drop age, then repos, shorten the id to 20, drop
       # the agents, shorten the id to 8
-      sg = sr = sa = 1; w = 2 + wi + 2 + ws + 2 + wp + 2 + wa + 2 + wg + 2 + wr + 2 + wq
+      sg = sr = sa = 1; w = 2 + wi + 2 + ws + 2 + wp + 2 + wa + 2 + wg + 2 + wr + 2 + wq + wc
       if (cols && w > cols) { sg = 0; w -= wg + 2 }
       if (cols && w > cols) { sr = 0; w -= wr + 2 }
       if (cols && w > cols && wi > 20) { k = max(20, wi - w + cols); w -= wi - k; wi = k }
