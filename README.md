@@ -127,7 +127,7 @@ agent, `a` adopts one, `e` edits TASK.md, `v` reviews, `t` opens a terminal,
 `d` marks it done and `x` archives it (both after a y/n prompt), `s` syncs, `c`
 creates a task; `j` / `k` move, `space` marks or unmarks a task (marked rows
 show `*`), `q` or esc quits. In the `/` filter every key types; `enter` keeps
-the filter (the header shows it) and returns to the keys, esc drops it. `?`
+the filter (the header shows `filter: <query>`) and returns to the keys, esc drops it. `?`
 opens the action menu above the selected row (run agent, adopt agent, edit
 task, review, terminal, done, archive, sync, new task): press its key, or move
 with ↑↓ and press enter; esc closes it. `sync` (`s`) shows `collie sync -n` for the marked

@@ -75,7 +75,7 @@ dash_group() {
 # filter (the input is hidden outside a search) in bold yellow.
 dash_header() { # group [filter]
   # a ")" would end fzf's change-header(...)
-  [ -z "${2:-}" ] || printf '\033[1;33m/%s\033[0m esc: clear  ' "${2//)/}"
+  [ -z "${2:-}" ] || printf 'filter: \033[1;33m%s\033[0m  esc: clear  ' "${2//)/}"
   printf 'enter: go  tab: group by \033[1;33m%s\033[0m  /: filter  space: mark' "$1"
   printf '\nr: run  v: review  e: edit  d: done  s: sync  ?: more'
 }

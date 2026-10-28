@@ -411,15 +411,15 @@ branch_of() { awk -F'\t' -v r="$2" '$1 == r { print $3 }' "$(task_dir "$1")/repo
 @test "_key: space marks tasks (not separators); / shows the input, where every key types" {
   [ "$(FZF_PROMPT='collie> ' collie _key x space)" = toggle ]
   [ -z "$(FZF_PROMPT='collie> ' collie _key '' space)" ]
-  [ "$(FZF_PROMPT='collie> ' collie _key x /)" = "show-input+change-prompt(/ )" ]
-  [ "$(FZF_PROMPT='/ ' collie _key x space)" = "put( )" ]
-  [ "$(FZF_PROMPT='/ ' collie _key x /)" = "put(/)" ]
-  [ "$(FZF_PROMPT='/ ' collie _key x r)" = "put(r)" ]
-  [ "$(FZF_PROMPT='/ ' collie _key x '?')" = "put(?)" ]
+  [ "$(FZF_PROMPT='collie> ' collie _key x /)" = "show-input+change-prompt(filter: )" ]
+  [ "$(FZF_PROMPT='filter: ' collie _key x space)" = "put( )" ]
+  [ "$(FZF_PROMPT='filter: ' collie _key x /)" = "put(/)" ]
+  [ "$(FZF_PROMPT='filter: ' collie _key x r)" = "put(r)" ]
+  [ "$(FZF_PROMPT='filter: ' collie _key x '?')" = "put(?)" ]
   # enter keeps the filter (shown in the header), esc drops it
-  [[ "$(FZF_PROMPT='/ ' FZF_QUERY=dep collie _key x enter)" == "hide-input+change-prompt(collie> )+change-header("$'\033[1;33m'"/dep"$'\033[0m'" esc: clear  enter: go"* ]]
-  [[ "$(FZF_PROMPT='/ ' FZF_QUERY=dep collie _key x esc)" == "clear-query+change-prompt(collie> )+change-header("* ]]
-  [[ "$(FZF_PROMPT='/ ' FZF_QUERY=dep collie _key x esc)" != *"/dep"* ]]
+  [[ "$(FZF_PROMPT='filter: ' FZF_QUERY=dep collie _key x enter)" == "hide-input+change-prompt(collie> )+change-header(filter: "$'\033[1;33m'"dep"$'\033[0m'"  esc: clear  enter: go"* ]]
+  [[ "$(FZF_PROMPT='filter: ' FZF_QUERY=dep collie _key x esc)" == "clear-query+change-prompt(collie> )+change-header("* ]]
+  [[ "$(FZF_PROMPT='filter: ' FZF_QUERY=dep collie _key x esc)" != *"dep"* ]]
   [[ "$(FZF_PROMPT='collie> ' FZF_QUERY=dep collie _key x esc)" == "show-input+clear-query+change-header("* ]]
   [ "$(FZF_PROMPT='collie> ' collie _key x esc)" = abort ]
 }
