@@ -235,8 +235,10 @@ SH
   [[ "$output" != *"× m"* && "$output" != *"× u"* && "$output" != *"z ×"* && "$output" != *"× z"* ]]
   [ "$(collie dash -n | awk -F'\t' '{ print $1 ":" $9 }' | sort | paste -s -d, -)" = "m:-,u:-,x:1,y:1,z:-" ]
   plain=$(collie _rows | sed $'s/\033\\[[0-9;]*m//g' | cut -f2)
-  [[ "$plain" == *$'\n'"○ x     start  P2   -      now  A      -   ⚡1"$'\n'* ]]
-  [[ "$plain" == *$'\n'"○ z     start  P2   -      now  A      -"$'\n'* ]]
+  [[ "$plain" == *$'\n'"○ x  start  P2  ⚡1"$'\n'* ]]
+  [[ "$plain" == *$'\n'"○ z  start  P2"$'\n'* ]]
+  # ⚡ takes two columns: the rows are 19 wide
+  [ "$(cat "$COLLIE_STATE_DIR/dash-width")" -eq 19 ]
   [[ "$(collie _preview y)" == *$'\n'"conflicts with: x (f)" ]]
   [[ "$(collie _preview z)" != *"conflicts with"* ]]
   # a new commit on x: the caches are stale, nothing shows; a background refresh fixes it

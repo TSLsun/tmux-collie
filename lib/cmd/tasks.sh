@@ -146,10 +146,8 @@ task_needs() { # status top_state
 
 # shellcheck disable=SC2120  # -a comes from the CLI; internal callers pass none
 # Columns: id, status, priority, session (*|-), agent, repos, needs.
-# LS_AGENTS=1 (dash rows) adds two columns: the live agents from task_top and
-# the last event's time.
 cmd_ls() {
-  local all=0 d id st top agents mark repos name _
+  local all=0 d id st top mark repos name _
   [ "${1:-}" != -a ] || all=1
   load_tmux_state
   for d in "$TASKS_DIR"/*; do
@@ -161,16 +159,14 @@ cmd_ls() {
     mark=-
     if has_session "$id"; then mark='*'; fi
     top=$(task_top "$id")
-    agents=${top##*"$TAB"}
     top=${top%%"$TAB"*}
     repos=""
     while IFS=$TAB read -r name _ || [ -n "$name" ]; do repos="$repos${repos:+,}$name"; done <"$d/repos.tsv"
     task_status "$id" "$top" "$st"
     task_needs "$STATUS" "$top"
     fm_get "$d/TASK.md" priority
-    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s' "$id" "$STATUS" "$FM" "$mark" \
+    printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$id" "$STATUS" "$FM" "$mark" \
       "$top" "$repos" "$NEEDS"
-    if [ -n "${LS_AGENTS:-}" ]; then printf '\t%s\t%s\n' "$agents" "$LAST_EVENT"; else echo; fi
   done
 }
 
