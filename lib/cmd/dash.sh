@@ -126,6 +126,38 @@ dash_rows() {
 
 DASH_GROUPS=(status priority repo)
 
+# awk functions: ISO 8601 UTC time to epoch seconds (days from civil), and
+# seconds to a short age.
+DASH_AWK_TIME='
+  function epoch(t, y, m) {
+    y = substr(t, 1, 4) + 0; m = substr(t, 6, 2) + 0
+    if (m <= 2) { y--; m += 12 }
+    return ((365 * y + int(y / 4) - int(y / 100) + int(y / 400) + int((153 * (m - 3) + 2) / 5) + substr(t, 9, 2) - 719469) * 86400 \
+      + substr(t, 12, 2) * 3600 + substr(t, 15, 2) * 60 + substr(t, 18, 2))
+  }
+  function age(s) {
+    if (s < 60) return "now"
+    if (s < 3600) return int(s / 60) "m"
+    if (s < 86400) return int(s / 3600) "h"
+    if (s < 604800) return int(s / 86400) "d"
+    return int(s / 604800) "w"
+  }'
+
+# Where the preview goes: right of the list when the rows (their width, cached
+# by _rows) fit beside it, below otherwise; long lines wrap. Sets PREVIEW and
+# WIDTH, the list's text width (fzf's gutter and scrollbar off) from fzf's
+# FZF_COLUMNS or COLUMNS, 0 when unknown.
+dash_layout() {
+  local c=${FZF_COLUMNS:-${COLUMNS:-0}} w=0
+  [ ! -s "$STATE_DIR/dash-width" ] || read -r w <"$STATE_DIR/dash-width" || true
+  PREVIEW='right,50%,wrap' WIDTH=$((c - c / 2 - 4))
+  if [ "$c" -le 3 ]; then
+    WIDTH=0
+  elif [ "$WIDTH" -lt "$w" ] || [ "$WIDTH" -lt 40 ]; then
+    PREVIEW='down,45%,wrap' WIDTH=$((c - 3))
+  fi
+}
+
 # The dashboard's grouping (DASH_GROUPS), kept across dashboards. Sets GROUP.
 dash_group() {
   GROUP=""
@@ -133,25 +165,39 @@ dash_group() {
   case " ${DASH_GROUPS[*]} " in *" $GROUP "*) ;; *) GROUP=status ;; esac
 }
 
-# Two lines so narrow popups do not cut the keys off; the group and a kept
-# filter (the input is hidden outside a search) in bold yellow.
+# Two lines, each wrapped at the list's width (dash_layout) so narrow popups do
+# not cut the keys off; the group and a kept filter (the input is hidden
+# outside a search) in bold yellow.
 dash_header() { # group [filter]
+  local y=$'\033[1;33m' z=$'\033[0m' h n line="" len=0 out="" hints=()
   # a ")" would end fzf's change-header(...)
-  [ -z "${2:-}" ] || printf 'filter: \033[1;33m%s\033[0m  esc: clear  ' "${2//)/}"
-  printf 'enter: go  tab: group by \033[1;33m%s\033[0m  /: filter  space: mark' "$1"
-  printf '\nr: run  v: review  e: edit  d: done  s: sync  ?: more'
+  [ -z "${2:-}" ] || hints+=("filter: $y${2//)/}$z" "esc: clear")
+  hints+=("enter: go" "tab: group by $y$1$z" "/: filter" "space: mark" ""
+    "r: run" "v: review" "e: edit" "d: done" "s: sync" "?: more" "")
+  dash_layout
+  for h in "${hints[@]}"; do
+    n=${#h}
+    [[ $h != *"$y"* ]] || n=$((n - ${#y} - ${#z}))
+    if [ -n "$line" ] && { [ -z "$h" ] || { [ "$WIDTH" -gt 0 ] && [ $((len + 2 + n)) -gt "$WIDTH" ]; }; }; then
+      out="$out${out:+$'\n'}$line" line="" len=0
+    fi
+    [ -n "$h" ] || continue
+    if [ -z "$line" ]; then line=$h len=$n; else line="$line  $h" len=$((len + 2 + n)); fi
+  done
+  printf '%s' "$out"
 }
 
 # dash_rows for fzf, in groups (DASH_GROUPS; status: needs you, active, todo;
 # priority: P0..P3; repo: most urgent first), each topped by a dim
 # "── <group> (<n>) ──" line (fzf lists bottom-up, so it follows its rows).
 # A row is the id, then aligned columns: a glyph (red ● needs you, yellow ◐
-# working, dim ○ todo) and id, state (what it needs from you, or working),
-# colored priority, a badge per live agent, the last event's age, repos, PRs
-# (green open, dim draft, purple merged, red closed), then a yellow ⚡N when
-# the task conflicts with N others (see conflicts_cached). The first line holds the column
-# names (fzf --header-lines=1); separators and it have an empty id.
-# $STATE_DIR/dash-rows gets the ids in order (empty for separators), for _key.
+# working, dim ○ todo) and the whole id (fzf filters on it), state (what it
+# needs from you, or working), colored priority, PRs (green open, dim draft,
+# purple merged, red closed), then a yellow ⚡N when the task conflicts with N
+# others (see conflicts_cached). Agents, age and repos are in the preview.
+# Separators have an empty id. $STATE_DIR/dash-rows gets the ids in order
+# (empty for separators), for _key; $STATE_DIR/dash-width the rows' width,
+# for dash_layout.
 # shellcheck disable=SC2120  # group comes from the CLI; internal callers pass none
 cmd__rows() { # [group]
   local g=${1:-}
@@ -160,70 +206,53 @@ cmd__rows() { # [group]
     g=$GROUP
   fi
   mkdir -p "$STATE_DIR"
-  LS_AGENTS=1 dash_rows | awk -F'\t' -v g="$g" -v cache="$STATE_DIR/dash-rows" '
-    # ISO 8601 UTC time to epoch seconds (days from civil)
-    function epoch(t, y, m) {
-      y = substr(t, 1, 4) + 0; m = substr(t, 6, 2) + 0
-      if (m <= 2) { y--; m += 12 }
-      return ((365 * y + int(y / 4) - int(y / 100) + int(y / 400) + int((153 * (m - 3) + 2) / 5) + substr(t, 9, 2) - 719469) * 86400 \
-        + substr(t, 12, 2) * 3600 + substr(t, 15, 2) * 60 + substr(t, 18, 2))
-    }
-    function age(s) {
-      if (s < 60) return "now"
-      if (s < 3600) return int(s / 60) "m"
-      if (s < 86400) return int(s / 3600) "h"
-      if (s < 604800) return int(s / 86400) "d"
-      return int(s / 604800) "w"
-    }
+  dash_rows | awk -F'\t' -v g="$g" -v cache="$STATE_DIR/dash-rows" -v width="$STATE_DIR/dash-width" '
     function pad(s, w, l) { return s sprintf("%" (w - l > 0 ? w - l : 0) "s", "") }
     function max(a, b) { return a > b ? a : b }
     BEGIN {
-      c["claude"] = "38;5;208"; c["codex"] = "32"; c["gemini"] = "34"; c["omp"] = "35"; c["aider"] = "36"
       pc["P0"] = "1;31"; pc["P1"] = "33"; pc["P3"] = "2"
       e = "\033["
-      srand(); now = srand()
       qc["open"] = "32"; qc["draft"] = "2"; qc["merged"] = "35"; qc["closed"] = "31"
-      wi = 4; ws = 5; wp = 3; wa = 5; wg = 3; wr = 5; wq = 2
+      printf "" >cache; printf "" >width
     }
     {
-      n++; id[n] = $1; st[n] = $7 == "-" ? "working" : $7; pr[n] = $3; rp[n] = $6
+      n++; id[n] = $1; st[n] = $7 == "-" ? "working" : $7; pr[n] = $3
       you = $7 != "-" && $7 != "start"
       gl[n] = you ? e "31m●" : $7 == "-" ? e "33m◐" : e "2m○"
-      k = split($8, a, " "); b = ""
-      for (i = 1; i <= k; i++) b = b (i > 1 ? " " : "") e "1;" (a[i] in c ? c[a[i]] : "37") "m" a[i] e "0m"
-      al[n] = k ? length($8) - 1 : 1
-      ag[n] = b == "" ? e "2m-" e "0m" : b
-      ad[n] = $9 == "" ? "-" : age(now - epoch($9))
-      k = $10 == "-" ? 0 : split($10, a, " "); b = ""; ql[n] = k ? -1 : 1
+      k = $8 == "-" ? 0 : split($8, a, " "); b = ""; ql[n] = k ? -1 : 0
       for (i = 1; i <= k; i++) {
         split(a[i], x, ":"); b = b (i > 1 ? " " : "") e (x[2] in qc ? qc[x[2]] : "0") "m" x[1] e "0m"; ql[n] += length(x[1]) + 1
       }
-      pq[n] = b == "" ? e "2m-" e "0m" : b
-      cf[n] = $11 == "-" || $11 == "" ? "" : "  " e "33m⚡" $11 e "0m"
+      pq[n] = b
+      # ⚡ takes two columns
+      cf[n] = $9 == "-" || $9 == "" ? "" : e "33m⚡" $9 e "0m"; cl[n] = cf[n] == "" ? 0 : 2 + length($9)
       if (g == "priority") k = $3
       else if (g == "repo") k = $6
       else if (you) k = "needs you"
       else k = $2
       if (!(k in cnt)) seen[++ns] = k
       cnt[k]++; key[n] = k
-      wi = max(wi, length($1)); ws = max(ws, length(st[n])); wp = max(wp, length($3))
-      wa = max(wa, al[n]); wg = max(wg, length(ad[n])); wr = max(wr, length($6)); wq = max(wq, ql[n])
+      wi = max(wi, length($1)); ws = max(ws, length(st[n])); wp = max(wp, length($3)); wq = max(wq, ql[n])
     }
     END {
       if (!n) exit
       if (g == "priority") for (i = 0; i <= 3; i++) if (("P" i) in cnt) { ord[++no] = "P" i; done["P" i] = 1 }
       for (i = 1; i <= ns; i++) if (!(seen[i] in done)) ord[++no] = seen[i]
-      w = 2 + wi + 2 + ws + 2 + wp + 2 + wa + 2 + wg + 2 + wr + 2 + wq
-      print "\t" e "2m  " pad("TASK", wi, 4) "  " pad("STATE", ws, 5) "  " pad("PRI", wp, 3) "  " \
-        pad("AGENT", wa, 5) "  " sprintf("%" wg "s", "AGE") "  " pad("REPOS", wr, 5) "  PR" e "0m"
-      printf "" >cache
+      # PRs, then the badge, aligned; nothing (no trailing blanks) when a row has neither
+      for (i = 1; i <= n; i++) {
+        t[i] = cf[i] == "" ? pq[i] : (wq ? pad(pq[i], wq, ql[i]) " " : "") cf[i]
+        tl[i] = cf[i] == "" ? ql[i] : (wq ? wq + 1 : 0) + cl[i]
+        w = max(w, 2 + wi + 2 + ws + 2 + wp + (tl[i] ? 2 + tl[i] : 0))
+      }
+      # a separator keeps at least two ─ after its label
+      for (j = 1; j <= no; j++) w = max(w, length(ord[j] cnt[ord[j]]) + 9)
+      print w >width
       for (j = 1; j <= no; j++) {
         for (i = 1; i <= n; i++) {
           if (key[i] != ord[j]) continue
           p = pr[i] in pc ? e pc[pr[i]] "m" pr[i] e "0m" : pr[i]
           print id[i] "\t" gl[i] e "0m " pad(id[i], wi, length(id[i])) "  " pad(st[i], ws, length(st[i])) "  " \
-            pad(p, wp, length(pr[i])) "  " pad(ag[i], wa, al[i]) "  " e "2m" sprintf("%" wg "s", ad[i]) e "0m  " \
-            pad(rp[i], wr, length(rp[i])) "  " (cf[i] == "" ? pq[i] : pad(pq[i], wq, ql[i]) cf[i])
+            (t[i] == "" ? p : pad(p, wp, length(pr[i])) "  " t[i])
           print id[i] >cache
         }
         l = "── " ord[j] " (" cnt[ord[j]] ") "
@@ -255,8 +284,11 @@ cmd_dash() {
     return
   fi
   command -v fzf >/dev/null || die "dash: fzf required"
-  local self="'$BASH' '$PLUGIN_DIR/bin/collie'" rows header sel id wid k binds=() rc=0
+  local self="'$BASH' '$PLUGIN_DIR/bin/collie'" rows header sel id wid k binds=() COLUMNS=${COLUMNS:-} rc=0
+  # fzf passes its width to reloads and transforms (FZF_COLUMNS), not to this first draw
+  [ -n "$COLUMNS" ] || { COLUMNS=$(stty size </dev/tty 2>/dev/null) && COLUMNS=${COLUMNS#* }; } || COLUMNS=""
   rows=$(cmd__rows)
+  dash_layout
   # the action panel's state (see dash_panel), for this dashboard's transforms
   export COLLIE_DASH="$STATE_DIR/dash.$$"
   mkdir -p "$COLLIE_DASH"
@@ -270,8 +302,8 @@ cmd_dash() {
   [ -n "$rows" ] || header='no tasks — c: new task'
   sel=$(printf '%s' "$rows" | fzf --ansi --delimiter='\t' --with-nth=2.. --no-sort --prompt="$DASH_PROMPT" \
     --no-input --multi --marker='*' \
-    --header="$header" --header-lines=1 \
-    --preview="$self _preview {1}" --preview-window=right,50% \
+    --header="$header" \
+    --preview="$self _preview {1}" --preview-window="$PREVIEW" \
     "${binds[@]}" \
     --bind="tab:transform($self _group next)" --bind="btab:transform($self _group prev)") || rc=$?
   rm -rf "$COLLIE_DASH"
@@ -319,6 +351,11 @@ cmd__key() { # key [id [marked id...]]
   local back="change-prompt($DASH_PROMPT)+refresh-preview"
   local items n cur k
   dash_group
+  if [ "$2" = resize ]; then
+    dash_layout
+    case ${FZF_PROMPT:-} in "$PICK_MARK"*) ;; *) echo "change-preview-window($PREVIEW)+change-header($(dash_header "$GROUP" "$(dash_filter)"))" ;; esac
+    return
+  fi
   if [ "${FZF_PROMPT:-}" != "$SEARCH_PROMPT" ] && [ -n "${COLLIE_DASH:-}" ] &&
     [ "$(head -n 1 "$COLLIE_DASH/msg" 2>/dev/null)" = fail ]; then
     rm -f "$COLLIE_DASH/msg"
@@ -637,8 +674,10 @@ cmd__target() {
   task_top "$id" | cut -f2
 }
 
+# The task's title, status and priority, its live agents and last event's
+# age, the Objective, runs, and per repo its branch, PRs and progress.
 cmd__preview() {
-  local id d name c b p base top title ids
+  local id d name c b p base top title ids line a
   [ -z "${COLLIE_DASH:-}" ] || ! dash_panel "${1:-}" || return 0
   [ $# -eq 0 ] || [ -n "$1" ] || return 0 # a dash group separator
   task_id "${1:-}"
@@ -650,6 +689,13 @@ cmd__preview() {
   fm_get "$d/TASK.md" priority
   printf '%s  [%s %s]\n' "$title" "$STATUS" "$FM"
   [ -z "$STATUS_NOTE" ] || echo "$STATUS_NOTE"
+  line=${top##*"$TAB"}
+  line=${line% }
+  if [ -n "$LAST_EVENT" ]; then
+    a=$(awk -v t="$LAST_EVENT" "$DASH_AWK_TIME"' BEGIN { srand(); a = age(srand() - epoch(t)); print (a == "now" ? a : a " ago") }')
+    line="$line${line:+ · }last event $a"
+  fi
+  [ -z "$line" ] || echo "$line"
   case $STATUS in done | archived) printf 'finished %s\n' "$(finished_at "$id")" ;; esac
   echo
   echo "objective:"
@@ -688,7 +734,8 @@ cmd__preview() {
     fi
     default_base "$c"
     base=$BASE
-    printf '  %s  %s  %s ahead, %s dirty  %s\n' "$name" "$b" \
+    a=$(awk -F'\t' -v n="$name" '$1 == n { print "  #" $2 " " $3 }' "$d/pr.tsv" 2>/dev/null) || a=""
+    printf '  %s  %s%s  %s ahead, %s dirty  %s\n' "$name" "$b" "$a" \
       "$(git --git-dir="$c" rev-list --count "$base..refs/heads/$b" 2>/dev/null || echo '?')" \
       "$(git -C "$p" status --porcelain | wc -l | tr -d ' ')" \
       "$(git -C "$p" diff --shortstat "$base" 2>/dev/null)"
