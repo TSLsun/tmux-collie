@@ -35,8 +35,8 @@ EOF
   chmod +x "$TMP/bin/codex"
   collie run x --agent codex -p ''
   working_then_idle
-  grep -q '^hooks.PermissionRequest=.*state waiting' "$ARGS"
-  c=$(sed -n 's/^hooks\.PreToolUse=\[{matcher="Bash",.*command="\(.*\)"}\]}\]$/\1/p' "$ARGS")
+  grep -q '^hooks.PermissionRequest=.*_codex-hook wait' "$ARGS"
+  c=$(sed -n 's/^hooks\.PreToolUse=\[{matcher="Bash",hooks=\[{type="command",command="\([^"]*\)"}\]}.*$/\1/p' "$ARGS")
   run sh -c "$c" <<<'{"tool_input":{"command":"tmux kill-server"}}'
   [ "$status" -eq 2 ]
   grep -qxF "$TMP/repos/B.worktrees/feat-x" "$ARGS"
@@ -104,7 +104,28 @@ EOF
   grep -qxF "$TMP/repos/B.worktrees/feat-x" "$ARGS"
 }
 
-@test "omp adopt: stops a hand-started omp and resumes it with -c" {
+@test "omp adopt: resumes the conversation the hand-started omp holds open" {
+  # omp holds run/session-owners/<id>.lock while its session is live; -c
+  # would take the session the new window's tty last showed instead
+  mkdir -p "$TMP/manual" "$TMP/run/session-owners"
+  ln -s "$(command -v sleep)" "$TMP/manual/omp"
+  cat >"$TMP/bin/omp" <<'EOF'
+#!/bin/sh
+for a in "$@"; do printf '%s\n' "$a"; done >"$ARGS"
+exec sleep 300
+EOF
+  chmod +x "$TMP/bin/omp"
+  collie go x
+  tmux new-window -d -t "=x:" -c "$TMP/repos/A/feat-x" \
+    "sh -c 'exec 3>$TMP/run/session-owners/01a18219-e205.lock; $TMP/manual/omp 300; :'"
+  wait_for '[ "$(agent_of x)" = working ]'
+  collie adopt x -y
+  wait_for '[ -f "$ARGS" ]'
+  [ "$(tail -n 2 "$ARGS" | tr '\n' ' ')" = "-r 01a18219-e205 " ]
+  ! grep -qxF -- -c "$ARGS"
+}
+
+@test "omp adopt: without an open session it resumes the latest with -c" {
   mkdir -p "$TMP/manual"
   ln -s "$(command -v sleep)" "$TMP/manual/omp"
   cat >"$TMP/bin/omp" <<'EOF'

@@ -148,11 +148,13 @@ The dashboard sorts tasks in that urgency (`answer` > `reply` > `review` >
 Agents get hooks per run, nothing installed: claude, codex, gemini, omp.
 Any other command (`--agent aider`) runs without hooks. Agents you start by
 hand in a task's session are detected by process (working/idle only, no
-notifications); `collie adopt` restarts a hand-started claude or omp under
+notifications); `collie adopt` restarts a hand-started claude, codex or omp under
 `collie run` with its conversation resumed. `collie restore` restarts the
-runs lost with a dead tmux server (claude by its logged session id, omp by
+runs lost with a dead tmux server (claude and codex by their logged session id, omp by
 the worktree's latest conversation); agents started by hand are not
 recorded, so they are not restored.
+
+For Codex setup and limitations, see [Agent details](../README.md#agent-details).
 
 ## 5. Where each action lives
 

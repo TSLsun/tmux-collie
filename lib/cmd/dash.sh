@@ -265,7 +265,7 @@ cmd__rows() { # [group]
 
 # fzf transform for tab / btab (next / prev): switch the dashboard grouping.
 cmd__group() { # next|prev
-  case ${FZF_PROMPT:-} in "$PICK_MARK"*) return 0 ;; esac
+  case ${FZF_PROMPT:-} in "$PICK_MARK"* | "$ASK_MARK"*) return 0 ;; esac
   local self="'$BASH' '$PLUGIN_DIR/bin/collie'" n=${#DASH_GROUPS[@]} i
   dash_group
   for i in "${!DASH_GROUPS[@]}"; do [ "${DASH_GROUPS[$i]}" != "$GROUP" ] || break; done
@@ -284,12 +284,15 @@ cmd_dash() {
     return
   fi
   command -v fzf >/dev/null || die "dash: fzf required"
-  local self="'$BASH' '$PLUGIN_DIR/bin/collie'" rows header sel id wid k binds=() COLUMNS=${COLUMNS:-}
+  local self="'$BASH' '$PLUGIN_DIR/bin/collie'" rows header sel id wid k binds=() COLUMNS=${COLUMNS:-} rc=0
   # fzf passes its width to reloads and transforms (FZF_COLUMNS), not to this first draw
   [ -n "$COLUMNS" ] || { COLUMNS=$(stty size </dev/tty 2>/dev/null) && COLUMNS=${COLUMNS#* }; } || COLUMNS=""
   rows=$(cmd__rows)
   dash_layout
-  for k in $(action_items x | cut -c1) enter up down j k q space / '?' resize; do
+  # the action panel's state (see dash_panel), for this dashboard's transforms
+  export COLLIE_DASH="$STATE_DIR/dash.$$"
+  mkdir -p "$COLLIE_DASH"
+  for k in $(action_items x | cut -c1) enter up down j k q space / '?' y n; do
     binds+=(--bind="$k:transform($self _key '$k' {1} {+1})")
   done
   # after the transform: fzf ignores clear-query while the input is hidden
@@ -302,7 +305,9 @@ cmd_dash() {
     --header="$header" \
     --preview="$self _preview {1}" --preview-window="$PREVIEW" \
     "${binds[@]}" \
-    --bind="tab:transform($self _group next)" --bind="btab:transform($self _group prev)") || return 0
+    --bind="tab:transform($self _group next)" --bind="btab:transform($self _group prev)") || rc=$?
+  rm -rf "$COLLIE_DASH"
+  [ "$rc" -eq 0 ] || return 0
   id=${sel%%"$TAB"*}
   [ -n "$id" ] || return 0
   wid=$(cmd__target "$id")
@@ -310,71 +315,64 @@ cmd_dash() {
   cmd_go "$id"
 }
 
-# Dashboard `?` (an fzf transform): draws the action menu over the dashboard
-# and puts the selected action in the prompt ("▸ <label> "), which _key reads
-# as "menu open" and as the selection. fzf keeps reading keys meanwhile, so
-# keys go through fzf binds, not a read here. A tmux popup cannot open over
-# the dashboard's popup, hence the drawing.
+# Dashboard `?` (an fzf transform): opens the action menu in the panel (see
+# dash_panel) and puts the selected action in the prompt ("▸ <label> "), which
+# _key reads as "menu open" and as the selection. A tmux popup cannot open over
+# the dashboard's popup, hence the panel.
 cmd__pick() { # [id]
-  pick_draw "${1:-}" 1 || return 0
-  echo "change-prompt($PICK_MARK$(action_items "${1:-}" | sed -n 1p | cut -c4-) )"
+  echo "change-prompt($PICK_MARK$(action_items "${1:-}" | sed -n 1p | cut -c4-) )+refresh-preview"
 }
 
-# Draws the menu with row <sel> highlighted on /dev/tty, just above the
-# selected dashboard row (fzf's default layout: the preview when below the
-# list (dash_layout), prompt and info unless the input is hidden, and the
-# header take the last lines, list row 1 sits above them).
-pick_draw() { # id sel
-  local items n w=30 top left=2 line i=0 t=${1:-collie} hl off
-  # a long id would push the title past the box
-  t=${t:0:$((w - 6))}
-  items=$(action_items "$1")
-  n=$(printf '%s\n' "$items" | wc -l)
-  dash_group
-  hl=$(dash_header "$GROUP" "$(dash_filter)")
-  hl=${hl//[!$'\n']/}
-  off=$((${#hl} + 2))
-  [ "${FZF_INPUT_STATE:-}" = hidden ] || off=$((off + 2))
-  dash_layout
-  [ "${PREVIEW%%,*}" = right ] || off=$((off + ${FZF_LINES:-24} * 45 / 100))
-  top=$((${FZF_LINES:-24} - ${FZF_POS:-1} - n - off))
-  [ "$top" -ge 1 ] || top=1
-  {
-    printf '\033[%d;%dH\033[0;34m╭─ \033[1m%s\033[22m %s╮' "$top" "$left" "$t" "$(rule $((w - 5 - ${#t})) ─)"
-    while IFS= read -r line; do
-      i=$((i + 1)) top=$((top + 1)) hl=""
-      [ "$i" -ne "$2" ] || hl=$'\033[1;44m'
-      printf '\033[%d;%dH│\033[0m%s \033[36m%s\033[39m  %-*s\033[0;34m│' \
-        "$top" "$left" "$hl" "${line:0:1}" $((w - 6)) "${line:3}"
-    done <<<"$items"
-    printf '\033[%d;%dH╰─ ↑↓ enter · key · esc %s╯\033[0m' $((top + 1)) "$left" "$(rule $((w - 25)) ─)"
-  } >/dev/tty 2>/dev/null
+# The menu, the action labelled <label> highlighted.
+pick_lines() { # id label
+  local w=30 line t=${1:-collie} hl
+  printf '\033[0;34m╭─ \033[1m%s\033[22m %s╮\n' "$t" "$(rule $((w - 5 - ${#t})) ─)"
+  while IFS= read -r line; do
+    hl=""
+    [ "${line:3}" != "$2" ] || hl=$'\033[1;44m'
+    printf '│\033[0m%s \033[36m%s\033[39m  %-*s\033[0;34m│\n' "$hl" "${line:0:1}" $((w - 6)) "${line:3}"
+  done < <(action_items "$1")
+  printf '╰─ ↑↓ enter · key · esc %s╯\033[0m\n' "$(rule $((w - 25)) ─)"
 }
 
 # fzf transform for a dashboard key, lazygit style: outside a search an action
-# key (see action_items) runs its action on the selected task, j/k move, space
-# marks, q quits, esc clears a kept filter or quits, ? opens the menu and /
-# shows the input for a search (SEARCH_PROMPT). In a search every key types;
-# enter keeps the filter and hides the input again, esc drops it (the esc bind
-# hides the input after this transform). With the
-# menu open, keys move its selection, run an action or close it. The marked
-# ids (fzf {+1}: the row under the cursor when none) go to sync; separators
-# have an empty id. The key comes first: with no rows fzf drops {1} and {+1}
-# instead of passing them empty.
+# key (see action_items) runs its action on the selected task (see
+# dash_action), j/k move, space marks, q quits, esc clears a kept filter or
+# quits, ? opens the menu and / shows the input for a search (SEARCH_PROMPT).
+# In a search every key types; enter keeps the filter and hides the input
+# again, esc drops it (the esc bind hides the input after this transform).
+# With the menu open, keys move its selection, run an action or close it; with
+# a question up (ASK_MARK), y confirms and any other key cancels; a failed
+# action's output takes the first key. The marked ids (fzf {+1}: the row under
+# the cursor when none) go to sync; separators have an empty id. The key comes
+# first: with no rows fzf drops {1} and {+1} instead of passing them empty.
 cmd__key() { # key [id [marked id...]]
   set -- "${2:-}" "$1" "${@:3}"
-  local self="'$BASH' '$PLUGIN_DIR/bin/collie'" back="change-prompt($DASH_PROMPT)+clear-screen"
-  local items n cur k ids="" m
-  for m in "${@:3}"; do [ -z "$m" ] || ids="$ids '$m'"; done
+  local back="change-prompt($DASH_PROMPT)+refresh-preview"
+  local items n cur k
   dash_group
   if [ "$2" = resize ]; then
-    # the menu would lose its drawing
     dash_layout
     case ${FZF_PROMPT:-} in "$PICK_MARK"*) ;; *) echo "change-preview-window($PREVIEW)+change-header($(dash_header "$GROUP" "$(dash_filter)"))" ;; esac
     return
   fi
+  if [ "${FZF_PROMPT:-}" != "$SEARCH_PROMPT" ] && [ -n "${COLLIE_DASH:-}" ] &&
+    [ "$(head -n 1 "$COLLIE_DASH/msg" 2>/dev/null)" = fail ]; then
+    rm -f "$COLLIE_DASH/msg"
+    echo refresh-preview
+    return
+  fi
   case ${FZF_PROMPT:-} in
     "$PICK_MARK"*) ;;
+    "$ASK_MARK"*)
+      if [ "$2" = y ]; then
+        # shellcheck disable=SC2086  # the key and ids, split
+        dash_bg ${FZF_PROMPT#"$ASK_MARK"}
+      else
+        echo "$back"
+      fi
+      return
+      ;;
     "$SEARCH_PROMPT"*)
       case $2 in
         esc) echo "clear-query+change-prompt($DASH_PROMPT)+change-header($(dash_header "$GROUP"))" ;;
@@ -399,14 +397,14 @@ cmd__key() { # key [id [marked id...]]
         enter) if [ -n "$1" ]; then echo clear-multi+accept; fi ;;
         space) if [ -n "$1" ]; then echo toggle; fi ;;
         /) echo "show-input+change-prompt($SEARCH_PROMPT)" ;;
-        '?') cmd__pick "$1" ;;
+        # fzf shows no preview, so no menu, without a row
+        '?') if [ "${FZF_MATCH_COUNT:-1}" -gt 0 ]; then cmd__pick "$1"; fi ;;
         up | down) dash_move "$2" ;;
         j) dash_move down ;;
         k) dash_move up ;;
         *)
           k=$(action_items "$1" | cut -c1 | grep -xF -- "$2" || true)
-          [ "$k" = s ] || ids=""
-          [ -z "$k" ] || echo "$back+execute($self _actions '$1' '$k'$ids)+reload($self _rows)+refresh-preview"
+          [ -z "$k" ] || dash_action "$1" "$k" "${@:3}"
           ;;
       esac
       return
@@ -421,20 +419,149 @@ cmd__key() { # key [id [marked id...]]
   case $2 in
     up | down)
       if [ "$2" = up ]; then cur=$(((cur + n - 2) % n + 1)); else cur=$((cur % n + 1)); fi
-      pick_draw "$1" "$cur" || true
-      echo "change-prompt($PICK_MARK$(printf '%s\n' "$items" | sed -n "${cur}p" | cut -c4-) )"
+      echo "change-prompt($PICK_MARK$(printf '%s\n' "$items" | sed -n "${cur}p" | cut -c4-) )+refresh-preview"
       return
       ;;
     enter) k=$(printf '%s\n' "$items" | sed -n "${cur}p" | cut -c1) ;;
     esc) k="" ;;
     *) k=$(printf '%s\n' "$items" | cut -c1 | grep -xF -- "$2" || true) ;;
   esac
-  [ "$k" = s ] || ids=""
   if [ -n "$k" ]; then
-    echo "$back+execute($self _actions '$1' '$k'$ids)+reload($self _rows)+refresh-preview"
+    dash_action "$1" "$k" "${@:3}"
   else
     echo "$back"
   fi
+}
+
+# fzf actions for a dashboard action (see action_items) on a task and the
+# marked ids (sync only). Edit, terminal and new task take the screen (see
+# _actions); review switches the panel to `collie review` and back; run starts
+# in the background; done, archive, adopt and sync ask y/n in the panel first
+# (the prompt holds "<ASK_MARK><key> <id...> "), then run in the background.
+dash_action() { # id key [marked id...]
+  local self="'$BASH' '$PLUGIN_DIR/bin/collie'" id=$1 k=$2 m ids=""
+  shift 2
+  case $k in
+    e | t | c) echo "change-prompt($DASH_PROMPT)+clear-screen+execute($self _actions '$id' '$k')+reload($self _rows)+refresh-preview" ;;
+    v)
+      if [ "${FZF_PREVIEW_LABEL:-}" = "$REVIEW_LABEL" ]; then
+        echo "change-prompt($DASH_PROMPT)+change-preview-label()+refresh-preview"
+      else
+        echo "change-prompt($DASH_PROMPT)+change-preview-label($REVIEW_LABEL)+refresh-preview"
+      fi
+      ;;
+    r) dash_bg r "$id" ;;
+    s)
+      for m in "$@"; do [ -z "$m" ] || ids="$ids $m"; done
+      echo "change-prompt($ASK_MARK$k${ids:- $id} )+refresh-preview"
+      ;;
+    *) echo "change-prompt($ASK_MARK$k $id )+refresh-preview" ;;
+  esac
+}
+
+# What an action key does, for the panel: run, adopt, done, archive, sync.
+action_verb() { # key
+  case $1 in r) echo run ;; a) echo adopt ;; d) echo "done" ;; x) echo archive ;; s) echo sync ;; esac
+}
+
+# fzf actions that start _bg for an action, with a "running" line in the panel.
+dash_bg() { # key id...
+  local self="'$BASH' '$PLUGIN_DIR/bin/collie'" k=$1
+  shift
+  [ -z "${COLLIE_DASH:-}" ] || panel_msg run "… $(action_verb "$k") $*"
+  echo "change-prompt($DASH_PROMPT)+refresh-preview+bg-transform($self _bg $k $*)"
+}
+
+# Writes the panel's message: kind (run, ok, fail) on the first line.
+panel_msg() { # kind text
+  [ -d "${COLLIE_DASH:-}" ] || return 0
+  printf '%s\n%s\n' "$1" "$2" >"$COLLIE_DASH/msg.$$" && mv "$COLLIE_DASH/msg.$$" "$COLLIE_DASH/msg"
+}
+
+# A dashboard action in the background (an fzf bg-transform), immune to the
+# popup closing; then the rows reload and the panel reports: one green line
+# that fades (see _fade), or the output in red until a key.
+cmd__bg() { # key id...
+  local self="'$BASH' '$PLUGIN_DIR/bin/collie'" k=$1 a out rc=0
+  shift
+  case $k in
+    r) a=(run "$1") ;;
+    a) a=(adopt "$1" -y) ;;
+    d) a=("done" "$1") ;;
+    x) a=(archive "$1") ;;
+    s) a=(sync "$@") ;;
+    *) return 0 ;;
+  esac
+  out="${COLLIE_DASH:-${TMPDIR:-/tmp}}/out.$$"
+  # its own file: the popup may close (and this shell die) before it ends
+  (
+    trap '' HUP PIPE
+    exec "$BASH" "$PLUGIN_DIR/bin/collie" "${a[@]}"
+  ) </dev/null >"$out" 2>&1 || rc=$?
+  if [ "$rc" -eq 0 ]; then
+    panel_msg ok "✓ $(action_verb "$k") $*"
+    echo "reload($self _rows)+refresh-preview+bg-transform($self _fade)"
+  else
+    panel_msg fail "✗ $(action_verb "$k") $* (exit $rc)"$'\n'"$(cat "$out")"
+    echo "reload($self _rows)+refresh-preview"
+  fi
+  rm -f "$out"
+}
+
+# Clears a success line from the panel after a moment (an fzf bg-transform).
+cmd__fade() {
+  sleep 2
+  [ "$(head -n 1 "${COLLIE_DASH:-}/msg" 2>/dev/null)" = ok ] || return 0
+  rm -f "$COLLIE_DASH/msg"
+  echo refresh-preview
+}
+
+# The dashboard's preview doubles as its action panel: a failed action's
+# output (until a key), the ? menu, a y/n question (sync shows `sync -n`
+# below it, done and archive the task), or `collie review` (v); a running or
+# finished action puts one line on top. Fails when the task preview follows.
+dash_panel() { # id
+  local f="${COLLIE_DASH:-}/msg" kind line k ids
+  if [ -f "$f" ]; then
+    { read -r kind && read -r line; } <"$f" || true
+    case $kind in
+      fail)
+        printf '\033[31m'
+        tail -n +2 "$f"
+        printf '\033[0m\n[press any key]\n'
+        return 0
+        ;;
+      ok) printf '\033[32m%s\033[0m\n\n' "$line" ;;
+      *) printf '\033[33m%s\033[0m\n\n' "$line" ;;
+    esac
+  fi
+  case ${FZF_PROMPT:-} in
+    "$PICK_MARK"*)
+      pick_lines "$1" "$(k=${FZF_PROMPT#"$PICK_MARK"} && echo "${k% }")"
+      return 0
+      ;;
+    "$ASK_MARK"*)
+      read -r k ids <<<"${FZF_PROMPT#"$ASK_MARK"}"
+      printf '\033[1;33m%s %s? (y/n)\033[0m\n\n' "$(action_verb "$k")" "$ids"
+      case $k in
+        s)
+          # shellcheck disable=SC2086  # the ids, split
+          "$BASH" "$PLUGIN_DIR/bin/collie" sync -n $ids 2>&1
+          return 0
+          ;;
+        a)
+          echo "stops the agent started by hand and resumes it under collie run"
+          return 0
+          ;;
+      esac
+      return 1
+      ;;
+  esac
+  if [ "${FZF_PREVIEW_LABEL:-}" = "$REVIEW_LABEL" ] && [ -n "$1" ]; then
+    "$BASH" "$PLUGIN_DIR/bin/collie" review "$1" 2>&1
+    return 0
+  fi
+  return 1
 }
 
 # up / down on the dashboard, over a group separator when it lands on one
@@ -461,37 +588,19 @@ action_items() { # [id]
   printf '%s\n' 'c  new task'
 }
 
-# Runs the dashboard action for a key (see action_items); done and archive ask
-# first. sync shows `sync -n` for the marked ids (default: id), then asks.
-cmd__actions() { # id key [marked id...]
-  local id=${1:-} k=${2:-} self="'$BASH' '$PLUGIN_DIR/bin/collie'" a m ids=""
+# Runs a dashboard action that takes the screen (see dash_action): edit,
+# terminal, new task.
+cmd__actions() { # id key
+  local id=${1:-} k=${2:-} self="'$BASH' '$PLUGIN_DIR/bin/collie'" a
   [ ! -t 1 ] || printf '\033[H\033[2J'
   case ${id:+x}$k in
-    xs)
-      for m in "${@:3}"; do ids="$ids '$m'"; done
-      [ -n "$ids" ] || ids=" '$id'"
-      cmd__popup "$self sync -n$ids" || return 0
-      read -r -p "sync${ids//\'/}? (y/n) " k || return 0
-      [ "$k" = y ] || return 0
-      a="$self sync$ids"
-      ;;
-    xr) a="$self run '$id' -s" ;;
-    xa) a="$self adopt '$id'" ;;
     xe) a="$self edit '$id'" ;;
-    xv) a="$self review '$id' | less -R" ;;
     xt)
       # a shell in the task's first worktree; its exit status is not a failure
       a=$(awk -F'\t' 'NR == 1 { print $4 }' "$TASKS_DIR/$id/repos.tsv" 2>/dev/null)
       [ -d "$a" ] || a="$TASKS_DIR/$id"
       (cd "$a" && "${SHELL:-sh}") || true
       return 0
-      ;;
-    xd | xx)
-      a="done"
-      [ "$k" = d ] || a=archive
-      read -r -p "$a $id? (y/n) " k || return 0
-      [ "$k" = y ] || return 0
-      a="$self $a '$id'"
       ;;
     c | xc) a="$self new" ;;
     *) return 0 ;;
@@ -569,6 +678,7 @@ cmd__target() {
 # age, the Objective, runs, and per repo its branch, PRs and progress.
 cmd__preview() {
   local id d name c b p base top title ids line a
+  [ -z "${COLLIE_DASH:-}" ] || ! dash_panel "${1:-}" || return 0
   [ $# -eq 0 ] || [ -n "$1" ] || return 0 # a dash group separator
   task_id "${1:-}"
   d="$TASKS_DIR/$id"

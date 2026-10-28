@@ -157,15 +157,55 @@ wt() { echo "$TMP/repos/A/feat-$1"; }
   grep -q "run_started	run=2 agent=sleep repo=A" "$(task_dir c)/events.log"
 }
 
-@test "dash sync: shows sync -n for the marked ids, asks, then syncs only those" {
+@test "sync: Codex skips working/waiting, targets its split pane, and restarts after exit" {
+  mkdir "$TMP/bin"
+  export PATH="$TMP/bin:$PATH" CODEX_ARGS="$TMP/codex-args"
+  cat >"$TMP/bin/codex" <<'SH'
+#!/bin/sh
+printf '%s\n' "$@" >"$CODEX_ARGS"
+exec cat
+SH
+  chmod +x "$TMP/bin/codex"
+  collie new c --no-window
+  commit_in "$(wt c)" f mine
+  collie run c --agent codex -p ''
+  hook c working
+  land f theirs
+  run --separate-stderr collie sync c
+  [[ "$output" == *'skipped: agent busy'* ]]
+  hook c waiting
+  run --separate-stderr collie sync c
+  [[ "$output" == *'skipped: agent busy'* ]]
+  hook c idle
+  agent=$(run_pane c)
+  other=$(tmux split-window -P -F '#{pane_id}' -t "$agent")
+  run --separate-stderr collie sync c
+  [[ "$output" == *'conflict in f; sent to the agent'* ]]
+  wait_for "tmux capture-pane -p -J -t '$agent' | grep -q 'conflicts in: f. Resolve them'"
+  ! tmux capture-pane -p -J -t "$other" | grep -q 'Resolve them'
+  git -C "$(wt c)" merge --abort
+  # EOF exits the actual adapter process; the wrapper records its exit.
+  tmux send-keys -t "$agent" C-d
+  wait_for 'grep -q "run_exited" "$(task_dir c)/events.log"'
+  run --separate-stderr collie sync c
+  [[ "$output" == *'started a codex run'* ]]
+  wait_for 'grep -q "Your task contract" "$CODEX_ARGS"'
+  grep -q 'run_started.*run=2 agent=codex' "$(task_dir c)/events.log"
+}
+
+@test "dash sync: the panel shows sync -n for the marked ids; y syncs only those" {
   for t in a b c; do collie new "$t" --no-window; done
   for t in a b c; do commit_in "$(wt $t)" "$t"; done
   land other
-  run --separate-stderr collie _actions a s a b <<<n
+  export COLLIE_DASH="$TMP/dash"
+  mkdir -p "$COLLIE_DASH"
+  [ "$(FZF_PROMPT='collie> ' collie _key s a a b)" = "change-prompt(? s a b )+refresh-preview" ]
+  run --separate-stderr env FZF_PROMPT='? s a b ' bash "$COLLIE_ROOT/bin/collie" _preview a
+  [[ "$output" == *"sync a b? (y/n)"* ]]
   [[ "$output" == *"a A: would merge 1 commit(s) from origin/main"* ]]
   [[ "$output" == *"b A: would merge"* && "$output" != *"c A:"* ]]
   [ ! -f "$(wt a)/other" ]
-  run --separate-stderr collie _actions a s a b <<<y
+  collie _bg s a b >/dev/null
   [ -f "$(wt a)/other" ] && [ -f "$(wt b)/other" ] && [ ! -f "$(wt c)/other" ]
   [ "$(git -C "$(wt c)" log -1 --format=%s)" = "add c" ]
 }
@@ -174,7 +214,8 @@ wt() { echo "$TMP/repos/A/feat-$1"; }
   for t in a b; do collie new "$t" --no-window; done
   for t in a b; do commit_in "$(wt $t)" "$t"; done
   land other
-  run --separate-stderr collie _actions b s <<<y
+  [ "$(FZF_PROMPT='collie> ' collie _key s b b)" = "change-prompt(? s b )+refresh-preview" ]
+  collie _bg s b >/dev/null
   [ -f "$(wt b)/other" ] && [ ! -f "$(wt a)/other" ]
 }
 

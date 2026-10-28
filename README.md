@@ -12,7 +12,7 @@ See [docs/DESIGN.md](docs/DESIGN.md) for goals, data model and roadmap, and
 ## Install
 
 Requires bash 3.2+ (macOS `/bin/bash` is fine), git and tmux 3.2+.
-Optional: [fzf](https://github.com/junegunn/fzf) 0.59+ (`dash`, `go` without an id),
+Optional: [fzf](https://github.com/junegunn/fzf) 0.63+ (`dash`, `go` without an id),
 [lazygit](https://github.com/jesseduffield/lazygit) (menu entry), and at least
 one coding agent CLI (claude, codex, gemini or omp). `collie doctor` checks
 all of these.
@@ -131,16 +131,20 @@ background (and by `sync` and `gc`). Rows come in groups under a
 `── <group> (<n>) ──` line, the most urgent next to the prompt: needs you,
 active, todo. `tab` / `shift-tab` switch the grouping (status, priority,
 repo); it is kept for the next dashboard. Keys work like lazygit: they act
-directly, and only `/` opens a filter. `enter` goes to the task; `r` runs an
-agent, `a` adopts one, `e` edits TASK.md, `v` reviews, `t` opens a terminal,
-`d` marks it done and `x` archives it (both after a y/n prompt), `s` syncs, `c`
-creates a task; `j` / `k` move, `space` marks or unmarks a task (marked rows
+directly, and only `/` opens a filter. The preview pane doubles as the action
+panel, so the list stays in view. `enter` goes to the task; `r` runs an agent
+in the background (the row updates; `enter` jumps to it), `a` adopts one, `d`
+marks the task done and `x` archives it (each after y/n in the panel, then in
+the background), `v` switches the panel to `collie review` and back
+(`shift-↑/↓` scroll), `s` syncs; `e` edits TASK.md, `t` opens a terminal and
+`c` creates a task, full screen. A finished action leaves one line in the
+panel that fades; a failed one shows its output in red until a key. `j` / `k` move, `space` marks or unmarks a task (marked rows
 show `*`), `q` or esc quits. In the `/` filter every key types; `enter` keeps
 the filter (the header shows `filter: <query>`) and returns to the keys, esc drops it. `?`
-opens the action menu above the selected row (run agent, adopt agent, edit
+opens the action menu in the panel (run agent, adopt agent, edit
 task, review, terminal, done, archive, sync, new task): press its key, or move
 with ↑↓ and press enter; esc closes it. `sync` (`s`) shows `collie sync -n` for the marked
-tasks (or the selected one when none is marked), asks y/n, then syncs only
+tasks (or the selected one when none is marked) in the panel, asks y/n, then syncs only
 those; switching the grouping clears the marks. The header lists the direct keys. The preview shows
 the start of TASK.md's Objective.
 The preview also shows the live agents, the age of the last event, and each
@@ -151,7 +155,7 @@ of being cut.
 `prefix h` opens a menu (dashboard, lazygit, terminal, new
 task, edit task, review, run agent, adopt agent, done, archive, jump to alert, gc merged tasks) for the current session's task; outside a
 task session it keeps only dashboard, lazygit, terminal, new task, jump to alert and gc merged tasks.
-`run agent` (`r`, here and in the dashboard) switches you to the new agent window;
+`run agent` (`r`) switches you to the new agent window;
 plain `collie run` leaves it in the background (`-s` switches). `jump to alert` (`j`) switches to the pane of the last agent that notified. `prefix h h` goes straight to the
 dashboard. `new task` (`c`) prompts in a popup, creates the task from the
 current pane's repo and switches to it. A popup whose command fails stays open
@@ -179,22 +183,31 @@ Claude Code, Codex and Gemini CLI report their state through hooks that
 collie passes per run (`--settings`, `-c hooks...`, a generated system
 settings file); omp through an extension loaded with `-e agents/omp.ts`
 (tool approvals and the `ask` tool count as waiting); nothing to install.
-Codex asks you to trust the hooks once in `/hooks`. Other agents count as
-idle after 30s without output (`@collie-silence`).
+Codex is tested with 0.165.0. Collie starts it with `--no-daemon` and
+`--sandbox workspace-write` for access to the task directory and other repos.
+Review and trust Collie's hooks in `/hooks`, including after they change;
+until trusted, state is estimated from output silence and the guard is inactive.
+Waiting alerts require the standard English approval/question prompts; custom
+prompts and startup trust dialogs may not notify. Other agents count as idle
+after 30s without output (`@collie-silence`).
 The same three also get `hooks/tmux-guard`, which blocks shell commands that
 would kill your tmux server (`tmux kill-server`/`kill-session`, `pkill tmux`)
 unless they name a private server with `-L`/`-S`; limits in DESIGN.md.
 Agents you start by hand in a task's session (`claude`, `codex`, `gemini`,
 `omp`, `aider`) are found by process and show up the same way, but without
 hooks they are only working or idle (by output silence) and do not notify.
-`collie adopt` (dashboard `?` → `a`, `prefix h` → `a`) stops such a Claude or omp and restarts
-it with `collie run … -- --continue` (omp: `-c`): same conversation, now with
-hooks.
+`collie adopt` (dashboard `?` → `a`, `prefix h` → `a`) restarts a hand-started
+Claude, Codex or omp with the same conversation and hooks. For Codex, start it
+with `--no-daemon` and have `lsof` installed. If Collie cannot identify the
+conversation, it leaves the process running.
 When the tmux server dies, `collie restore` (`-n` to list) restarts every
 agent run that was live, each resuming its own conversation: claude by the
-session id its `SessionStart` hook logged (`--resume <id>`), omp by the
+session id its `SessionStart` hook logged (`--resume <id>`), Codex by its logged
+id (`resume <id>`), omp by the
 latest one in its worktree (`-c`, one run per worktree); other agents are
-skipped. `set -g @collie-restore on` runs it when the plugin loads.
+skipped. Codex without a captured identity is skipped with a diagnostic, never
+resumed using the latest conversation. `set -g @collie-restore on` runs restore
+when the plugin loads. Run `collie doctor` for version and setup diagnostics.
 
 ```tmux
 set -g status-right '#{collie_status} %H:%M'   # ●waiting ●idle ●working counts
