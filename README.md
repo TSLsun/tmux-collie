@@ -180,27 +180,23 @@ Claude Code, Codex and Gemini CLI report their state through hooks that
 collie passes per run (`--settings`, `-c hooks...`, a generated system
 settings file); omp through an extension loaded with `-e agents/omp.ts`
 (tool approvals and the `ask` tool count as waiting); nothing to install.
-Codex (tested with 0.165.0) uses a dedicated `--no-daemon` process and
-`--sandbox workspace-write` so the task directory and other repos are writable.
-Review and trust its hooks in `/hooks`; changed definitions need review again.
-Until a hook actually runs, Collie uses output-silence fallback. Other agents
-also count as idle after 30s without output (`@collie-silence`).
-Codex permission reviews can be automatic: Collie alerts only after its standard
-English approval/question footer appears, and returns to working when it closes,
-without waiting for the tool to finish. Customized/changed footers are unverified
-and may leave a genuine wait showing working; startup trust dialogs have no wait
-notification. Hooks and the tmux guard do not run until trusted.
+Codex is tested with 0.165.0. Collie starts it with `--no-daemon` and
+`--sandbox workspace-write` for access to the task directory and other repos.
+Review and trust Collie's hooks in `/hooks`, including after they change;
+until trusted, state is estimated from output silence and the guard is inactive.
+Waiting alerts require the standard English approval/question prompts; custom
+prompts and startup trust dialogs may not notify. Other agents count as idle
+after 30s without output (`@collie-silence`).
 The same three also get `hooks/tmux-guard`, which blocks shell commands that
 would kill your tmux server (`tmux kill-server`/`kill-session`, `pkill tmux`)
 unless they name a private server with `-L`/`-S`; limits in DESIGN.md.
 Agents you start by hand in a task's session (`claude`, `codex`, `gemini`,
 `omp`, `aider`) are found by process and show up the same way, but without
 hooks they are only working or idle (by output silence) and do not notify.
-`collie adopt` (dashboard `?` → `a`, `prefix h` → `a`) stops such a Claude, Codex or omp and restarts
-it with `collie run … -- --continue` (omp: `-r <id>` of the session it holds
-open, else `-c`): same conversation, now with hooks. Codex resumes the exact id
-of its sole open rollout (`lsof` required). Hand-start Codex with `--no-daemon`;
-shared-daemon/ambiguous conversations are refused before stopping anything.
+`collie adopt` (dashboard `?` → `a`, `prefix h` → `a`) restarts a hand-started
+Claude, Codex or omp with the same conversation and hooks. For Codex, start it
+with `--no-daemon` and have `lsof` installed. If Collie cannot identify the
+conversation, it leaves the process running.
 When the tmux server dies, `collie restore` (`-n` to list) restarts every
 agent run that was live, each resuming its own conversation: claude by the
 session id its `SessionStart` hook logged (`--resume <id>`), Codex by its logged

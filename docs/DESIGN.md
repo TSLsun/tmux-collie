@@ -251,8 +251,6 @@ AGENT_HOOKS=1         # 1 if the agent reports state through `collie state`
 agent_argv            # sets AGENT_ARGV from RUN_PROMPT (initial prompt),
                       # RUN_NAME (session name, "<id>: <title>") and
                       # RUN_DIRS (other worktrees + task dir, one per line)
-                      # receives forwarded CLI arguments; normally appended
-                      # by run, or consumed with AGENT_EXTRA_HANDLED=1
 ```
 
 An agent name without an adapter file runs as-is (generic adapter):
@@ -275,7 +273,7 @@ fire in sessions collie started and the user's settings stay untouched:
 |---|---|---|
 | claude | hooks via `--settings` (above) | working/idle/exited verified; waiting unverified |
 | omp | extension `agents/omp.ts` loaded with `-e` (omp has no command hooks): `agent_start`/`tool_execution_end` → working, `tool_approval_requested` → waiting, `tool_approval_resolved` → working, `agent_end` → idle, `session_shutdown` → exited | fake agent only |
-| codex | invocation-scoped `-c hooks.<Event>=[...]`: `SessionStart` captures id; `UserPromptSubmit`/`PostToolUse` → working; `Stop`/`Interrupt` → idle; wrapper/`SessionEnd` → exited. `PermissionRequest`/`PreToolUse(request_user_input)` start a TUI wait observer | real 0.165.0 on macOS; standard English TUI, see UNVERIFIED |
+| codex | per-run hooks for state and conversation identity; visible approval/question prompts determine waiting | real 0.165.0 on macOS; standard English TUI, see UNVERIFIED |
 | gemini | hooks in a generated settings file passed as `GEMINI_CLI_SYSTEM_SETTINGS_PATH`: `BeforeAgent`/`AfterTool` → working, `Notification` (`ToolPermission`) → waiting, `AfterAgent` → idle, `SessionEnd` → exited; hooks print `{}` | fake agent only |
 | generic | wrapper exit + `window_activity`: working → idle after `@collie-silence` s (30) without output | always works, coarse; no `waiting` |
 
@@ -284,40 +282,10 @@ Agents that strip the hook environment (gemini) lose `$TMUX_PANE`;
 The `collie _exec` wrapper waits until `collie run` has tagged the window before
 starting the agent, so the first hook never races the tagging.
 
-Codex uses `--no-daemon` to keep each run's hook environment and open rollout
-in its own process. Its default `--sandbox workspace-write` enables `--add-dir`
-access to other worktrees and task state (Codex rejects add-dir with read-only
-permissions). Forwarded arguments precede the prompt, so `resume <id> [prompt]`
-is parsed as a subcommand. User config/hook files are never rewritten, and
-existing hook sources still load; Collie never bypasses hook trust.
-
-`AGENT_HOOKS_PENDING=1` initially tags a window with `@collie_hooks=0`; a real
-`_codex-hook` enables hooks. Untrusted hooks therefore retain the coarse silence
-fallback. Trust review is necessary again after a definition changes.
-
-Codex's `PermissionRequest` runs before hook/automatic/user review, and there
-is no approval-resolved hook in 0.165.0. Marking it waiting immediately both
-falsely alerts on automatic review and leaves slow approved commands waiting.
-The observer polls the current pane footer every 0.2s, requires two observations
-of a confirmation/question footer, and returns to working after it disappears.
-It reads no scrollback; idle/exited hooks cancel it through `@collie_codex_pending`.
-Concurrent working hooks leave an outstanding observer authoritative. Its token
-check and state update run atomically on the tmux server; notification delivery
-rechecks the current state to discard already-resolved transitions.
-This is a version-sensitive TUI fallback, not a stable Codex event API. Unknown
-footers leave working rather than inventing a need for a human answer.
-
-Every trusted lifecycle payload can capture identity (including after late hook
-trust); explicit resume UUIDs are also recorded before the first new turn.
-Codex adoption resolves exactly one UUID rollout held open by the detected PID
-using `lsof`; multiple/no rollouts are refused before termination. Shared-daemon
-sessions cannot be resolved this way. Restore requires `SessionStart.session_id`
-and never guesses the latest conversation. Missing identities are diagnosed.
-Live/scheduled Codex conversation ids are deduplicated during restore.
-An existing shared restore limitation remains: closing a window without a
-`run_exited` record and then losing the server can make that old run appear lost.
-Same-id Codex duplicates resume once; distinct old closed identities may still
-appear in `restore -n`. Inspect the dry run before restoring such a history.
+Codex uses a dedicated process and captures exact conversation ids for adoption
+and restore. It confirms visible human prompts before reporting waiting, since
+permission review may be automatic. See [Agent details](../README.md#agent-details)
+for setup and [UNVERIFIED](UNVERIFIED.md#p4--more-agents--doctor) for limitations.
 
 `exited` / `unknown` are also derived: a run whose window is gone (no
 `run_exited` logged) is `exited` while the session exists and `unknown` once the

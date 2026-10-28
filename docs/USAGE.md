@@ -154,15 +154,7 @@ runs lost with a dead tmux server (claude and codex by their logged session id, 
 the worktree's latest conversation); agents started by hand are not
 recorded, so they are not restored.
 
-Codex is tested with 0.165.0. Collie uses a dedicated process (`--no-daemon`)
-and workspace-write permissions for task/other-repo access. Trust Collie's hooks
-in `/hooks`; until they run, status uses the silence fallback. Permission review
-alone does not trigger a notification: the standard English approval/question
-footer must be visible. Closing it clears waiting even during a long command.
-Changed/custom TUI footers and startup trust dialogs may remain working.
-For adoption, start manual Codex with `--no-daemon`; Collie requires one open
-rollout owned by its process (`lsof`). Ambiguity and missing restore identities
-produce diagnostics instead of selecting a different conversation.
+For Codex setup and limitations, see [Agent details](../README.md#agent-details).
 
 ## 5. Where each action lives
 
