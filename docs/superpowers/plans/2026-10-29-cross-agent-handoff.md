@@ -31,16 +31,16 @@
 
 **Interfaces:** `cmd_handoff [id] --from run --agent claude|codex --note file [-r repo]`; `cmd_run` exposes `RUN_STARTED` after launch.
 
-- [ ] Add tests with stub executables for both directions, packet preservation, source-session preservation, validation and failure events.
-- [ ] Run `bats test/handoff.bats`; confirm missing-command failures.
-- [ ] Implement note validation, event lookup, packet snapshots, new run launch and handoff linkage.
-- [ ] Run the focused suite and lint; commit feature and tests together.
+- [x] Add tests with stub executables for both directions, packet preservation, source-session preservation, validation and failure events.
+- [x] Run `bats test/handoff.bats`; confirm missing-command failures.
+- [x] Implement note validation, event lookup, packet snapshots, new run launch and handoff linkage.
+- [x] Run the focused suite and lint; commit feature and tests together.
 
 ## Task 2: Documentation and delivery
 
 **Files:** `README.md`, `lib/usage.sh`, `completions/_collie`, `.collie/REPORT.md`.
 
-- [ ] Add command usage and examples in place; explain fresh conversations, source lifecycle and read-only packets.
-- [ ] Run `make check`; report every failure.
+- [x] Add command usage and examples in place; explain fresh conversations, source lifecycle and read-only packets.
+- [x] Run `make check`; report every failure (186 tests pass; sandbox-only failures preserved in the task verification log).
 - [ ] Review the diff and commit docs; push the task branch and create a PR using `GH`.
 - [ ] Check CI, update REPORT.md with evidence, and stop for human review.

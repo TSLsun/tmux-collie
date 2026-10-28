@@ -60,6 +60,8 @@ collie run deploy-v2                   # claude in a new window of the task sess
 collie run deploy-v2 -r B -p 'fix CI'  # in repo B's worktree, custom first prompt
 collie run deploy-v2 --agent codex      # also: gemini, omp; state hooks injected per run
 collie run --agent aider -- --model x  # any command works (no state hooks)
+collie handoff deploy-v2 --from 1 --agent codex --note handoff.md
+                                      # new conversation, preserving run 1's context
 collie doctor                          # deps, agents, task/worktree consistency
 collie ls                              # agent column: waiting/idle/working/exited/unknown
 ```
@@ -197,6 +199,25 @@ hooks they are only working or idle (by output silence) and do not notify.
 Claude, Codex or omp with the same conversation and hooks. For Codex, start it
 with `--no-daemon` and have `lsof` installed. If Collie cannot identify the
 conversation, it leaves the process running.
+
+`collie handoff <id> --from <run> --agent <claude|codex> --note <file>`
+continues Claude work with Codex, or Codex work with Claude. Use `collie show`
+to choose the source run. Write a nonempty note covering completed work,
+decisions, verification, unresolved issues, and the next action. The command
+prints a unique packet directory under the task's `handoffs/`, containing
+`HANDOFF.md`, `NOTE.md`, a `TASK.md` snapshot, and `REPORT.md` when present.
+These files are read-only to prevent accidental changes; their owner can still
+change permissions. Later task/report edits do not overwrite the snapshots.
+The current TASK.md remains authoritative.
+
+The destination starts a fresh conversation in a separate run/window, using
+the source repository unless `-r <repo>` selects another task repository. Both
+runs keep their own session IDs; no private transcript or resume ID is passed
+between agents. A `run_handoff` event links the source and destination runs to
+the packet. A failed launch keeps its packet for diagnosis without a success
+event. The source agent stays running: stop or pause its work yourself before
+handoff if concurrent edits would conflict. No branch is merged by handoff.
+
 When the tmux server dies, `collie restore` (`-n` to list) restarts every
 agent run that was live, each resuming its own conversation: claude by the
 session id its `SessionStart` hook logged (`--resume <id>`), Codex by its logged
