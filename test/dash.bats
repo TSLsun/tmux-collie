@@ -198,7 +198,7 @@ EOF
 
 @test "_group: tab cycles the grouping, kept across dashboards; not while the menu is up" {
   collie new a --no-window
-  [[ "$(FZF_PROMPT='collie> ' collie _group next)" == "change-header(enter: go  tab: group by "$'\033[1;33m'"priority"$'\033[0m\n'"^r: run  ^v: review  ^e: edit  ^d: done  ?: more)+reload("*"_rows)" ]]
+  [[ "$(FZF_PROMPT='collie> ' collie _group next)" == "change-header(enter: go  tab: group by "$'\033[1;33m'"priority"$'\033[0m'"  space: mark  /: search"$'\n'"^r: run  ^v: review  ^e: edit  ^d: done  ?: more)+reload("*"_rows)" ]]
   [[ "$(collie _rows | sed -n 3p)" == *"── P2 (1) ─"* ]]
   FZF_PROMPT='collie> ' collie _group next >/dev/null
   [ "$(cat "$COLLIE_STATE_DIR/dash-group")" = repo ]
@@ -257,7 +257,7 @@ EOF
 @test "_key: menu keys act only while the menu prompt is up; arrows move the selection" {
   [ "$(FZF_PROMPT='collie> ' collie _key x r)" = "put(r)" ]
   [ "$(FZF_PROMPT='collie> ' collie _key x esc)" = abort ]
-  [ "$(FZF_PROMPT='collie> ' collie _key x enter)" = accept ]
+  [ "$(FZF_PROMPT='collie> ' collie _key x enter)" = clear-multi+accept ]
   [ "$(FZF_PROMPT='collie> ' collie _key x up)" = up ]
   [[ "$(FZF_PROMPT='▸ run agent ' collie _key x r)" == "change-prompt(collie> )+clear-screen+execute("*"_actions 'x' 'r')+reload("*"_rows)+refresh-preview" ]]
   [ "$(FZF_PROMPT='▸ run agent ' collie _key x down)" = "change-prompt(▸ adopt agent )" ]
@@ -342,4 +342,22 @@ EOF
   collie new x
   tmux run-shell "$COLLIE_ROOT/bin/collie done x"
   [ "$(fm x status)" = done ]
+}
+
+@test "_key: space marks tasks (not separators), / starts a search where space and / type" {
+  [ "$(FZF_PROMPT='collie> ' collie _key x space)" = toggle ]
+  [ -z "$(FZF_PROMPT='collie> ' collie _key '' space)" ]
+  [ "$(FZF_PROMPT='collie> ' collie _key x /)" = "change-prompt(/ )" ]
+  [ "$(FZF_PROMPT='/ ' collie _key x space)" = "put( )" ]
+  [ "$(FZF_PROMPT='/ ' collie _key x /)" = "put(/)" ]
+  [ "$(FZF_PROMPT='/ ' collie _key x r)" = "put(r)" ]
+  [ "$(FZF_PROMPT='/ ' collie _key x esc)" = "change-prompt(collie> )" ]
+  [ "$(FZF_PROMPT='/ ' collie _key x enter)" = clear-multi+accept ]
+}
+
+@test "_key: sync gets the marked ids (separators dropped), other actions only the cursor's" {
+  [[ "$(FZF_PROMPT='▸ run agent ' collie _key x s a '' b)" == *"_actions 'x' 's' 'a' 'b')+reload("* ]]
+  [[ "$(FZF_PROMPT='▸ run agent ' collie _key x e a b)" == *"_actions 'x' 'e')+reload("* ]]
+  [ "$(FZF_PROMPT='collie> ' collie _key x s a b)" = "put(s)" ]
+  [ "$(FZF_PROMPT='▸ archive ' collie _key x down)" = "change-prompt(▸ sync )" ]
 }

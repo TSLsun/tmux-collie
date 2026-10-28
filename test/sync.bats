@@ -123,3 +123,24 @@ wt() { echo "$TMP/repos/A/feat-$1"; }
   git -C "$(wt c)" rev-parse -q --verify MERGE_HEAD
   grep -q "run_started	run=2 agent=sleep repo=A" "$(task_dir c)/events.log"
 }
+
+@test "dash sync: shows sync -n for the marked ids, asks, then syncs only those" {
+  for t in a b c; do collie new "$t" --no-window; done
+  for t in a b c; do commit_in "$(wt $t)" "$t"; done
+  land other
+  run --separate-stderr collie _actions a s a b <<<n
+  [[ "$output" == *"a A: would merge 1 commit(s) from origin/main"* ]]
+  [[ "$output" == *"b A: would merge"* && "$output" != *"c A:"* ]]
+  [ ! -f "$(wt a)/other" ]
+  run --separate-stderr collie _actions a s a b <<<y
+  [ -f "$(wt a)/other" ] && [ -f "$(wt b)/other" ] && [ ! -f "$(wt c)/other" ]
+  [ "$(git -C "$(wt c)" log -1 --format=%s)" = "add c" ]
+}
+
+@test "dash sync: with nothing marked, syncs the task under the cursor only" {
+  for t in a b; do collie new "$t" --no-window; done
+  for t in a b; do commit_in "$(wt $t)" "$t"; done
+  land other
+  run --separate-stderr collie _actions b s <<<y
+  [ -f "$(wt b)/other" ] && [ ! -f "$(wt a)/other" ]
+}
