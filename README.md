@@ -120,10 +120,14 @@ running agent, the age of the last event, repos. Rows come in groups under a
 active, todo. `tab` / `shift-tab` switch the grouping (status, priority,
 repo); it is kept for the next dashboard. `enter` goes to the
 task; `ctrl-r` runs an agent, `ctrl-v` reviews, `ctrl-e` edits TASK.md and
-`ctrl-d` marks it done (after a y/n prompt), so typing still filters. `?` opens
+`ctrl-d` marks it done (after a y/n prompt), so typing still filters. `space`
+marks or unmarks a task (marked rows show `*`); `/` starts a search in which
+space and `/` type, and esc ends it. `?` opens
 the full action menu above the selected row (run agent, adopt agent, edit task,
-review, terminal, done, archive, new task): press its key, or move with ↑↓ and
-press enter; esc closes it. The header lists the direct keys. The preview shows
+review, terminal, done, archive, sync, new task): press its key, or move with ↑↓ and
+press enter; esc closes it. `sync` (`s`) shows `collie sync -n` for the marked
+tasks (or the selected one when none is marked), asks y/n, then syncs only
+those; switching the grouping clears the marks. The header lists the direct keys. The preview shows
 the start of TASK.md's Objective.
 
 `prefix h` opens a menu (dashboard, lazygit, terminal, new
