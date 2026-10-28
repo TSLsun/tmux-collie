@@ -55,9 +55,11 @@ agents:
                       $COLLIE_AGENT, @collie-agent, else claude); -p '' = no prompt;
                       -s: switch the (current or -c) client to the window
   adopt [<id>] [-y]   restart an agent you started by hand in the task's session
-                      under collie run, resuming its conversation (claude, omp)
+                      under collie run, resuming its conversation (claude, codex, omp);
+                      codex requires an identifiable dedicated process (--no-daemon)
   restore [<id>] [-n]  restart the agents lost with the tmux server (all tasks
                       if no id), each resuming its conversation (-n: list)
+                      codex requires its captured conversation id; never guesses latest
   state <working|waiting|idle|exited>
                       called by agent hooks; no-op outside a collie window
   status              agent counts for the status bar (#{collie_status})

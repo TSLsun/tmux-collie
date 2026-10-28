@@ -25,8 +25,14 @@ cmd_doctor() {
     a=${a##*/}
     a=${a%.sh}
     if command -v "$a" >/dev/null; then
-      doc_line ok "$a $("$a" --version 2>/dev/null | head -n 1)"
-      [ "$a" != codex ] || doc_line note "codex: trust collie's hooks once via /hooks"
+      v=$("$a" --version 2>/dev/null | head -n 1)
+      doc_line ok "$a $v"
+      if [ "$a" = codex ]; then
+        [ "$v" = 'codex-cli 0.165.0' ] || doc_line warn "codex: tested with 0.165.0; this version is unverified (requires --no-daemon and lifecycle hooks)"
+        doc_line note "codex: review/trust Collie's hooks in /hooks; silence fallback until a hook runs"
+        doc_line note "codex: workspace-write, dedicated process; human waits require the standard English TUI footer"
+        doc_line note "codex: restore needs a captured id; adopt needs one open rollout (lsof, --no-daemon)"
+      fi
     else
       doc_line - "$a not installed"
     fi
