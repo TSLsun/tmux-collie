@@ -430,3 +430,19 @@ branch_of() { awk -F'\t' -v r="$2" '$1 == r { print $3 }' "$(task_dir "$1")/repo
   [[ "$(FZF_PROMPT='collie> ' collie _key s x a b)" == *"_actions 'x' 's' 'a' 'b')"* ]]
   [ "$(FZF_PROMPT='▸ archive ' collie _key down x)" = "change-prompt(▸ sync )" ]
 }
+
+@test "dash: keys work with no tasks (c opens new task, q quits)" {
+  command -v fzf >/dev/null || skip "fzf not installed"
+  tmux -f /dev/null new-session -d -s d -x 120 -y 30 \
+    "'${COLLIE_BASH:-bash}' '$COLLIE_ROOT/bin/collie' dash; echo dash-exit; sleep 60"
+  wait_for "tmux capture-pane -p -t =d: | grep -q 'no tasks'"
+  tmux send-keys -t =d: c
+  wait_for "tmux capture-pane -p -t =d: | grep -q 'task id:'"
+  # leave the form: EOF fails `new`, any key returns to the dash
+  tmux send-keys -t =d: C-d
+  wait_for "tmux capture-pane -p -t =d: | grep -q 'press any key'"
+  tmux send-keys -t =d: x
+  wait_for "tmux capture-pane -p -t =d: | grep -q 'no tasks'"
+  tmux send-keys -t =d: q
+  wait_for "tmux capture-pane -p -t =d: | grep -q dash-exit"
+}
