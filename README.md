@@ -185,8 +185,8 @@ Agents you start by hand in a task's session (`claude`, `codex`, `gemini`,
 `omp`, `aider`) are found by process and show up the same way, but without
 hooks they are only working or idle (by output silence) and do not notify.
 `collie adopt` (dashboard `?` → `a`, `prefix h` → `a`) stops such a Claude or omp and restarts
-it with `collie run … -- --continue` (omp: `-c`): same conversation, now with
-hooks.
+it with `collie run … -- --continue` (omp: `-r <id>` of the session it holds
+open, else `-c`): same conversation, now with hooks.
 When the tmux server dies, `collie restore` (`-n` to list) restarts every
 agent run that was live, each resuming its own conversation: claude by the
 session id its `SessionStart` hook logged (`--resume <id>`), omp by the
