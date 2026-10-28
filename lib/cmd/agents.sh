@@ -84,7 +84,7 @@ cmd_run() {
 # Restarts an agent started by hand in the task's session as a `collie run`
 # that resumes its conversation, so its hooks report state and notify.
 cmd_adopt() {
-  local id="" yes=0 info agent wid pane pid path repo a i
+  local id="" yes=0 info agent wid pane pid path repo a i sid args
   while [ $# -gt 0 ]; do
     case $1 in
       -y) yes=1 ;;
@@ -98,10 +98,19 @@ cmd_adopt() {
   info=$(manual_runs "=$id" | head -n 1)
   [ -n "$info" ] || die "adopt: no agent started by hand in task '$id'"
   IFS=$TAB read -r a agent a wid pane pid path <<<"$info"
-  AGENT_RESUME=()
+  AGENT_RESUME=() AGENT_RESUME_ID=()
+  unset -f agent_session
   # shellcheck source=/dev/null
   [ ! -f "$PLUGIN_DIR/agents/$agent.sh" ] || . "$PLUGIN_DIR/agents/$agent.sh"
   [ ${#AGENT_RESUME[@]} -gt 0 ] || die "adopt: collie cannot resume $agent sessions"
+  # its own conversation if the adapter can tell it from the pid, else the latest
+  sid=""
+  ! declare -F agent_session >/dev/null || sid=$(agent_session "$pid")
+  if [ -n "$sid" ] && [ ${#AGENT_RESUME_ID[@]} -gt 0 ]; then
+    args=("${AGENT_RESUME_ID[@]}" "$sid")
+  else
+    args=("${AGENT_RESUME[@]}")
+  fi
   repo=$(awk -F'\t' -v p="$path" '$4 == p || index(p, $4 "/") == 1 { print $1; exit }' "$TASKS_DIR/$id/repos.tsv")
   [ -n "$repo" ] || die "adopt: $agent in $pane runs outside the task's worktrees ($path)"
   if [ "$yes" -eq 0 ]; then
@@ -116,7 +125,7 @@ cmd_adopt() {
   done
   ! kill -0 "$pid" 2>/dev/null || die "adopt: $agent (pid $pid) did not exit"
   log_event "$id" agent_adopted "agent=$agent pane=$pane window=$wid"
-  cmd_run "$id" -r "$repo" --agent "$agent" -p '' -- "${AGENT_RESUME[@]}"
+  cmd_run "$id" -r "$repo" --agent "$agent" -p '' -- "${args[@]}"
 }
 
 # Runs of a task lost with their tmux server as "run<TAB>agent<TAB>repo<TAB>
