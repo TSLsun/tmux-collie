@@ -40,15 +40,77 @@ pr_refresh_stale() { # rows
   done <<<"$1"
 }
 
+# Predicted conflicts (see conflicts_predict) of the given active tasks whose
+# conflicts.tsv is current: base and every branch it names are still at the
+# cached SHAs, and the other tasks are active. Sets CONFLICTS to
+# "id<TAB>count<TAB>other (files), ..." lines, one per task with conflicts
+# (base counts as one); no merge-tree, one git per repo, none without caches. A stale cache shows nothing and
+# starts a background _conflicts, unless one is running.
+conflicts_cached() { # ids (one per line)
+  local id c seen=$'\n' refs="" rc
+  CONFLICTS=""
+  while IFS= read -r id; do
+    [ -s "$TASKS_DIR/$id/conflicts.tsv" ] || continue
+    while IFS=$TAB read -r c _; do
+      case $seen in *$'\n'"$c"$'\n'*) continue ;; esac
+      seen="$seen$c"$'\n'
+      refs="$refs$(git --git-dir="$c" for-each-ref --format="${c//%/%%}%09%(refname)%09%(objectname)" refs/heads refs/remotes 2>/dev/null)"$'\n'
+    done <"$TASKS_DIR/$id/conflicts.tsv"
+  done <<<"$1"
+  [ "$seen" != $'\n' ] || return 0
+  CONFLICTS=$(REFS=$refs IDS=$1 awk -F'\t' -v tasks="$TASKS_DIR" '
+    BEGIN {
+      n = split(ENVIRON["REFS"], l, "\n")
+      for (i = 1; i <= n; i++) if (split(l[i], x, "\t") == 3) sha[x[1], x[2]] = x[3]
+      n = split(ENVIRON["IDS"], ids, "\n")
+      for (i = 1; i <= n; i++) if (ids[i] != "") on[ids[i]] = 1
+      for (i = 1; i <= n; i++) {
+        if (ids[i] == "") continue
+        f = tasks "/" ids[i] "/conflicts.tsv"; ok = 1; k = 0; s = ""
+        while ((getline r <f) > 0) {
+          split(r, x, "\t")
+          if (sha[x[1], x[2]] != x[3] || sha[x[1], x[4]] != x[5]) ok = 0
+          if (x[6] == "-") continue
+          if (x[6] != "base" && (!(x[6] in on) || sha[x[1], x[7]] != x[8])) ok = 0
+          gsub(/ /, ", ", x[9])
+          if (!(x[6] in cnt)) k++
+          cnt[x[6]] = 1
+          s = s (s == "" ? "" : ", ") x[6] " (" x[9] ")"
+        }
+        close(f)
+        for (o in cnt) delete cnt[o]
+        if (!ok) stale = 1
+        else if (k) print ids[i] "\t" k "\t" s
+      }
+      exit stale ? 3 : 0
+    }') && rc=0 || rc=$?
+  [ "$rc" -eq 3 ] && [ ! -d "$STATE_DIR/conflicts.lock" ] || return 0
+  "$BASH" "$PLUGIN_DIR/bin/collie" _conflicts </dev/null >/dev/null 2>&1 &
+}
+
+# Background refresh of the conflict caches from local refs (no fetch); the
+# lock keeps reloads of the dashboard from starting another.
+cmd__conflicts() {
+  mkdir -p "$STATE_DIR"
+  mkdir "$STATE_DIR/conflicts.lock" 2>/dev/null || return 0
+  trap 'rmdir "$STATE_DIR/conflicts.lock"' EXIT
+  conflicts_predict >/dev/null
+}
+
 # Active tasks in `ls` format, most urgent first (see DESIGN §3.3: answer >
 # reply > review > stalled > working > start), then by priority and id, plus
-# a last field: the cached PRs ("#<number>:<state> ...", or -).
+# two last fields: the cached PRs ("#<number>:<state> ...", or -) and the
+# number of predicted conflicts (see conflicts_cached, or -).
 dash_rows() {
-  local rows
+  local rows ids="" id _
   rows=$(cmd_ls)
   [ -n "$rows" ] || return 0
   pr_refresh_stale "$rows"
-  awk -F'\t' -v tasks="$TASKS_DIR" '{
+  while IFS=$TAB read -r id _; do ids="$ids$id"$'\n'; done <<<"$rows"
+  conflicts_cached "$ids"
+  CONFLICTS=$CONFLICTS awk -F'\t' -v tasks="$TASKS_DIR" '
+    BEGIN { n = split(ENVIRON["CONFLICTS"], cl, "\n"); for (i = 1; i <= n; i++) if (split(cl[i], x, "\t") == 3) cf[x[1]] = x[2] }
+    {
       r = 6
       if ($7 == "answer") r = 1
       else if ($7 == "reply") r = 2
@@ -58,7 +120,7 @@ dash_rows() {
       f = tasks "/" $1 "/pr.tsv"; s = ""
       while ((getline l <f) > 0) if (split(l, x, "\t") == 3) s = s (s == "" ? "" : " ") "#" x[2] ":" x[3]
       close(f)
-      print r "\t" $0 "\t" (s == "" ? "-" : s)
+      print r "\t" $0 "\t" (s == "" ? "-" : s) "\t" ($1 in cf ? cf[$1] : "-")
     }' <<<"$rows" | sort -t "$TAB" -k1,1n -k4,4 -k2,2 | cut -f2-
 }
 
@@ -86,7 +148,8 @@ dash_header() { # group [filter]
 # A row is the id, then aligned columns: a glyph (red ● needs you, yellow ◐
 # working, dim ○ todo) and id, state (what it needs from you, or working),
 # colored priority, a badge per live agent, the last event's age, repos, PRs
-# (green open, dim draft, purple merged, red closed). The first line holds the column
+# (green open, dim draft, purple merged, red closed), then a yellow ⚡N when
+# the task conflicts with N others (see conflicts_cached). The first line holds the column
 # names (fzf --header-lines=1); separators and it have an empty id.
 # $STATE_DIR/dash-rows gets the ids in order (empty for separators), for _key.
 # shellcheck disable=SC2120  # group comes from the CLI; internal callers pass none
@@ -136,6 +199,7 @@ cmd__rows() { # [group]
         split(a[i], x, ":"); b = b (i > 1 ? " " : "") e (x[2] in qc ? qc[x[2]] : "0") "m" x[1] e "0m"; ql[n] += length(x[1]) + 1
       }
       pq[n] = b == "" ? e "2m-" e "0m" : b
+      cf[n] = $11 == "-" || $11 == "" ? "" : "  " e "33m⚡" $11 e "0m"
       if (g == "priority") k = $3
       else if (g == "repo") k = $6
       else if (you) k = "needs you"
@@ -159,7 +223,7 @@ cmd__rows() { # [group]
           p = pr[i] in pc ? e pc[pr[i]] "m" pr[i] e "0m" : pr[i]
           print id[i] "\t" gl[i] e "0m " pad(id[i], wi, length(id[i])) "  " pad(st[i], ws, length(st[i])) "  " \
             pad(p, wp, length(pr[i])) "  " pad(ag[i], wa, al[i]) "  " e "2m" sprintf("%" wg "s", ad[i]) e "0m  " \
-            pad(rp[i], wr, length(rp[i])) "  " pq[i]
+            pad(rp[i], wr, length(rp[i])) "  " (cf[i] == "" ? pq[i] : pad(pq[i], wq, ql[i]) cf[i])
           print id[i] >cache
         }
         l = "── " ord[j] " (" cnt[ord[j]] ") "
@@ -454,7 +518,7 @@ cmd__target() {
 }
 
 cmd__preview() {
-  local id d name c b p base top title
+  local id d name c b p base top title ids
   [ $# -eq 0 ] || [ -n "$1" ] || return 0 # a dash group separator
   task_id "${1:-}"
   d="$TASKS_DIR/$id"
@@ -508,4 +572,14 @@ cmd__preview() {
       "$(git -C "$p" status --porcelain | wc -l | tr -d ' ')" \
       "$(git -C "$p" diff --shortstat "$base" 2>/dev/null)"
   done <"$d/repos.tsv"
+  ids=""
+  for d in "$TASKS_DIR"/*; do
+    [ -f "$d/TASK.md" ] || continue
+    fm_get "$d/TASK.md" status
+    case $FM in done | archived) ;; *) ids="$ids${d##*/}"$'\n' ;; esac
+  done
+  conflicts_cached "$ids"
+  while IFS=$TAB read -r c _ p; do
+    [ "$c" != "$id" ] || printf '\nconflicts with: %s\n' "$p"
+  done <<<"$CONFLICTS"
 }
