@@ -29,10 +29,17 @@ SH
 }
 teardown() { teardown_env; }
 
+assert_auto_review() {
+  grep -qxF -- --approve-for-me "$ARGS"
+  ! grep -qxF -- --sandbox "$ARGS"
+  ! grep -Eq '^--(dangerously-bypass-approvals-and-sandbox|yolo|full-auto)$|^danger-full-access$|^never$' "$ARGS"
+}
+
 @test "codex: captures identity and restores two exact conversations once" {
   collie run x --agent codex -p ''
   wait_for 'grep -q "agent_session.*run=1 id=new-" "$(task_dir x)/events.log"'
   id1=$(sed -n 's/.*agent_session.*run=1 id=//p' "$(task_dir x)/events.log")
+  assert_auto_review
   collie run x --agent codex -p ''
   wait_for 'grep -q "agent_session.*run=2 id=new-" "$(task_dir x)/events.log"'
   id2=$(sed -n 's/.*agent_session.*run=2 id=//p' "$(task_dir x)/events.log")
@@ -45,6 +52,7 @@ teardown() { teardown_env; }
   wait_for 'grep -q "agent_session.*run=4 id=" "$(task_dir x)/events.log"'
   grep -q "agent_session.*run=3 id=$id1" "$(task_dir x)/events.log"
   grep -q "agent_session.*run=4 id=$id2" "$(task_dir x)/events.log"
+  assert_auto_review
   run collie restore x
   [ -z "$output" ]
 }
@@ -53,6 +61,7 @@ teardown() { teardown_env; }
   collie run x --agent codex -p 'continue task' -- resume exact-id --model a-model
   wait_for '[ -f "$ARGS" ]'
   [ "$(tail -n 5 "$ARGS")" = "$(printf '%s\n' resume exact-id --model a-model 'continue task')" ]
+  assert_auto_review
 }
 
 @test "codex: missing restore identity is diagnosed without guessing latest" {
@@ -118,6 +127,7 @@ teardown() { teardown_env; }
   collie adopt x -y
   wait_for '[ -f "$ARGS" ]'
   [ "$(tail -n 2 "$ARGS")" = "$(printf '%s\n' resume "$sid")" ]
+  assert_auto_review
   wait_for 'grep -q "agent_session.*id=$sid" "$(task_dir x)/events.log"'
 }
 
@@ -149,7 +159,7 @@ command = hooks['PreToolUse'][0]['hooks'][0]['command']
 p = subprocess.run(['/bin/sh','-c',command], input=json.dumps({'tool_input':{'command':'tmux kill-server'}}), text=True, capture_output=True)
 assert p.returncode == 2, (command, p.stderr)
 assert args[-3:] == ['resume', 'exact-id', 'do task']
-assert '--sandbox' in args and args[args.index('--sandbox')+1] == 'workspace-write'
+assert '--approve-for-me' in args and '--sandbox' not in args
 PY
 }
 

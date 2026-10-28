@@ -30,7 +30,7 @@ cmd_doctor() {
       if [ "$a" = codex ]; then
         [ "$v" = 'codex-cli 0.165.0' ] || doc_line warn "codex: tested with 0.165.0; this version is unverified (requires --no-daemon and lifecycle hooks)"
         doc_line note "codex: review/trust Collie's hooks in /hooks; silence fallback until a hook runs"
-        doc_line note "codex: workspace-write, dedicated process; human waits require the standard English TUI footer"
+        doc_line note "codex: Approve for me (--approve-for-me), workspace-write, dedicated process; human waits require the standard English TUI footer"
         doc_line note "codex: restore needs a captured id; adopt needs one open rollout (lsof, --no-daemon)"
       fi
     else
