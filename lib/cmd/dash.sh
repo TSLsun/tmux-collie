@@ -126,6 +126,17 @@ dash_rows() {
 
 DASH_GROUPS=(status priority repo)
 
+# The preview sits right of the list once it gets 60 columns (a 120-column
+# dashboard), below it otherwise; long lines wrap.
+DASH_PREVIEW='right,50%,wrap,<60(down,45%,wrap)'
+
+# Width of the dashboard's list text (fzf's gutter and scrollbar off, see
+# DASH_PREVIEW), from fzf's FZF_COLUMNS or COLUMNS. Sets WIDTH, 0 when unknown.
+dash_width() {
+  local c=${FZF_COLUMNS:-${COLUMNS:-0}}
+  if [ "$c" -ge 120 ]; then WIDTH=$((c - c / 2 - 4)); elif [ "$c" -gt 3 ]; then WIDTH=$((c - 3)); else WIDTH=0; fi
+}
+
 # The dashboard's grouping (DASH_GROUPS), kept across dashboards. Sets GROUP.
 dash_group() {
   GROUP=""
@@ -133,13 +144,26 @@ dash_group() {
   case " ${DASH_GROUPS[*]} " in *" $GROUP "*) ;; *) GROUP=status ;; esac
 }
 
-# Two lines so narrow popups do not cut the keys off; the group and a kept
-# filter (the input is hidden outside a search) in bold yellow.
+# Two lines, each wrapped at the list's width (dash_width) so narrow popups do
+# not cut the keys off; the group and a kept filter (the input is hidden
+# outside a search) in bold yellow.
 dash_header() { # group [filter]
+  local y=$'\033[1;33m' z=$'\033[0m' h n line="" len=0 out="" hints=()
   # a ")" would end fzf's change-header(...)
-  [ -z "${2:-}" ] || printf 'filter: \033[1;33m%s\033[0m  esc: clear  ' "${2//)/}"
-  printf 'enter: go  tab: group by \033[1;33m%s\033[0m  /: filter  space: mark' "$1"
-  printf '\nr: run  v: review  e: edit  d: done  s: sync  ?: more'
+  [ -z "${2:-}" ] || hints+=("filter: $y${2//)/}$z" "esc: clear")
+  hints+=("enter: go" "tab: group by $y$1$z" "/: filter" "space: mark" ""
+    "r: run" "v: review" "e: edit" "d: done" "s: sync" "?: more" "")
+  dash_width
+  for h in "${hints[@]}"; do
+    n=${#h}
+    [[ $h != *"$y"* ]] || n=$((n - ${#y} - ${#z}))
+    if [ -n "$line" ] && { [ -z "$h" ] || { [ "$WIDTH" -gt 0 ] && [ $((len + 2 + n)) -gt "$WIDTH" ]; }; }; then
+      out="$out${out:+$'\n'}$line" line="" len=0
+    fi
+    [ -n "$h" ] || continue
+    if [ -z "$line" ]; then line=$h len=$n; else line="$line  $h" len=$((len + 2 + n)); fi
+  done
+  printf '%s' "$out"
 }
 
 # dash_rows for fzf, in groups (DASH_GROUPS; status: needs you, active, todo;
@@ -160,7 +184,8 @@ cmd__rows() { # [group]
     g=$GROUP
   fi
   mkdir -p "$STATE_DIR"
-  LS_AGENTS=1 dash_rows | awk -F'\t' -v g="$g" -v cache="$STATE_DIR/dash-rows" '
+  dash_width
+  LS_AGENTS=1 dash_rows | awk -F'\t' -v g="$g" -v cols="$WIDTH" -v cache="$STATE_DIR/dash-rows" '
     # ISO 8601 UTC time to epoch seconds (days from civil)
     function epoch(t, y, m) {
       y = substr(t, 1, 4) + 0; m = substr(t, 6, 2) + 0
@@ -213,17 +238,28 @@ cmd__rows() { # [group]
       if (!n) exit
       if (g == "priority") for (i = 0; i <= 3; i++) if (("P" i) in cnt) { ord[++no] = "P" i; done["P" i] = 1 }
       for (i = 1; i <= ns; i++) if (!(seen[i] in done)) ord[++no] = seen[i]
-      w = 2 + wi + 2 + ws + 2 + wp + 2 + wa + 2 + wg + 2 + wr + 2 + wq
+      # too wide for the list: drop age, then repos, shorten the id to 20, drop
+      # the agents, shorten the id to 8
+      sg = sr = sa = 1; w = 2 + wi + 2 + ws + 2 + wp + 2 + wa + 2 + wg + 2 + wr + 2 + wq
+      if (cols && w > cols) { sg = 0; w -= wg + 2 }
+      if (cols && w > cols) { sr = 0; w -= wr + 2 }
+      if (cols && w > cols && wi > 20) { k = max(20, wi - w + cols); w -= wi - k; wi = k }
+      if (cols && w > cols) { sa = 0; w -= wa + 2 }
+      if (cols && w > cols && wi > 8) { k = max(8, wi - w + cols); w -= wi - k; wi = k }
       print "\t" e "2m  " pad("TASK", wi, 4) "  " pad("STATE", ws, 5) "  " pad("PRI", wp, 3) "  " \
-        pad("AGENT", wa, 5) "  " sprintf("%" wg "s", "AGE") "  " pad("REPOS", wr, 5) "  PR" e "0m"
+        (sa ? pad("AGENT", wa, 5) "  " : "") (sg ? sprintf("%" wg "s", "AGE") "  " : "") (sr ? pad("REPOS", wr, 5) "  " : "") "PR" e "0m"
       printf "" >cache
       for (j = 1; j <= no; j++) {
         for (i = 1; i <= n; i++) {
           if (key[i] != ord[j]) continue
           p = pr[i] in pc ? e pc[pr[i]] "m" pr[i] e "0m" : pr[i]
-          print id[i] "\t" gl[i] e "0m " pad(id[i], wi, length(id[i])) "  " pad(st[i], ws, length(st[i])) "  " \
-            pad(p, wp, length(pr[i])) "  " pad(ag[i], wa, al[i]) "  " e "2m" sprintf("%" wg "s", ad[i]) e "0m  " \
-            pad(rp[i], wr, length(rp[i])) "  " (cf[i] == "" ? pq[i] : pad(pq[i], wq, ql[i]) cf[i])
+          # a long id keeps its start and end
+          s = id[i]; l = length(s)
+          if (l > wi) { k = int((wi - 1) / 2); s = substr(s, 1, wi - 1 - k) "…" substr(s, l - k + 1); l = wi }
+          print id[i] "\t" gl[i] e "0m " pad(s, wi, l) "  " pad(st[i], ws, length(st[i])) "  " \
+            pad(p, wp, length(pr[i])) "  " (sa ? pad(ag[i], wa, al[i]) "  " : "") \
+            (sg ? e "2m" sprintf("%" wg "s", ad[i]) e "0m  " : "") (sr ? pad(rp[i], wr, length(rp[i])) "  " : "") \
+            (cf[i] == "" ? pq[i] : pad(pq[i], wq, ql[i]) cf[i])
           print id[i] >cache
         }
         l = "── " ord[j] " (" cnt[ord[j]] ") "
@@ -255,9 +291,11 @@ cmd_dash() {
     return
   fi
   command -v fzf >/dev/null || die "dash: fzf required"
-  local self="'$BASH' '$PLUGIN_DIR/bin/collie'" rows header sel id wid k binds=()
+  local self="'$BASH' '$PLUGIN_DIR/bin/collie'" rows header sel id wid k binds=() COLUMNS=${COLUMNS:-}
+  # fzf passes its width to reloads and transforms (FZF_COLUMNS), not to this first draw
+  [ -n "$COLUMNS" ] || { COLUMNS=$(stty size </dev/tty 2>/dev/null) && COLUMNS=${COLUMNS#* }; } || COLUMNS=""
   rows=$(cmd__rows)
-  for k in $(action_items x | cut -c1) enter up down j k q space / '?'; do
+  for k in $(action_items x | cut -c1) enter up down j k q space / '?' resize; do
     binds+=(--bind="$k:transform($self _key '$k' {1} {+1})")
   done
   # after the transform: fzf ignores clear-query while the input is hidden
@@ -268,7 +306,7 @@ cmd_dash() {
   sel=$(printf '%s' "$rows" | fzf --ansi --delimiter='\t' --with-nth=2.. --no-sort --prompt="$DASH_PROMPT" \
     --no-input --multi --marker='*' \
     --header="$header" --header-lines=1 \
-    --preview="$self _preview {1}" --preview-window=right,50% \
+    --preview="$self _preview {1}" --preview-window="$DASH_PREVIEW" \
     "${binds[@]}" \
     --bind="tab:transform($self _group next)" --bind="btab:transform($self _group prev)") || return 0
   id=${sel%%"$TAB"*}
@@ -289,14 +327,21 @@ cmd__pick() { # [id]
 }
 
 # Draws the menu with row <sel> highlighted on /dev/tty, just above the
-# selected dashboard row (fzf's default layout: prompt and info, unless the
-# input is hidden, then the 2-line header and the column names take the last
-# lines, list row 1 sits above them).
+# selected dashboard row (fzf's default layout: the preview when below the
+# list (DASH_PREVIEW), prompt and info unless the input is hidden, the header
+# and the column names take the last lines, list row 1 sits above them).
 pick_draw() { # id sel
-  local items n w=30 top left=2 line i=0 t=${1:-collie} hl off=6
+  local items n w=30 top left=2 line i=0 t=${1:-collie} hl off
+  # a long id would push the title past the box
+  t=${t:0:$((w - 6))}
   items=$(action_items "$1")
   n=$(printf '%s\n' "$items" | wc -l)
-  [ "${FZF_INPUT_STATE:-}" != hidden ] || off=4
+  dash_group
+  hl=$(dash_header "$GROUP" "$(dash_filter)")
+  hl=${hl//[!$'\n']/}
+  off=$((${#hl} + 3))
+  [ "${FZF_INPUT_STATE:-}" = hidden ] || off=$((off + 2))
+  [ "${FZF_COLUMNS:-0}" -ge 120 ] || off=$((off + ${FZF_LINES:-24} * 45 / 100))
   top=$((${FZF_LINES:-24} - ${FZF_POS:-1} - n - off))
   [ "$top" -ge 1 ] || top=1
   {
@@ -327,6 +372,11 @@ cmd__key() { # key [id [marked id...]]
   local items n cur k ids="" m
   for m in "${@:3}"; do [ -z "$m" ] || ids="$ids '$m'"; done
   dash_group
+  if [ "$2" = resize ]; then
+    # the menu would lose its drawing
+    case ${FZF_PROMPT:-} in "$PICK_MARK"*) ;; *) echo "change-header($(dash_header "$GROUP" "$(dash_filter)"))+reload($self _rows)" ;; esac
+    return
+  fi
   case ${FZF_PROMPT:-} in
     "$PICK_MARK"*) ;;
     "$SEARCH_PROMPT"*)
