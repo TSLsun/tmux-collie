@@ -59,18 +59,20 @@ cmd_run() {
   command -v "$agent" >/dev/null || die "agent command '$agent' not found"
 
   # an agent with hooks and no prompt sits at its input box
-  local st=working run wid server
+  local st=working run wid server pane
   [ "$AGENT_HOOKS" = 0 ] || [ -n "$prompt" ] || st=idle
   run=$(($(awk -F'\t' '$2 == "run_started" { n++ } END { print n + 0 }' "$d/events.log") + 1))
   ensure_session "$id"
-  # the server pid tells `restore` a run lost with its server from a closed window
-  wid=$(tmux_spawn new-window -d -P -F '#{window_id} #{pid}' -t "=$id:" -n "$agent" -c "$path" \
+  # the server pid tells `restore` a run lost with its server from a closed
+  # window; the pane is the agent's, for `sync` to type into once it is split
+  wid=$(tmux_spawn new-window -d -P -F '#{window_id} #{pid} #{pane_id}' -t "=$id:" -n "$agent" -c "$path" \
     "$BASH" "$PLUGIN_DIR/bin/collie" _exec "$id" "$run" "${AGENT_ARGV[@]}" ${extra[@]+"${extra[@]}"})
-  server=${wid#* } wid=${wid%% *}
+  read -r wid server pane <<<"$wid"
   # @collie_run last: the wrapper starts the agent once it is set
   tmux set-option -w -t "$wid" @collie_task "$id" \; set-option -w -t "$wid" @collie_path "$path" \; \
     set-option -w -t "$wid" @collie_agent "$agent" \; set-option -w -t "$wid" @collie_hooks "$AGENT_HOOKS" \; \
-    set-option -w -t "$wid" @collie_state "$st" \; set-option -w -t "$wid" @collie_run "$run"
+    set-option -w -t "$wid" @collie_pane "$pane" \; set-option -w -t "$wid" @collie_state "$st" \; \
+    set-option -w -t "$wid" @collie_run "$run"
   # an instant agent exit may log run_exited first; task_runs is order-free
   log_event "$id" run_started "run=$run agent=$agent repo=$rname window=$wid server=$server"
   # -s: show the new window (menu, dashboard); a script keeps its window

@@ -80,6 +80,24 @@ task_runs() {
     }' - "$TASKS_DIR/$id/events.log" <<<"$wins"
 }
 
+# The agent's pane in window $2 of task $1 while it is still there, or
+# nothing: @collie_pane of a `collie run` window, the pane of an agent
+# started by hand, or the only pane of a run window from before @collie_pane.
+# Never the window's active pane: in a split window that may be a shell.
+agent_pane() { # id window
+  local panes pane
+  panes=$(tmux list-panes -t "$2" -F '#{pane_id}' 2>/dev/null) || return 0
+  pane=$(tmux show-options -wqv -t "$2" @collie_pane 2>/dev/null || true)
+  if [ -z "$pane" ]; then
+    if [ -z "$(tmux show-options -wqv -t "$2" @collie_run 2>/dev/null || true)" ]; then
+      pane=$(manual_runs "=$1" | awk -F'\t' -v w="$2" '$4 == w { print $5; exit }')
+    elif [ "$(wc -l <<<"$panes")" -eq 1 ]; then
+      pane=$panes
+    fi
+  fi
+  [ -z "$pane" ] || ! grep -qxF -- "$pane" <<<"$panes" || echo "$pane"
+}
+
 # Most urgent run of a task as "state<TAB>window<TAB>live agents", or
 # "-<TAB>-<TAB>"; live agents are the distinct agents not exited, each
 # followed by a space.
