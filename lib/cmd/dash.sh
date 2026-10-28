@@ -71,9 +71,13 @@ dash_group() {
   case " ${DASH_GROUPS[*]} " in *" $GROUP "*) ;; *) GROUP=status ;; esac
 }
 
-# Two lines so narrow popups do not cut the keys off; the group in bold yellow.
-dash_header() { # group
-  printf 'enter: go  tab: group by \033[1;33m%s\033[0m\n^r: run  ^v: review  ^e: edit  ^d: done  ?: more' "$1"
+# Two lines so narrow popups do not cut the keys off; the group and a kept
+# filter (the input is hidden outside a search) in bold yellow.
+dash_header() { # group [filter]
+  # a ")" would end fzf's change-header(...)
+  [ -z "${2:-}" ] || printf 'filter: \033[1;33m%s\033[0m  esc: clear  ' "${2//)/}"
+  printf 'enter: go  tab: group by \033[1;33m%s\033[0m  /: filter  space: mark' "$1"
+  printf '\nr: run  v: review  e: edit  d: done  s: sync  ?: more'
 }
 
 # dash_rows for fzf, in groups (DASH_GROUPS; status: needs you, active, todo;
@@ -175,8 +179,11 @@ cmd__group() { # next|prev
   if [ "${1:-}" = prev ]; then i=$(((i + n - 1) % n)); else i=$(((i + 1) % n)); fi
   mkdir -p "$STATE_DIR"
   printf '%s\n' "${DASH_GROUPS[$i]}" >"$STATE_DIR/dash-group"
-  echo "change-header($(dash_header "${DASH_GROUPS[$i]}"))+reload($self _rows)"
+  echo "change-header($(dash_header "${DASH_GROUPS[$i]}" "$(dash_filter)"))+reload($self _rows)"
 }
+
+# The query to show in the header: only outside a search, which shows it.
+dash_filter() { [ "${FZF_PROMPT:-}" = "$SEARCH_PROMPT" ] || printf '%s' "${FZF_QUERY:-}"; }
 
 cmd_dash() {
   if [ "${1:-}" = -n ]; then
@@ -186,14 +193,19 @@ cmd_dash() {
   command -v fzf >/dev/null || die "dash: fzf required"
   local self="'$BASH' '$PLUGIN_DIR/bin/collie'" rows header sel id wid k binds=()
   rows=$(cmd__rows)
-  for k in $(action_items x | cut -c1) $DASH_DIRECT esc enter up down; do binds+=(--bind="$k:transform($self _key {1} $k)"); done
+  for k in $(action_items x | cut -c1) enter up down j k q space / '?'; do
+    binds+=(--bind="$k:transform($self _key {1} '$k' {+1})")
+  done
+  # after the transform: fzf ignores clear-query while the input is hidden
+  binds+=(--bind="esc:transform($self _key {1} esc {+1})+hide-input")
   dash_group
   header=$(dash_header "$GROUP")
-  [ -n "$rows" ] || header='no tasks — ?: new task'
+  [ -n "$rows" ] || header='no tasks — c: new task'
   sel=$(printf '%s' "$rows" | fzf --ansi --delimiter='\t' --with-nth=2.. --no-sort --prompt="$DASH_PROMPT" \
+    --no-input --multi --marker='*' \
     --header="$header" --header-lines=1 \
     --preview="$self _preview {1}" --preview-window=right,50% \
-    --bind="?:transform($self _pick {1})" "${binds[@]}" \
+    "${binds[@]}" \
     --bind="tab:transform($self _group next)" --bind="btab:transform($self _group prev)") || return 0
   id=${sel%%"$TAB"*}
   [ -n "$id" ] || return 0
@@ -213,13 +225,15 @@ cmd__pick() { # [id]
 }
 
 # Draws the menu with row <sel> highlighted on /dev/tty, just above the
-# selected dashboard row (fzf's default layout: prompt, info, the 2-line header
-# and the column names take the last 5 lines, list row 1 sits above them).
+# selected dashboard row (fzf's default layout: prompt and info, unless the
+# input is hidden, then the 2-line header and the column names take the last
+# lines, list row 1 sits above them).
 pick_draw() { # id sel
-  local items n w=30 top left=2 line i=0 t=${1:-collie} hl
+  local items n w=30 top left=2 line i=0 t=${1:-collie} hl off=6
   items=$(action_items "$1")
   n=$(printf '%s\n' "$items" | wc -l)
-  top=$((${FZF_LINES:-24} - ${FZF_POS:-1} - n - 6))
+  [ "${FZF_INPUT_STATE:-}" != hidden ] || off=4
+  top=$((${FZF_LINES:-24} - ${FZF_POS:-1} - n - off))
   [ "$top" -ge 1 ] || top=1
   {
     printf '\033[%d;%dH\033[0;34m╭─ \033[1m%s\033[22m %s╮' "$top" "$left" "$t" "$(rule $((w - 5 - ${#t})) ─)"
@@ -233,27 +247,55 @@ pick_draw() { # id sel
   } >/dev/tty 2>/dev/null
 }
 
-# fzf transform for a menu key (an action key, up, down, esc or enter): with
-# the menu open, move the selection, run an action or close; otherwise the
-# key's usual job. A direct key (ctrl-<action key>, see DASH_DIRECT) runs its
-# action on the selected task whether or not the menu is open.
-cmd__key() { # id key
+# fzf transform for a dashboard key, lazygit style: outside a search an action
+# key (see action_items) runs its action on the selected task, j/k move, space
+# marks, q quits, esc clears a kept filter or quits, ? opens the menu and /
+# shows the input for a search (SEARCH_PROMPT). In a search every key types;
+# enter keeps the filter and hides the input again, esc drops it (the esc bind
+# hides the input after this transform). With the
+# menu open, keys move its selection, run an action or close it. The marked
+# ids (fzf {+1}: the row under the cursor when none) go to sync; separators
+# have an empty id.
+cmd__key() { # id key [marked id...]
   local self="'$BASH' '$PLUGIN_DIR/bin/collie'" back="change-prompt($DASH_PROMPT)+clear-screen"
-  local items n cur k
-  case " $DASH_DIRECT " in
-    *" $2 "*)
-      [ -z "$1" ] || echo "$back+execute($self _actions '$1' '${2#ctrl-}')+reload($self _rows)+refresh-preview"
-      return
-      ;;
-  esac
+  local items n cur k ids="" m
+  for m in "${@:3}"; do [ -z "$m" ] || ids="$ids '$m'"; done
+  dash_group
   case ${FZF_PROMPT:-} in
     "$PICK_MARK"*) ;;
+    "$SEARCH_PROMPT"*)
+      case $2 in
+        esc) echo "clear-query+change-prompt($DASH_PROMPT)+change-header($(dash_header "$GROUP"))" ;;
+        enter) echo "hide-input+change-prompt($DASH_PROMPT)+change-header($(dash_header "$GROUP" "${FZF_QUERY:-}"))" ;;
+        up | down) dash_move "$2" ;;
+        space) echo "put( )" ;;
+        *) echo "put($2)" ;;
+      esac
+      return
+      ;;
     *)
       case $2 in
-        esc) echo abort ;;
-        enter) if [ -n "$1" ]; then echo accept; fi ;;
+        esc)
+          if [ -n "${FZF_QUERY:-}" ]; then
+            # the esc bind hides the input again
+            echo "show-input+clear-query+change-header($(dash_header "$GROUP"))"
+          else
+            echo abort
+          fi
+          ;;
+        q) echo abort ;;
+        enter) if [ -n "$1" ]; then echo clear-multi+accept; fi ;;
+        space) if [ -n "$1" ]; then echo toggle; fi ;;
+        /) echo "show-input+change-prompt($SEARCH_PROMPT)" ;;
+        '?') cmd__pick "$1" ;;
         up | down) dash_move "$2" ;;
-        *) echo "put($2)" ;;
+        j) dash_move down ;;
+        k) dash_move up ;;
+        *)
+          k=$(action_items "$1" | cut -c1 | grep -xF -- "$2" || true)
+          [ "$k" = s ] || ids=""
+          [ -z "$k" ] || echo "$back+execute($self _actions '$1' '$k'$ids)+reload($self _rows)+refresh-preview"
+          ;;
       esac
       return
       ;;
@@ -263,6 +305,7 @@ cmd__key() { # id key
   cur=${FZF_PROMPT#"$PICK_MARK"}
   cur=$(printf '%s\n' "$items" | awk -v l="${cur% }" 'substr($0, 4) == l { print NR; exit }')
   cur=${cur:-1}
+  case $2 in j) set -- "$1" down ;; k) set -- "$1" up ;; esac
   case $2 in
     up | down)
       if [ "$2" = up ]; then cur=$(((cur + n - 2) % n + 1)); else cur=$((cur % n + 1)); fi
@@ -274,8 +317,9 @@ cmd__key() { # id key
     esc) k="" ;;
     *) k=$(printf '%s\n' "$items" | cut -c1 | grep -xF -- "$2" || true) ;;
   esac
+  [ "$k" = s ] || ids=""
   if [ -n "$k" ]; then
-    echo "$back+execute($self _actions '$1' '$k')+reload($self _rows)+refresh-preview"
+    echo "$back+execute($self _actions '$1' '$k'$ids)+reload($self _rows)+refresh-preview"
   else
     echo "$back"
   fi
@@ -301,16 +345,24 @@ rule() { local s="" i; for ((i = 0; i < $1; i++)); do s="$s$2"; done; printf '%s
 
 # "<key>  <label>" lines of the dashboard actions for a task (or none).
 action_items() { # [id]
-  [ -z "$1" ] || printf '%s\n' 'r  run agent' 'a  adopt agent' 'e  edit task' 'v  review' 't  terminal' 'd  done' 'x  archive'
+  [ -z "$1" ] || printf '%s\n' 'r  run agent' 'a  adopt agent' 'e  edit task' 'v  review' 't  terminal' 'd  done' 'x  archive' 's  sync'
   printf '%s\n' 'c  new task'
 }
 
 # Runs the dashboard action for a key (see action_items); done and archive ask
-# first.
-cmd__actions() { # id key
-  local id=${1:-} k=${2:-} self="'$BASH' '$PLUGIN_DIR/bin/collie'" a
+# first. sync shows `sync -n` for the marked ids (default: id), then asks.
+cmd__actions() { # id key [marked id...]
+  local id=${1:-} k=${2:-} self="'$BASH' '$PLUGIN_DIR/bin/collie'" a m ids=""
   [ ! -t 1 ] || printf '\033[H\033[2J'
   case ${id:+x}$k in
+    xs)
+      for m in "${@:3}"; do ids="$ids '$m'"; done
+      [ -n "$ids" ] || ids=" '$id'"
+      cmd__popup "$self sync -n$ids" || return 0
+      read -r -p "sync${ids//\'/}? (y/n) " k || return 0
+      [ "$k" = y ] || return 0
+      a="$self sync$ids"
+      ;;
     xr) a="$self run '$id' -s" ;;
     xa) a="$self adopt '$id'" ;;
     xe) a="$self edit '$id'" ;;
