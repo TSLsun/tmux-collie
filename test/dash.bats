@@ -137,15 +137,15 @@ EOF
 @test "dash actions: no next/notes keys" {
   run collie _actions x N
   [ -z "$output" ]
-  [ -z "$(FZF_PROMPT='collie> ' collie _key x N)" ]
+  [ -z "$(FZF_PROMPT='collie> ' collie _key N x)" ]
   [[ "$(collie _pick x 2>/dev/null)" != *notes* ]]
 }
 
 @test "dash actions: e edits the task's TASK.md" {
   collie new x --no-window
-  [ "$(FZF_PROMPT='▸ adopt agent ' collie _key x down)" = "change-prompt(▸ edit task )" ]
-  [[ "$(FZF_PROMPT='▸ run agent ' collie _key x e)" == *"_actions 'x' 'e')+reload("*"_rows)+refresh-preview" ]]
-  [ "$(FZF_PROMPT='▸ new task ' collie _key '' e)" = "change-prompt(collie> )+clear-screen" ]
+  [ "$(FZF_PROMPT='▸ adopt agent ' collie _key down x)" = "change-prompt(▸ edit task )" ]
+  [[ "$(FZF_PROMPT='▸ run agent ' collie _key e x)" == *"_actions 'x' 'e')+reload("*"_rows)+refresh-preview" ]]
+  [ "$(FZF_PROMPT='▸ new task ' collie _key e '')" = "change-prompt(collie> )+clear-screen" ]
   printf '#!/bin/sh\necho edited >>"$1"\n' >"$TMP/ed"
   chmod +x "$TMP/ed"
   EDITOR="$TMP/ed" collie _actions x e
@@ -153,15 +153,15 @@ EOF
 }
 
 @test "_key: action keys run their action directly, lazygit style" {
-  [[ "$(FZF_PROMPT='collie> ' collie _key x r)" == "change-prompt(collie> )+clear-screen+execute("*"_actions 'x' 'r')+reload("*"_rows)+refresh-preview" ]]
-  [[ "$(FZF_PROMPT='collie> ' collie _key x v)" == *"_actions 'x' 'v')"* ]]
-  [[ "$(FZF_PROMPT='collie> ' collie _key x e)" == *"_actions 'x' 'e')"* ]]
-  [[ "$(FZF_PROMPT='collie> ' collie _key x d)" == *"_actions 'x' 'd')"* ]]
-  [ -z "$(FZF_PROMPT='collie> ' collie _key '' r)" ]
-  [[ "$(FZF_PROMPT='collie> ' collie _key '' c)" == *"_actions '' 'c')"* ]]
-  [ "$(FZF_PROMPT='collie> ' collie _key x q)" = abort ]
-  [ "$(FZF_PROMPT='collie> ' FZF_POS=3 collie _key x j)" = down ]
-  [ "$(FZF_PROMPT='collie> ' FZF_POS=3 collie _key x k)" = up ]
+  [[ "$(FZF_PROMPT='collie> ' collie _key r x)" == "change-prompt(collie> )+clear-screen+execute("*"_actions 'x' 'r')+reload("*"_rows)+refresh-preview" ]]
+  [[ "$(FZF_PROMPT='collie> ' collie _key v x)" == *"_actions 'x' 'v')"* ]]
+  [[ "$(FZF_PROMPT='collie> ' collie _key e x)" == *"_actions 'x' 'e')"* ]]
+  [[ "$(FZF_PROMPT='collie> ' collie _key d x)" == *"_actions 'x' 'd')"* ]]
+  [ -z "$(FZF_PROMPT='collie> ' collie _key r '')" ]
+  [[ "$(FZF_PROMPT='collie> ' collie _key c '')" == *"_actions '' 'c')"* ]]
+  [ "$(FZF_PROMPT='collie> ' collie _key q x)" = abort ]
+  [ "$(FZF_PROMPT='collie> ' FZF_POS=3 collie _key j x)" = down ]
+  [ "$(FZF_PROMPT='collie> ' FZF_POS=3 collie _key k x)" = up ]
 }
 
 @test "_rows: column names, then aligned rows grouped needs you > active > todo" {
@@ -275,12 +275,12 @@ branch_of() { awk -F'\t' -v r="$2" '$1 == r { print $3 }' "$(task_dir "$1")/repo
 @test "_key: arrows step over group separators; enter on one does nothing" {
   mkdir -p "$COLLIE_STATE_DIR"
   printf '%s\n' b '' a '' >"$COLLIE_STATE_DIR/dash-rows"
-  [ "$(FZF_PROMPT='collie> ' FZF_POS=1 collie _key b up)" = "up+up" ]
-  [ "$(FZF_PROMPT='collie> ' FZF_POS=3 collie _key a down)" = "down+down" ]
-  [ "$(FZF_PROMPT='collie> ' FZF_POS=2 collie _key '' up)" = up ]
-  [ -z "$(FZF_PROMPT='collie> ' FZF_POS=3 collie _key a up)" ]
-  [ "$(FZF_PROMPT='collie> ' FZF_POS=1 FZF_QUERY=x collie _key b up)" = up ]
-  [ -z "$(FZF_PROMPT='collie> ' collie _key '' enter)" ]
+  [ "$(FZF_PROMPT='collie> ' FZF_POS=1 collie _key up b)" = "up+up" ]
+  [ "$(FZF_PROMPT='collie> ' FZF_POS=3 collie _key down a)" = "down+down" ]
+  [ "$(FZF_PROMPT='collie> ' FZF_POS=2 collie _key up '')" = up ]
+  [ -z "$(FZF_PROMPT='collie> ' FZF_POS=3 collie _key up a)" ]
+  [ "$(FZF_PROMPT='collie> ' FZF_POS=1 FZF_QUERY=x collie _key up b)" = up ]
+  [ -z "$(FZF_PROMPT='collie> ' collie _key enter '')" ]
   [ -z "$(collie _preview '')" ]
 }
 
@@ -319,17 +319,17 @@ branch_of() { awk -F'\t' -v r="$2" '$1 == r { print $3 }' "$(task_dir "$1")/repo
 }
 
 @test "_key: menu keys act only while the menu prompt is up; arrows move the selection" {
-  [ "$(FZF_PROMPT='collie> ' collie _key x esc)" = abort ]
-  [ "$(FZF_PROMPT='collie> ' collie _key x enter)" = clear-multi+accept ]
-  [ "$(FZF_PROMPT='collie> ' collie _key x up)" = up ]
-  [[ "$(FZF_PROMPT='▸ run agent ' collie _key x r)" == "change-prompt(collie> )+clear-screen+execute("*"_actions 'x' 'r')+reload("*"_rows)+refresh-preview" ]]
-  [ "$(FZF_PROMPT='▸ run agent ' collie _key x down)" = "change-prompt(▸ adopt agent )" ]
-  [ "$(FZF_PROMPT='▸ run agent ' collie _key x up)" = "change-prompt(▸ new task )" ]
-  [ "$(FZF_PROMPT='▸ new task ' collie _key x down)" = "change-prompt(▸ run agent )" ]
-  [ "$(FZF_PROMPT='▸ run agent ' collie _key x j)" = "change-prompt(▸ adopt agent )" ]
-  [[ "$(FZF_PROMPT='▸ review ' collie _key x enter)" == *"_actions 'x' 'v'"* ]]
-  [ "$(FZF_PROMPT='▸ run agent ' collie _key x esc)" = "change-prompt(collie> )+clear-screen" ]
-  [ "$(FZF_PROMPT='▸ new task ' collie _key '' r)" = "change-prompt(collie> )+clear-screen" ]
+  [ "$(FZF_PROMPT='collie> ' collie _key esc x)" = abort ]
+  [ "$(FZF_PROMPT='collie> ' collie _key enter x)" = clear-multi+accept ]
+  [ "$(FZF_PROMPT='collie> ' collie _key up x)" = up ]
+  [[ "$(FZF_PROMPT='▸ run agent ' collie _key r x)" == "change-prompt(collie> )+clear-screen+execute("*"_actions 'x' 'r')+reload("*"_rows)+refresh-preview" ]]
+  [ "$(FZF_PROMPT='▸ run agent ' collie _key down x)" = "change-prompt(▸ adopt agent )" ]
+  [ "$(FZF_PROMPT='▸ run agent ' collie _key up x)" = "change-prompt(▸ new task )" ]
+  [ "$(FZF_PROMPT='▸ new task ' collie _key down x)" = "change-prompt(▸ run agent )" ]
+  [ "$(FZF_PROMPT='▸ run agent ' collie _key j x)" = "change-prompt(▸ adopt agent )" ]
+  [[ "$(FZF_PROMPT='▸ review ' collie _key enter x)" == *"_actions 'x' 'v'"* ]]
+  [ "$(FZF_PROMPT='▸ run agent ' collie _key esc x)" = "change-prompt(collie> )+clear-screen" ]
+  [ "$(FZF_PROMPT='▸ new task ' collie _key r '')" = "change-prompt(collie> )+clear-screen" ]
 }
 
 @test "_actions: one key runs an action on the task; done and archive ask first" {
@@ -409,24 +409,24 @@ branch_of() { awk -F'\t' -v r="$2" '$1 == r { print $3 }' "$(task_dir "$1")/repo
 }
 
 @test "_key: space marks tasks (not separators); / shows the input, where every key types" {
-  [ "$(FZF_PROMPT='collie> ' collie _key x space)" = toggle ]
-  [ -z "$(FZF_PROMPT='collie> ' collie _key '' space)" ]
-  [ "$(FZF_PROMPT='collie> ' collie _key x /)" = "show-input+change-prompt(filter: )" ]
-  [ "$(FZF_PROMPT='filter: ' collie _key x space)" = "put( )" ]
-  [ "$(FZF_PROMPT='filter: ' collie _key x /)" = "put(/)" ]
-  [ "$(FZF_PROMPT='filter: ' collie _key x r)" = "put(r)" ]
-  [ "$(FZF_PROMPT='filter: ' collie _key x '?')" = "put(?)" ]
+  [ "$(FZF_PROMPT='collie> ' collie _key space x)" = toggle ]
+  [ -z "$(FZF_PROMPT='collie> ' collie _key space '')" ]
+  [ "$(FZF_PROMPT='collie> ' collie _key / x)" = "show-input+change-prompt(filter: )" ]
+  [ "$(FZF_PROMPT='filter: ' collie _key space x)" = "put( )" ]
+  [ "$(FZF_PROMPT='filter: ' collie _key / x)" = "put(/)" ]
+  [ "$(FZF_PROMPT='filter: ' collie _key r x)" = "put(r)" ]
+  [ "$(FZF_PROMPT='filter: ' collie _key '?' x)" = "put(?)" ]
   # enter keeps the filter (shown in the header), esc drops it
-  [[ "$(FZF_PROMPT='filter: ' FZF_QUERY=dep collie _key x enter)" == "hide-input+change-prompt(collie> )+change-header(filter: "$'\033[1;33m'"dep"$'\033[0m'"  esc: clear  enter: go"* ]]
-  [[ "$(FZF_PROMPT='filter: ' FZF_QUERY=dep collie _key x esc)" == "clear-query+change-prompt(collie> )+change-header("* ]]
-  [[ "$(FZF_PROMPT='filter: ' FZF_QUERY=dep collie _key x esc)" != *"dep"* ]]
-  [[ "$(FZF_PROMPT='collie> ' FZF_QUERY=dep collie _key x esc)" == "show-input+clear-query+change-header("* ]]
-  [ "$(FZF_PROMPT='collie> ' collie _key x esc)" = abort ]
+  [[ "$(FZF_PROMPT='filter: ' FZF_QUERY=dep collie _key enter x)" == "hide-input+change-prompt(collie> )+change-header(filter: "$'\033[1;33m'"dep"$'\033[0m'"  esc: clear  enter: go"* ]]
+  [[ "$(FZF_PROMPT='filter: ' FZF_QUERY=dep collie _key esc x)" == "clear-query+change-prompt(collie> )+change-header("* ]]
+  [[ "$(FZF_PROMPT='filter: ' FZF_QUERY=dep collie _key esc x)" != *"dep"* ]]
+  [[ "$(FZF_PROMPT='collie> ' FZF_QUERY=dep collie _key esc x)" == "show-input+clear-query+change-header("* ]]
+  [ "$(FZF_PROMPT='collie> ' collie _key esc x)" = abort ]
 }
 
 @test "_key: sync gets the marked ids (separators dropped), other actions only the cursor's" {
-  [[ "$(FZF_PROMPT='▸ run agent ' collie _key x s a '' b)" == *"_actions 'x' 's' 'a' 'b')+reload("* ]]
-  [[ "$(FZF_PROMPT='▸ run agent ' collie _key x e a b)" == *"_actions 'x' 'e')+reload("* ]]
-  [[ "$(FZF_PROMPT='collie> ' collie _key x s a b)" == *"_actions 'x' 's' 'a' 'b')"* ]]
-  [ "$(FZF_PROMPT='▸ archive ' collie _key x down)" = "change-prompt(▸ sync )" ]
+  [[ "$(FZF_PROMPT='▸ run agent ' collie _key s x a '' b)" == *"_actions 'x' 's' 'a' 'b')+reload("* ]]
+  [[ "$(FZF_PROMPT='▸ run agent ' collie _key e x a b)" == *"_actions 'x' 'e')+reload("* ]]
+  [[ "$(FZF_PROMPT='collie> ' collie _key s x a b)" == *"_actions 'x' 's' 'a' 'b')"* ]]
+  [ "$(FZF_PROMPT='▸ archive ' collie _key down x)" = "change-prompt(▸ sync )" ]
 }

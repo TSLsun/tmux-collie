@@ -258,10 +258,10 @@ cmd_dash() {
   local self="'$BASH' '$PLUGIN_DIR/bin/collie'" rows header sel id wid k binds=()
   rows=$(cmd__rows)
   for k in $(action_items x | cut -c1) enter up down j k q space / '?'; do
-    binds+=(--bind="$k:transform($self _key {1} '$k' {+1})")
+    binds+=(--bind="$k:transform($self _key '$k' {1} {+1})")
   done
   # after the transform: fzf ignores clear-query while the input is hidden
-  binds+=(--bind="esc:transform($self _key {1} esc {+1})+hide-input")
+  binds+=(--bind="esc:transform($self _key esc {1} {+1})+hide-input")
   dash_group
   header=$(dash_header "$GROUP")
   [ -n "$rows" ] || header='no tasks — c: new task'
@@ -319,8 +319,10 @@ pick_draw() { # id sel
 # hides the input after this transform). With the
 # menu open, keys move its selection, run an action or close it. The marked
 # ids (fzf {+1}: the row under the cursor when none) go to sync; separators
-# have an empty id.
-cmd__key() { # id key [marked id...]
+# have an empty id. The key comes first: with no rows fzf drops {1} and {+1}
+# instead of passing them empty.
+cmd__key() { # key [id [marked id...]]
+  set -- "${2:-}" "$1" "${@:3}"
   local self="'$BASH' '$PLUGIN_DIR/bin/collie'" back="change-prompt($DASH_PROMPT)+clear-screen"
   local items n cur k ids="" m
   for m in "${@:3}"; do [ -z "$m" ] || ids="$ids '$m'"; done
