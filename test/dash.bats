@@ -446,3 +446,72 @@ branch_of() { awk -F'\t' -v r="$2" '$1 == r { print $3 }' "$(task_dir "$1")/repo
   tmux send-keys -t =d: q
   wait_for "tmux capture-pane -p -t =d: | grep -q dash-exit"
 }
+
+@test "_rows: fits narrow lists, drops age then repos, a long id keeps its start and end" {
+  local id=luwa-201949-ulh-spark-operations-runbook c w l plain
+  export LC_ALL=C.UTF-8
+  collie new "$id" --no-window
+  printf 'A\t244\topen\n' >"$(task_dir "$id")/pr.tsv"
+  strip() { sed $'s/\033\\[[0-9;]*m//g' | cut -f2; }
+  # width unknown: every column
+  [ "$(collie _rows | strip | sed -n 2p)" = "○ $id  start  P2   -      now  A      #244" ]
+  for c in 160 120 100 80 60 40; do
+    w=$((c - 3))
+    [ "$c" -lt 120 ] || w=$((c - c / 2 - 4))
+    plain=$(COLUMNS=$c collie _rows | strip)
+    while IFS= read -r l; do [ "${#l}" -le "$w" ] || { echo "$c: ${#l} > $w: $l"; false; }; done <<<"$plain"
+    # state, priority and PR always show
+    [[ "$(sed -n 2p <<<"$plain")" == "○ "*"  start  P2   "*"#244" ]]
+  done
+  # 80 columns: the age goes, the id stays whole
+  plain=$(COLUMNS=80 collie _rows | strip)
+  [ "$(sed -n 1p <<<"$plain")" = "  TASK$(printf '%36s' '')  STATE  PRI  AGENT  REPOS  PR" ]
+  [ "$(sed -n 2p <<<"$plain")" = "○ $id  start  P2   -      A      #244" ]
+  # 40 columns: age, repos and agents go, the id keeps its start and end
+  [ "$(COLUMNS=40 collie _rows | strip | sed -n 2p)" = "○ luwa-201…-runbook  start  P2   #244" ]
+  # fzf's width (reloads) wins over COLUMNS
+  [ "$(FZF_COLUMNS=300 COLUMNS=40 collie _rows | strip | sed -n 2p)" = "○ $id  start  P2   -      now  A      #244" ]
+  # the separator spans the row
+  [[ "$(COLUMNS=40 collie _rows | strip | sed -n 3p)" == "── todo (1) ──"* ]]
+  [ "$(COLUMNS=40 collie _rows | strip | sed -n 3p | wc -m)" -eq "$(COLUMNS=40 collie _rows | strip | sed -n 2p | wc -m)" ]
+}
+
+@test "dash header: key hints wrap at the list's width, none cut; resize redraws" {
+  local c w h l out
+  export LC_ALL=C.UTF-8
+  collie new x --no-window
+  out=$(FZF_PROMPT='collie> ' collie _key resize x)
+  [[ "$out" == "change-header("*")+reload("*"_rows)" ]]
+  # the menu keeps its drawing
+  [ -z "$(FZF_PROMPT='▸ run agent ' collie _key resize x)" ]
+  for c in 300 120 80 60 40; do
+    w=$((c - 3))
+    [ "$c" -lt 120 ] || w=$((c - c / 2 - 4))
+    out=$(FZF_COLUMNS=$c FZF_PROMPT='collie> ' FZF_QUERY=dep collie _key resize x)
+    h=${out#change-header(}
+    h=$(sed $'s/\033\\[[0-9;]*m//g' <<<"${h%%)+reload*}")
+    while IFS= read -r l; do [ "${#l}" -le "$w" ] || { echo "$c: ${#l} > $w: $l"; false; }; done <<<"$h"
+    # every hint whole, in order
+    [ "$(sed 's/  /\n/g' <<<"$h" | paste -s -d, -)" = "filter: dep,esc: clear,enter: go,tab: group by status,/: filter,space: mark,r: run,v: review,e: edit,d: done,s: sync,?: more" ]
+  done
+  [ "$(FZF_COLUMNS=300 collie _key resize x | grep -c .)" -eq 2 ]
+}
+
+@test "dash: at 80 columns a long id row keeps state, priority and PR; the preview goes below" {
+  command -v fzf >/dev/null || skip "fzf not installed"
+  local id=luwa-201949-ulh-spark-operations-runbook
+  collie new "$id" --no-window
+  printf 'A\t244\topen\n' >"$(task_dir "$id")/pr.tsv"
+  tmux -f /dev/null new-session -d -s d -x 80 -y 24 \
+    "'${COLLIE_BASH:-bash}' '$COLLIE_ROOT/bin/collie' dash; sleep 60"
+  wait_for "tmux capture-pane -p -t =d: | grep -q 'objective:'"
+  local screen
+  screen=$(tmux capture-pane -p -t =d:)
+  [[ "$screen" == *"$id  start  P2   -      A      #244"* ]]
+  [[ "$screen" == *"enter: go  tab: group by status  /: filter  space: mark"* ]]
+  [[ "$screen" == *"r: run  v: review  e: edit  d: done  s: sync  ?: more"* ]]
+  [[ "$screen" != *"··"* ]]
+  printf '%s\n' "$screen" >"$TMP/screen"
+  # the preview sits below the list
+  [ "$(grep -n 'objective:' "$TMP/screen" | cut -d: -f1)" -gt "$(grep -n '?: more' "$TMP/screen" | cut -d: -f1)" ]
+}
