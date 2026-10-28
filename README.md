@@ -184,7 +184,14 @@ collie passes per run (`--settings`, `-c hooks...`, a generated system
 settings file); omp through an extension loaded with `-e agents/omp.ts`
 (tool approvals and the `ask` tool count as waiting); nothing to install.
 Codex is tested with 0.165.0. Collie starts it with `--no-daemon` and
-`--sandbox workspace-write` for access to the task directory and other repos.
+`--approve-for-me` (which selects `workspace-write`) for automatic approval review
+within the workspace sandbox, with access to the task directory and other repos.
+New runs, explicit resumes, adoption and restore all use this mode. It requires
+a CLI supporting `--approve-for-me` (verified with 0.165.0); older CLIs may reject
+the flag. Managed requirements take precedence and may restrict automatic review.
+This uses an interactive approval policy and the automatic reviewer, preserving
+filesystem/network boundaries; it does not grant unrestricted execution.
+See the [official auto-review documentation](https://learn.chatgpt.com/docs/sandboxing/auto-review).
 Review and trust Collie's hooks in `/hooks`, including after they change;
 until trusted, state is estimated from output silence and the guard is inactive.
 Waiting alerts require the standard English approval/question prompts; custom
