@@ -42,7 +42,8 @@ tasks:
                       is left untouched)
   gc [-n]             finish tasks whose branches are merged into base (-n: list)
   sync [<id>...] [-n] merge base into active task branches and push them;
-                      conflicts go to the task's idle agent (-n: predict only)
+                      conflicts go to the task's idle agent (-n: predict only,
+                      including conflicts between tasks)
   done [<id>] [--force]     accept: remove worktrees + session, keep branches
   archive [<id>] [--force]  abandon: same cleanup, status archived (unmerged ok)
   reopen [<id>] [--no-window]

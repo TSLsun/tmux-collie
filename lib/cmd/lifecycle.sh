@@ -270,6 +270,8 @@ cmd_gc() {
       echo "skipped $id: $err (see: collie done $id)"
     fi
   done
+  # finished tasks drop out of the prediction; the rest saw base move
+  [ "$dry" -eq 1 ] || conflicts_predict >/dev/null
 }
 
 # Menu gc (in a popup): list what gc would finish, run it only after y.
@@ -297,7 +299,7 @@ cmd__gc() {
 # typed into it if idle, else a new run if it exited; else left untouched.
 # Tasks with an agent working or waiting are skipped. -n only predicts.
 cmd_sync() {
-  local dry=0 ids="" id d runs busy win pane agent name c b p bname n files msg out
+  local dry=0 ids="" all=0 id d runs busy win pane agent name c b p bname n files msg out
   while [ $# -gt 0 ]; do
     case $1 in
       -n) dry=1 ;;
@@ -307,6 +309,7 @@ cmd_sync() {
     shift
   done
   if [ -z "$ids" ]; then
+    all=1
     for d in "$TASKS_DIR"/*; do
       [ -f "$d/TASK.md" ] || continue
       fm_get "$d/TASK.md" status
@@ -402,4 +405,86 @@ cmd_sync() {
     done <"$d/repos.tsv"
     cmd__pr "$id" || true
   done <<<"$ids"
+  if [ "$dry" -eq 0 ]; then
+    conflicts_predict >/dev/null
+    return
+  fi
+  # pairs that touch a listed id; when none were listed, all of them
+  out=$(conflicts_predict | IDS=$ids awk -F'\t' -v all="$all" '
+    BEGIN { split(ENVIRON["IDS"], a, "\n"); for (i in a) want[a[i]] = 1 }
+    all || $1 in want || $2 in want { print $1 " × " $2 " " $3 ": conflict in " $4 }')
+  if [ -n "$out" ]; then
+    echo "between tasks (whichever lands first, the other conflicts):"
+    printf '%s\n' "$out" | sed 's/^/  /'
+  else
+    echo "between tasks: no conflicts"
+  fi
+}
+
+# Predicts merge conflicts between active tasks without touching worktrees or
+# refs: whether each task branch merges into base, and for each two branches
+# of one repo whether the second conflicts once the first has landed (base
+# merged with the first into a dangling commit). The relation is symmetric
+# in practice, so each pair is merged once. Branches merged into base or
+# without commits of their own take no part; one that conflicts with base
+# takes no part in pairs. Rewrites <task>/conflicts.tsv for every active task
+# (see conflicts_cached) and prints the pairs: id, other id, repo, files.
+# conflicts.tsv: git dir, base ref and sha, branch ref and sha, then "-" (the
+# line that keys the task), "base", or the other task with its branch ref
+# and sha; then the files ("-" on the key line).
+conflicts_predict() {
+  local d id name c b p ref tip base bsha files head key rc i j n=0 tmps=""
+  local -a C ID NAME REF TIP HEAD KEY
+  for d in "$TASKS_DIR"/*; do
+    [ -f "$d/TASK.md" ] || continue
+    fm_get "$d/TASK.md" status
+    case $FM in done | archived) continue ;; esac
+    id=${d##*/}
+    : >"$d/conflicts.tsv.$$"
+    tmps="$tmps$d"$'\n'
+    while IFS=$TAB read -r name c b p; do
+      [ "$c" != - ] || continue
+      ref=refs/heads/$b
+      tip=$(git --git-dir="$c" rev-parse -q --verify "$ref") || continue
+      default_base "$c" || continue
+      base=$BASE
+      case $base in refs/*) ;; *) base=refs/remotes/$base ;; esac
+      bsha=$(git --git-dir="$c" rev-parse "$base")
+      ! git --git-dir="$c" merge-base --is-ancestor "$tip" "$bsha" || continue
+      ! merged_into "$c" "$b" "$bsha" || continue
+      key="$c$TAB$base$TAB$bsha$TAB$ref$TAB$tip"
+      printf '%s\t-\t-\t-\t-\n' "$key" >>"$d/conflicts.tsv.$$"
+      if git --git-dir="$c" merge-base --is-ancestor "$bsha" "$tip"; then
+        head=$tip
+      else
+        files=$(git --git-dir="$c" merge-tree --write-tree --name-only --no-messages "$bsha" "$tip") && rc=0 || rc=$?
+        if [ "$rc" -eq 1 ]; then
+          files=${files#*$'\n'}
+          printf '%s\tbase\t-\t-\t%s\n' "$key" "${files//$'\n'/ }" >>"$d/conflicts.tsv.$$"
+          continue
+        fi
+        [ "$rc" -eq 0 ] || continue
+        head=$(GIT_AUTHOR_NAME=collie GIT_AUTHOR_EMAIL=collie@localhost \
+          GIT_COMMITTER_NAME=collie GIT_COMMITTER_EMAIL=collie@localhost \
+          git --git-dir="$c" commit-tree --no-gpg-sign -p "$bsha" -p "$tip" -m "collie: $b onto base" "${files%%$'\n'*}") || continue
+      fi
+      C[n]=$c ID[n]=$id NAME[n]=$name REF[n]=$ref TIP[n]=$tip HEAD[n]=$head KEY[n]=$key
+      n=$((n + 1))
+    done <"$d/repos.tsv"
+  done
+  for ((i = 0; i < n; i++)); do
+    for ((j = i + 1; j < n; j++)); do
+      [ "${C[i]}" = "${C[j]}" ] || continue
+      files=$(git --git-dir="${C[i]}" merge-tree --write-tree --name-only --no-messages "${HEAD[i]}" "${TIP[j]}") && rc=0 || rc=$?
+      [ "$rc" -eq 1 ] || continue
+      files=${files#*$'\n'}
+      files=${files//$'\n'/ }
+      printf '%s\t%s\t%s\t%s\t%s\n' "${KEY[i]}" "${ID[j]}" "${REF[j]}" "${TIP[j]}" "$files" >>"$TASKS_DIR/${ID[i]}/conflicts.tsv.$$"
+      printf '%s\t%s\t%s\t%s\t%s\n' "${KEY[j]}" "${ID[i]}" "${REF[i]}" "${TIP[i]}" "$files" >>"$TASKS_DIR/${ID[j]}/conflicts.tsv.$$"
+      printf '%s\t%s\t%s\t%s\n' "${ID[i]}" "${ID[j]}" "${NAME[i]}" "$files"
+    done
+  done
+  while IFS= read -r d; do
+    if [ -n "$d" ]; then mv "$d/conflicts.tsv.$$" "$d/conflicts.tsv"; fi
+  done <<<"$tmps"
 }
