@@ -58,9 +58,32 @@ delete an item only when it is covered by a test.
       `run/session-owners/<id>.lock` it holds (`-c` took the session a reused
       tty last showed), extension reports working/idle. `waiting` (ask,
       approvals) only tested with a fake omp.
-- [ ] Codex for real: `-c hooks.<Event>=[{hooks=[...]}]` inline TOML accepted,
-      hooks listed in `/hooks`, trusted once and then firing; `PermissionRequest`
-      → waiting. Only a fake `codex` that runs the hook strings is tested.
+- [x] Codex 0.165.0 on macOS, checked 2026-10-28 on private server
+      `collie-codex-smoke` with an isolated CODEX_HOME: inline TOML accepted;
+      startup hook review/trust works; task context read and REPORT.md written;
+      working/idle/exit captured. Actual approval and `request_user_input`
+      dialogs report waiting; answering returns to working before an 18-second
+      shell command ends. Status bar/dashboard agree; one wait notification
+      and one turn-finished notification observed.
+- [x] Real Codex adoption: hand-started `--no-daemon` conversation resumed its
+      own open-rollout UUID and remembered a token. After private-server loss,
+      three exact conversations (two in one folder) restored once; repeated
+      restore started no additional windows. Missing identity was diagnosed;
+      duplicate old records resumed only once. Explicit resume ids are logged
+      before another turn, because real SessionStart can be delayed on resume.
+- [ ] Other Codex versions/platforms and localized/custom TUI footers. Doctor
+      identifies versions other than 0.165.0 as unverified. Unsupported flags
+      fail at CLI startup; untrusted/unloaded hooks use silence fallback.
+      Human-wait detection uses the current standard English confirmation /
+      answer footer because PermissionRequest can precede automatic review
+      and there is no approval-resolved hook. Unknown footers can leave a
+      genuine human wait showing working. Startup trust dialogs do not notify.
+- [ ] Codex adoption with the shared daemon or no/ambiguous open rollout is
+      intentionally refused before stopping the process. lsof behavior on
+      Linux and future Codex transcript-storage changes are unverified.
+- [ ] Existing shared restore caveat: a distinct conversation whose window
+      closed without run_exited can appear lost after a later server failure.
+      Check restore -n. Live and scheduled Codex ids are deduplicated.
 - [ ] Gemini for real: system settings layer picked up and merged with user
       hooks; hooks enabled without extra flags; `ToolPermission` matcher;
       ancestor-pane lookup under its sanitized env. Tried 2026-10-25: two trust
@@ -71,10 +94,13 @@ delete an item only when it is covered by a test.
 - [ ] `ancestor_pane` on Linux (`ps -o ppid=`), and with deep process trees
       (gives up after 10 levels).
 - [ ] `collie doctor` version parsing for tmux builds like `next-3.6` / `3.3a`.
-- [ ] tmux kill guard in real agents: Claude `PreToolUse` exit 2 blocks the
-      Bash call and shows the reason; Codex `PreToolUse` with matcher `Bash`
-      (after trust in `/hooks`); Gemini `BeforeTool` on `run_shell_command`
-      blocks on exit 2. Tests only run the hook command a fake agent was given.
+- [x] Codex tmux guard, real 0.165.0 on 2026-10-28: shell tool call matched
+      canonical `Bash` and `tool_input.command`; exit 2 denied a bare
+      kill-session targeting a harmless private sentinel. Sentinel survived.
+      A named private-server command passed the hook, then macOS sandbox
+      denied socket access (separate permission limitation, not a hook denial).
+- [ ] Claude and Gemini tmux guards through real agents. Deterministic tests
+      verify their emitted hook commands and denial behavior.
 
 ## P5 — Review & lifecycle
 - [ ] `gc` against a real remote: PR merge commits (non-ff) detected after

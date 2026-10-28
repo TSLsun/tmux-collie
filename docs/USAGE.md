@@ -148,11 +148,21 @@ The dashboard sorts tasks in that urgency (`answer` > `reply` > `review` >
 Agents get hooks per run, nothing installed: claude, codex, gemini, omp.
 Any other command (`--agent aider`) runs without hooks. Agents you start by
 hand in a task's session are detected by process (working/idle only, no
-notifications); `collie adopt` restarts a hand-started claude or omp under
+notifications); `collie adopt` restarts a hand-started claude, codex or omp under
 `collie run` with its conversation resumed. `collie restore` restarts the
-runs lost with a dead tmux server (claude by its logged session id, omp by
+runs lost with a dead tmux server (claude and codex by their logged session id, omp by
 the worktree's latest conversation); agents started by hand are not
 recorded, so they are not restored.
+
+Codex is tested with 0.165.0. Collie uses a dedicated process (`--no-daemon`)
+and workspace-write permissions for task/other-repo access. Trust Collie's hooks
+in `/hooks`; until they run, status uses the silence fallback. Permission review
+alone does not trigger a notification: the standard English approval/question
+footer must be visible. Closing it clears waiting even during a long command.
+Changed/custom TUI footers and startup trust dialogs may remain working.
+For adoption, start manual Codex with `--no-daemon`; Collie requires one open
+rollout owned by its process (`lsof`). Ambiguity and missing restore identities
+produce diagnostics instead of selecting a different conversation.
 
 ## 5. Where each action lives
 
