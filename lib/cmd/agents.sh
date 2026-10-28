@@ -95,7 +95,9 @@ cmd_handoff() {
   while [ $# -gt 0 ]; do
     case $1 in
       --from | --agent | --note | -r)
-        [ $# -ge 2 ] && [ -n "$2" ] || die "handoff: $1 needs a value"
+        if [ $# -lt 2 ] || [ -z "${2:-}" ]; then
+          die "handoff: $1 needs a value"
+        fi
         case $1 in
           --from) from=$2 ;;
           --agent) agent=$2 ;;
