@@ -354,7 +354,8 @@ cmd__menu() { # session [client]
   else
     items+=("" "-not a collie task — use collie new" "" "")
   fi
-  items+=("" "jump to alert" j "run-shell '$C _jump - ${2:-}'")
+  items+=("" "jump to alert" j "run-shell '$C _jump - ${2:-}'"
+    "gc merged tasks" G "display-popup -E -w 90 -h 20 '$C _popup $C _gc'")
   if [ "${COLLIE_DEV:-$(tmux_opt @collie-dev)}" = on ]; then
     items+=("" "dev: load this checkout" D "run-shell '$C _dev load #{q:pane_current_path}'"
       "dev: back to installed" B "run-shell '$C _dev reset'")
