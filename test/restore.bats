@@ -150,6 +150,7 @@ agent_windows() { tmux list-windows -t "=$1" -F '#{@collie_run}' | grep -c .; }
   ! tmux has-session -t =x 2>/dev/null
   tmux set-option -g @collie-restore on
   tmux run-shell "$COLLIE_ROOT/collie.tmux"
-  wait_for 'tmux has-session -t =x 2>/dev/null && [ "$(agent_windows x)" -eq 1 ]'
-  grep -q "run_restored	run=1 as=2$" "$(task_dir x)/events.log"
+  # restore runs in the background and logs run_restored after the window exists
+  wait_for 'grep -q "run_restored	run=1 as=2$" "$(task_dir x)/events.log"'
+  [ "$(agent_windows x)" -eq 1 ]
 }
