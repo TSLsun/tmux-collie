@@ -115,7 +115,10 @@ finished its turn without one), `stalled` (active, no live agent), `start`
 Dashboard rows start with a glyph (red `●` needs you: answer, review, reply,
 stalled; yellow `◐` working; dim `○` todo), then aligned columns: id, state
 (the needs value, or `working`), priority (P0 red, P1 yellow, P3 dim), a colored badge per
-running agent, the age of the last event, repos. Rows come in groups under a
+running agent, the age of the last event, repos, and the task branch's PR per
+repo (`#N`: open green, draft dim, merged purple, closed red; `-` for none).
+PRs come from `gh`, cached per task for 5 minutes and refreshed in the
+background (and by `sync` and `gc`). Rows come in groups under a
 `── <group> (<n>) ──` line, the most urgent next to the prompt: needs you,
 active, todo. `tab` / `shift-tab` switch the grouping (status, priority,
 repo); it is kept for the next dashboard. `enter` goes to the
@@ -131,8 +134,8 @@ those; switching the grouping clears the marks. The header lists the direct keys
 the start of TASK.md's Objective.
 
 `prefix h` opens a menu (dashboard, lazygit, terminal, new
-task, edit task, review, run agent, adopt agent, done, archive, jump to alert) for the current session's task; outside a
-task session it keeps only dashboard, lazygit, terminal, new task and jump to alert.
+task, edit task, review, run agent, adopt agent, done, archive, jump to alert, gc merged tasks) for the current session's task; outside a
+task session it keeps only dashboard, lazygit, terminal, new task, jump to alert and gc merged tasks.
 `run agent` (`r`, here and in the dashboard) switches you to the new agent window;
 plain `collie run` leaves it in the background (`-s` switches). `jump to alert` (`j`) switches to the pane of the last agent that notified. `prefix h h` goes straight to the
 dashboard. `new task` (`c`) prompts in a popup, creates the task from the

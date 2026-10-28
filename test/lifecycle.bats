@@ -130,6 +130,31 @@ squash_upstream() {
   [ -z "$(fm n status)" ]
 }
 
+@test "_gc: previews merged tasks; n aborts, y runs gc" {
+  for t in m u; do collie new "$t" --no-window; done
+  commit_in "$TMP/repos/A/feat-m" m
+  merge_upstream feat/m
+  run collie _gc <<<n
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"checking"*"merged:"$'\n'"m"$'\n'*"gc these? (y/n)"* ]]
+  [[ "$output" != *"done m"* ]]
+  [ -z "$(fm m status)" ]
+  [ -d "$TMP/repos/A/feat-m" ]
+  run collie _gc <<<y
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"done m"* ]]
+  [ "$(fm m status)" = done ]
+  [ -z "$(fm u status)" ]
+}
+
+@test "_gc: nothing merged says so without asking" {
+  collie new u --no-window
+  run collie _gc <<<y
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"no merged tasks"* && "$output" != *"(y/n)"* ]]
+  [ -z "$(fm u status)" ]
+}
+
 @test "gc: a reopened task is not finished again until it has new work" {
   collie new m --no-window
   commit_in "$TMP/repos/A/feat-m" m

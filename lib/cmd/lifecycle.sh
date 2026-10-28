@@ -241,6 +241,7 @@ cmd_gc() {
     fm_get "$d/TASK.md" status
     case $FM in done | archived) continue ;; esac
     id=${d##*/}
+    cmd__pr "$id" || true
     # folders have no branch: a task needs at least one merged repo
     merged=0
     while IFS=$TAB read -r name c b p; do
@@ -271,13 +272,32 @@ cmd_gc() {
   done
 }
 
+# Menu gc (in a popup): list what gc would finish, run it only after y.
+cmd__gc() {
+  local ids k
+  echo "checking for merged tasks…"
+  ids=$(cmd_gc -n)
+  if [ -z "$ids" ]; then
+    printf 'no merged tasks — press any key'
+    read -rsn1 _ || true
+    return 0
+  fi
+  printf 'merged:\n%s\n\ngc these? (y/n) ' "$ids"
+  read -rsn1 k || return 0
+  echo
+  [ "$k" = y ] || return 0
+  cmd_gc
+  printf '\npress any key'
+  read -rsn1 _ || true
+}
+
 # Merges base into each active task branch, so PRs stay mergeable after
 # another one lands. Clean merges are committed and pushed (if the branch has
 # an upstream); a conflicting merge is started and handed to the task's agent:
 # typed into it if idle, else a new run if it exited; else left untouched.
 # Tasks with an agent working or waiting are skipped. -n only predicts.
 cmd_sync() {
-  local dry=0 ids="" id d runs busy win agent name c b p bname n files msg out
+  local dry=0 ids="" id d runs busy win pane agent name c b p bname n files msg out
   while [ $# -gt 0 ]; do
     case $1 in
       -n) dry=1 ;;
@@ -360,11 +380,16 @@ cmd_sync() {
         git -C "$p" merge -q -m "Merge $bname into $b" "$BASE" >/dev/null 2>&1 || true
         msg="collie sync merged $bname into $b in $p and stopped on conflicts in: $files. Resolve them keeping the intent of both sides, run the Verify checks from .collie/TASK.md, commit the merge (do not rebase or abort it), and push if the branch has an upstream."
         if [ -n "$win" ]; then
-          # a pause before Enter, so agents that detect pastes still submit
-          tmux send-keys -t "$win" -l "$msg"
-          sleep 0.3
-          tmux send-keys -t "$win" Enter
-          out="sent to the agent in $win"
+          pane=$(agent_pane "$id" "$win")
+          if [ -n "$pane" ]; then
+            # a pause before Enter, so agents that detect pastes still submit
+            tmux send-keys -t "$pane" -l "$msg"
+            sleep 0.3
+            tmux send-keys -t "$pane" Enter
+            out="sent to the agent in $win"
+          else
+            out="agent pane not found, resolve it in $p"
+          fi
         elif "$BASH" "$PLUGIN_DIR/bin/collie" run "$id" -r "$name" --agent "$agent" \
           -p "Your task contract is .collie/TASK.md. $msg" >/dev/null 2>&1; then
           out="started a $agent run"
@@ -375,5 +400,6 @@ cmd_sync() {
         echo "$id $name: conflict in $files; $out"
       fi
     done <"$d/repos.tsv"
+    cmd__pr "$id" || true
   done <<<"$ids"
 }

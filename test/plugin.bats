@@ -67,6 +67,7 @@ stub_tmux() {
   [[ "$output" == *"collie dash"* && "$output" == *"-not a collie task — use collie new"* ]]
   [[ "$output" == *"-EE"*"collie new"* ]]
   [[ "$output" == *"terminal"$'\n'"t"$'\n'"display-popup -E -w 90% -h 85% -d '#{pane_current_path}'"$'\n'* ]]
+  [[ "$output" == *"gc merged tasks"$'\n'"G"$'\n'"display-popup "*"_popup "*"collie _gc'"* ]]
   [[ "$output" != *notes* && "$output" != *"run agent"* && "$output" != *"edit task"* && "$output" != *archive* ]]
 }
 
