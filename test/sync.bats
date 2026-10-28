@@ -157,6 +157,42 @@ wt() { echo "$TMP/repos/A/feat-$1"; }
   grep -q "run_started	run=2 agent=sleep repo=A" "$(task_dir c)/events.log"
 }
 
+@test "sync: Codex skips working/waiting, targets its split pane, and restarts after exit" {
+  mkdir "$TMP/bin"
+  export PATH="$TMP/bin:$PATH" CODEX_ARGS="$TMP/codex-args"
+  cat >"$TMP/bin/codex" <<'SH'
+#!/bin/sh
+printf '%s\n' "$@" >"$CODEX_ARGS"
+exec cat
+SH
+  chmod +x "$TMP/bin/codex"
+  collie new c --no-window
+  commit_in "$(wt c)" f mine
+  collie run c --agent codex -p ''
+  hook c working
+  land f theirs
+  run --separate-stderr collie sync c
+  [[ "$output" == *'skipped: agent busy'* ]]
+  hook c waiting
+  run --separate-stderr collie sync c
+  [[ "$output" == *'skipped: agent busy'* ]]
+  hook c idle
+  agent=$(run_pane c)
+  other=$(tmux split-window -P -F '#{pane_id}' -t "$agent")
+  run --separate-stderr collie sync c
+  [[ "$output" == *'conflict in f; sent to the agent'* ]]
+  wait_for "tmux capture-pane -p -J -t '$agent' | grep -q 'conflicts in: f. Resolve them'"
+  ! tmux capture-pane -p -J -t "$other" | grep -q 'Resolve them'
+  git -C "$(wt c)" merge --abort
+  # EOF exits the actual adapter process; the wrapper records its exit.
+  tmux send-keys -t "$agent" C-d
+  wait_for 'grep -q "run_exited" "$(task_dir c)/events.log"'
+  run --separate-stderr collie sync c
+  [[ "$output" == *'started a codex run'* ]]
+  wait_for 'grep -q "Your task contract" "$CODEX_ARGS"'
+  grep -q 'run_started.*run=2 agent=codex' "$(task_dir c)/events.log"
+}
+
 @test "dash sync: the panel shows sync -n for the marked ids; y syncs only those" {
   for t in a b c; do collie new "$t" --no-window; done
   for t in a b c; do commit_in "$(wt $t)" "$t"; done

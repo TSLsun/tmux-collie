@@ -182,3 +182,78 @@ PY
   [ "$(agent_of x)" = idle ]
   ! grep -q 'state=waiting' "$(task_dir x)/events.log"
 }
+
+@test "codex: concurrent tool completion does not clear an outstanding human prompt" {
+  export CODEX_DRAW=1
+  collie run x --agent codex -p ''
+  wait_for 'grep -q "agent_session" "$(task_dir x)/events.log"'
+  p=$(run_pane x)
+  tmux send-keys -t "$p" -l 'Press enter to confirm or esc to cancel'
+  tmux send-keys -t "$p" Enter
+  TMUX_PANE=$p collie _codex-hook wait
+  wait_for '[ "$(agent_of x)" = waiting ]'
+  TMUX_PANE=$p collie _codex-hook state working
+  sleep 0.6
+  [ "$(agent_of x)" = waiting ]
+}
+
+@test "codex: later trusted hook captures identity even when SessionStart was skipped" {
+  collie run x --agent codex -p ''
+  wait_for 'grep -q "agent_session" "$(task_dir x)/events.log"'
+  p=$(run_pane x)
+  printf '{"session_id":"later-trusted"}' | TMUX_PANE=$p collie _codex-hook state working
+  grep -q 'agent_session.*run=1 id=later-trusted' "$(task_dir x)/events.log"
+}
+
+@test "codex: explicit resume identity is logged before any new turn or trusted hook" {
+  printf '#!/bin/sh\nexec sleep 300\n' >"$TMP/bin/codex"
+  sid=01a18329-a7c5-7212-911a-5ea662aff812
+  collie run x --agent codex -p '' -- resume "$sid"
+  grep -q "agent_session.*run=1 id=$sid" "$(task_dir x)/events.log"
+}
+
+@test "codex: duplicate lost conversations resume once, including an older closed run" {
+  collie run x --agent codex -p ''
+  wait_for 'grep -q "agent_session.*run=1" "$(task_dir x)/events.log"'
+  sid=$(sed -n 's/.*agent_session.*run=1 id=//p' "$(task_dir x)/events.log")
+  collie run x --agent codex -p '' -- resume "$sid"
+  wait_for 'grep -q "agent_session.*run=2" "$(task_dir x)/events.log"'
+  tmux kill-window -t "$(run_pane x 1)"
+  sleep 0.4
+  kill "$(tmux display -p '#{pid}')"
+  wait_for '! tmux list-sessions >/dev/null 2>&1'
+  run collie restore -n x
+  [ "$(printf '%s\n' "$output" | grep -c "resume $sid")" -eq 1 ]
+  [[ "$output" == *'conversation already live or scheduled'* ]]
+}
+
+@test "codex: an invalidated observer cannot change state using its old token" {
+  collie run x --agent codex -p ''
+  wait_for 'grep -q "agent_session" "$(task_dir x)/events.log"'
+  p=$(run_pane x)
+  hook x working
+  tmux set-option -w -t "$p" @collie_codex_pending new-token
+  PLUGIN_DIR=$COLLIE_ROOT TASKS_DIR="$COLLIE_STATE_DIR/tasks" /bin/bash -c '
+    TAB=$(printf "\t")
+    . "$PLUGIN_DIR/lib/tasks.sh"
+    . "$PLUGIN_DIR/lib/tmux.sh"
+    . "$PLUGIN_DIR/lib/runtime.sh"
+    set_state "$1" waiting stale-token
+  ' bash "$p"
+  [ "$(agent_of x)" = working ]
+}
+
+@test "codex: replacement automatic review clears a prior resolved human wait" {
+  export CODEX_DRAW=1
+  collie run x --agent codex -p ''
+  wait_for 'grep -q "agent_session" "$(task_dir x)/events.log"'
+  p=$(run_pane x)
+  tmux send-keys -t "$p" -l 'Press enter to confirm or esc to cancel'
+  tmux send-keys -t "$p" Enter
+  TMUX_PANE=$p collie _codex-hook wait
+  wait_for '[ "$(agent_of x)" = waiting ]'
+  tmux send-keys -t "$p" -l 'Working (1s)'
+  tmux send-keys -t "$p" Enter
+  TMUX_PANE=$p collie _codex-hook wait
+  wait_for '[ "$(agent_of x)" = working ]'
+}

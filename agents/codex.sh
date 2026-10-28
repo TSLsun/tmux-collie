@@ -17,7 +17,11 @@ agent_session() { # pid: exactly one open rollout; shared daemons are ambiguous
 }
 
 agent_argv() { # forwarded CLI arguments; resume must precede the prompt
-  local d guard waiting
+  local d guard waiting uuid='^[a-f0-9]{8}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{4}-[a-f0-9]{12}$'
+  # Resume can sit idle without SessionStart until the first new turn.
+  # Preserve an explicitly known UUID immediately, even before hook trust.
+  # shellcheck disable=SC2034
+  if [ "${1:-}" = resume ] && [[ ${2:-} =~ $uuid ]]; then AGENT_SESSION_ID=$2; fi
   guard=$(codex_hook PreToolUse '' "$PLUGIN_DIR/hooks/tmux-guard" Bash)
   waiting=$(codex_hook PreToolUse wait '' request_user_input)
   waiting=${waiting#*=\[}
