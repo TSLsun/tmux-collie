@@ -52,8 +52,12 @@ delete an item only when it is covered by a test.
 - [ ] Alacritty `chars = "\u0002hh"` example in README.
 
 ## P4 — More agents & doctor
-- [ ] omp adapter: not researched (omp not installed here); runs as a generic
-      agent. Research its hook/extension mechanism on the work machine.
+- [x] omp adapter, checked 2026-10-28 with real omp 18.13.1 (bun script,
+      argv `bun …/omp …`) and 18.13.2 (Homebrew binary, argv `omp …`): found
+      by process, `adopt` resumes its own conversation by the id of the
+      `run/session-owners/<id>.lock` it holds (`-c` took the session a reused
+      tty last showed), extension reports working/idle. `waiting` (ask,
+      approvals) only tested with a fake omp.
 - [ ] Codex for real: `-c hooks.<Event>=[{hooks=[...]}]` inline TOML accepted,
       hooks listed in `/hooks`, trusted once and then firing; `PermissionRequest`
       → waiting. Only a fake `codex` that runs the hook strings is tested.
