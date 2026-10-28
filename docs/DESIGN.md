@@ -228,6 +228,7 @@ prefix h →  ┌ collie ─────────────┐
             │ x  archive          │ ┘
             │ ─────────────────── │
             │ j  jump to alert    │   ← last agent that notified
+            │ G  gc merged tasks  │   ← lists them, runs gc on y
             └─────────────────────┘
 ```
 

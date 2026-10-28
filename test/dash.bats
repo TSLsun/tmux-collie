@@ -137,7 +137,7 @@ EOF
 @test "dash actions: no next/notes keys" {
   run collie _actions x N
   [ -z "$output" ]
-  [ "$(FZF_PROMPT='collie> ' collie _key x N)" = "put(N)" ]
+  [ -z "$(FZF_PROMPT='collie> ' collie _key x N)" ]
   [[ "$(collie _pick x 2>/dev/null)" != *notes* ]]
 }
 
@@ -152,12 +152,16 @@ EOF
   [ "$(tail -n 1 "$(task_dir x)/TASK.md")" = edited ]
 }
 
-@test "_key: ctrl keys run their action directly, menu open or not" {
-  [[ "$(FZF_PROMPT='collie> ' collie _key x ctrl-r)" == "change-prompt(collie> )+clear-screen+execute("*"_actions 'x' 'r')+reload("*"_rows)+refresh-preview" ]]
-  [[ "$(FZF_PROMPT='▸ adopt agent ' collie _key x ctrl-v)" == *"_actions 'x' 'v')"* ]]
-  [[ "$(FZF_PROMPT='collie> ' collie _key x ctrl-e)" == *"_actions 'x' 'e')"* ]]
-  [[ "$(FZF_PROMPT='collie> ' collie _key x ctrl-d)" == *"_actions 'x' 'd')"* ]]
-  [ -z "$(FZF_PROMPT='collie> ' collie _key '' ctrl-r)" ]
+@test "_key: action keys run their action directly, lazygit style" {
+  [[ "$(FZF_PROMPT='collie> ' collie _key x r)" == "change-prompt(collie> )+clear-screen+execute("*"_actions 'x' 'r')+reload("*"_rows)+refresh-preview" ]]
+  [[ "$(FZF_PROMPT='collie> ' collie _key x v)" == *"_actions 'x' 'v')"* ]]
+  [[ "$(FZF_PROMPT='collie> ' collie _key x e)" == *"_actions 'x' 'e')"* ]]
+  [[ "$(FZF_PROMPT='collie> ' collie _key x d)" == *"_actions 'x' 'd')"* ]]
+  [ -z "$(FZF_PROMPT='collie> ' collie _key '' r)" ]
+  [[ "$(FZF_PROMPT='collie> ' collie _key '' c)" == *"_actions '' 'c')"* ]]
+  [ "$(FZF_PROMPT='collie> ' collie _key x q)" = abort ]
+  [ "$(FZF_PROMPT='collie> ' FZF_POS=3 collie _key x j)" = down ]
+  [ "$(FZF_PROMPT='collie> ' FZF_POS=3 collie _key x k)" = up ]
 }
 
 @test "_rows: column names, then aligned rows grouped needs you > active > todo" {
@@ -170,12 +174,12 @@ EOF
   [ "$status" -eq 0 ]
   [ "$(printf '%s\n' "$output" | cut -f1 | paste -s -d, -)" = ",bb,,a,,ccc-long," ]
   plain=$(printf '%s\n' "$output" | sed $'s/\033\\[[0-9;]*m//g' | cut -f2)
-  [ "$(printf '%s\n' "$plain" | sed -n 1p)" = "  TASK      STATE    PRI  AGENT  AGE  REPOS" ]
-  [ "$(printf '%s\n' "$plain" | sed -n 2p)" = "● bb        answer   P2   sleep  now  A" ]
-  [ "$(printf '%s\n' "$plain" | sed -n 3p)" = "── needs you (1) ──────────────────────────" ]
-  [ "$(printf '%s\n' "$plain" | sed -n 4p)" = "◐ a         working  P2   sleep  now  A" ]
-  [ "$(printf '%s\n' "$plain" | sed -n 6p)" = "○ ccc-long  start    P0   -      now  A" ]
-  [ "$(printf '%s\n' "$plain" | sed -n 7p)" = "── todo (1) ───────────────────────────────" ]
+  [ "$(printf '%s\n' "$plain" | sed -n 1p)" = "  TASK      STATE    PRI  AGENT  AGE  REPOS  PR" ]
+  [ "$(printf '%s\n' "$plain" | sed -n 2p)" = "● bb        answer   P2   sleep  now  A      -" ]
+  [ "$(printf '%s\n' "$plain" | sed -n 3p)" = "── needs you (1) ──────────────────────────────" ]
+  [ "$(printf '%s\n' "$plain" | sed -n 4p)" = "◐ a         working  P2   sleep  now  A      -" ]
+  [ "$(printf '%s\n' "$plain" | sed -n 6p)" = "○ ccc-long  start    P0   -      now  A      -" ]
+  [ "$(printf '%s\n' "$plain" | sed -n 7p)" = "── todo (1) ───────────────────────────────────" ]
   [[ "$output" == *$'\033[31m●'* && "$output" == *$'\033[33m◐'* && "$output" == *$'\033[1;31mP0'* ]]
   [ "$(paste -s -d, - <"$COLLIE_STATE_DIR/dash-rows")" = "bb,,a,,ccc-long," ]
   # dash -n keeps the same order, ungrouped
@@ -191,14 +195,74 @@ EOF
   [ "$(printf '%s\n' "$plain" | cut -f1 | paste -s -d, -)" = ",b,,a,,c," ]
   [[ "$(printf '%s\n' "$plain" | sed -n 3p)" == *"── P0 (1) ─"* ]]
   [[ "$(printf '%s\n' "$plain" | sed -n 7p)" == *"── P3 (1) ─"* ]]
-  [[ "$(printf '%s\n' "$plain" | sed -n 6p)" == *"  P3   -      "*"w  A" ]]
+  [[ "$(printf '%s\n' "$plain" | sed -n 6p)" == *"  P3   -      "*"w  A      -" ]]
   [ "$(collie _rows repo | cut -f1 | paste -s -d, -)" = ",b,a,c," ]
   [[ "$(collie _rows repo | sed -n 5p)" == *"── A (3) ─"* ]]
 }
 
+# gh stub: answers `pr list --head <branch>` from $TMP/prs ("<repo>:<branch>
+# <TAB>number<TAB>state" lines, the repo named by its origin) and logs each call
+stub_gh() {
+  cat >"$TMP/stub/gh" <<STUB
+#!/bin/sh
+echo "\$*" >>"$TMP/gh.log"
+while [ \$# -gt 0 ]; do [ "\$1" != --head ] || b=\$2; shift; done
+r=\$(git remote get-url origin)
+awk -F'\t' -v k="\${r##*origin-}:\$b" '\$1 == k { print \$2 "\t" \$3 }' "$TMP/prs"
+STUB
+  : >"$TMP/prs"
+}
+
+branch_of() { awk -F'\t' -v r="$2" '$1 == r { print $3 }' "$(task_dir "$1")/repos.tsv"; }
+
+@test "dash: PR column, #N per repo colored by state; cached, refreshed in the background once stale" {
+  stub_gh
+  make_bare_repo B
+  cd "$TMP/repos/A/main"
+  collie new x -r A -r B --no-window
+  for t in y z w; do collie new "$t" --no-window; done
+  printf 'A:%s\t244\topen\nB:%s\t12\tmerged\nA:%s\t7\tdraft\nA:%s\t3\tclosed\n' \
+    "$(branch_of x A)" "$(branch_of x B)" "$(branch_of y A)" "$(branch_of z A)" >"$TMP/prs"
+  # sync looks PRs up inline
+  collie sync >/dev/null
+  [ "$(collie dash -n | cut -f1,8 | sort | paste -s -d, -)" = $'w\t-,x\t#244:open #12:merged,y\t#7:draft,z\t#3:closed' ]
+  run collie _rows
+  plain=$(printf '%s\n' "$output" | sed $'s/\033\\[[0-9;]*m//g' | cut -f2)
+  [ "$(printf '%s\n' "$plain" | sed -n 1p)" = "  TASK  STATE  PRI  AGENT  AGE  REPOS  PR" ]
+  [[ "$plain" == *$'\n'"○ x     start  P2   -      now  A,B    #244 #12"$'\n'* ]]
+  [[ "$plain" == *$'\n'"○ w     start  P2   -      now  A      -"$'\n'* ]]
+  [[ "$output" == *$'\033[32m#244\033[0m \033[35m#12\033[0m'* ]]
+  [[ "$output" == *$'\033[2m#7\033[0m'* && "$output" == *$'\033[31m#3\033[0m'* ]]
+  # a fresh cache: no gh call on render
+  : >"$TMP/gh.log"
+  collie _rows >/dev/null
+  collie dash -n >/dev/null
+  sleep 0.5
+  [ ! -s "$TMP/gh.log" ]
+  # a stale one: one background lookup, shown on the next render
+  printf 'A:%s\t9\topen\n' "$(branch_of w A)" >>"$TMP/prs"
+  touch -t 202001010000 "$(task_dir w)/pr.tsv"
+  collie dash -n >/dev/null
+  wait_for '[ "$(collie dash -n | awk -F"\t" "\$1 == \"w\" { print \$8 }")" = "#9:open" ]'
+  [ "$(wc -l <"$TMP/gh.log")" -eq 1 ]
+}
+
+@test "dash: PR column shows - when gh fails; a failed lookup keeps the last entry" {
+  collie new x --no-window
+  collie new y --no-window
+  printf 'A\t5\tmerged\n' >"$(task_dir y)/pr.tsv"
+  run collie sync
+  [ "$status" -eq 0 ]
+  [[ "$output" != *gh* ]]
+  [ "$(collie dash -n | cut -f1,8 | sort | paste -s -d, -)" = $'x\t-,y\t#5:merged' ]
+  run collie _rows
+  [ "$status" -eq 0 ]
+  [[ "$(printf '%s\n' "$output" | sed $'s/\033\\[[0-9;]*m//g')" == *"○ x     start  P2   -      now  A      -"* ]]
+}
+
 @test "_group: tab cycles the grouping, kept across dashboards; not while the menu is up" {
   collie new a --no-window
-  [[ "$(FZF_PROMPT='collie> ' collie _group next)" == "change-header(enter: go  tab: group by "$'\033[1;33m'"priority"$'\033[0m\n'"^r: run  ^v: review  ^e: edit  ^d: done  ?: more)+reload("*"_rows)" ]]
+  [[ "$(FZF_PROMPT='collie> ' collie _group next)" == "change-header(enter: go  tab: group by "$'\033[1;33m'"priority"$'\033[0m'"  /: filter  space: mark"$'\n'"r: run  v: review  e: edit  d: done  s: sync  ?: more)+reload("*"_rows)" ]]
   [[ "$(collie _rows | sed -n 3p)" == *"── P2 (1) ─"* ]]
   FZF_PROMPT='collie> ' collie _group next >/dev/null
   [ "$(cat "$COLLIE_STATE_DIR/dash-group")" = repo ]
@@ -255,14 +319,14 @@ EOF
 }
 
 @test "_key: menu keys act only while the menu prompt is up; arrows move the selection" {
-  [ "$(FZF_PROMPT='collie> ' collie _key x r)" = "put(r)" ]
   [ "$(FZF_PROMPT='collie> ' collie _key x esc)" = abort ]
-  [ "$(FZF_PROMPT='collie> ' collie _key x enter)" = accept ]
+  [ "$(FZF_PROMPT='collie> ' collie _key x enter)" = clear-multi+accept ]
   [ "$(FZF_PROMPT='collie> ' collie _key x up)" = up ]
   [[ "$(FZF_PROMPT='▸ run agent ' collie _key x r)" == "change-prompt(collie> )+clear-screen+execute("*"_actions 'x' 'r')+reload("*"_rows)+refresh-preview" ]]
   [ "$(FZF_PROMPT='▸ run agent ' collie _key x down)" = "change-prompt(▸ adopt agent )" ]
   [ "$(FZF_PROMPT='▸ run agent ' collie _key x up)" = "change-prompt(▸ new task )" ]
   [ "$(FZF_PROMPT='▸ new task ' collie _key x down)" = "change-prompt(▸ run agent )" ]
+  [ "$(FZF_PROMPT='▸ run agent ' collie _key x j)" = "change-prompt(▸ adopt agent )" ]
   [[ "$(FZF_PROMPT='▸ review ' collie _key x enter)" == *"_actions 'x' 'v'"* ]]
   [ "$(FZF_PROMPT='▸ run agent ' collie _key x esc)" = "change-prompt(collie> )+clear-screen" ]
   [ "$(FZF_PROMPT='▸ new task ' collie _key '' r)" = "change-prompt(collie> )+clear-screen" ]
@@ -342,4 +406,27 @@ EOF
   collie new x
   tmux run-shell "$COLLIE_ROOT/bin/collie done x"
   [ "$(fm x status)" = done ]
+}
+
+@test "_key: space marks tasks (not separators); / shows the input, where every key types" {
+  [ "$(FZF_PROMPT='collie> ' collie _key x space)" = toggle ]
+  [ -z "$(FZF_PROMPT='collie> ' collie _key '' space)" ]
+  [ "$(FZF_PROMPT='collie> ' collie _key x /)" = "show-input+change-prompt(filter: )" ]
+  [ "$(FZF_PROMPT='filter: ' collie _key x space)" = "put( )" ]
+  [ "$(FZF_PROMPT='filter: ' collie _key x /)" = "put(/)" ]
+  [ "$(FZF_PROMPT='filter: ' collie _key x r)" = "put(r)" ]
+  [ "$(FZF_PROMPT='filter: ' collie _key x '?')" = "put(?)" ]
+  # enter keeps the filter (shown in the header), esc drops it
+  [[ "$(FZF_PROMPT='filter: ' FZF_QUERY=dep collie _key x enter)" == "hide-input+change-prompt(collie> )+change-header(filter: "$'\033[1;33m'"dep"$'\033[0m'"  esc: clear  enter: go"* ]]
+  [[ "$(FZF_PROMPT='filter: ' FZF_QUERY=dep collie _key x esc)" == "clear-query+change-prompt(collie> )+change-header("* ]]
+  [[ "$(FZF_PROMPT='filter: ' FZF_QUERY=dep collie _key x esc)" != *"dep"* ]]
+  [[ "$(FZF_PROMPT='collie> ' FZF_QUERY=dep collie _key x esc)" == "show-input+clear-query+change-header("* ]]
+  [ "$(FZF_PROMPT='collie> ' collie _key x esc)" = abort ]
+}
+
+@test "_key: sync gets the marked ids (separators dropped), other actions only the cursor's" {
+  [[ "$(FZF_PROMPT='▸ run agent ' collie _key x s a '' b)" == *"_actions 'x' 's' 'a' 'b')+reload("* ]]
+  [[ "$(FZF_PROMPT='▸ run agent ' collie _key x e a b)" == *"_actions 'x' 'e')+reload("* ]]
+  [[ "$(FZF_PROMPT='collie> ' collie _key x s a b)" == *"_actions 'x' 's' 'a' 'b')"* ]]
+  [ "$(FZF_PROMPT='▸ archive ' collie _key x down)" = "change-prompt(▸ sync )" ]
 }

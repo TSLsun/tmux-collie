@@ -12,7 +12,7 @@ See [docs/DESIGN.md](docs/DESIGN.md) for goals, data model and roadmap, and
 ## Install
 
 Requires bash 3.2+ (macOS `/bin/bash` is fine), git and tmux 3.2+.
-Optional: [fzf](https://github.com/junegunn/fzf) (`dash`, `go` without an id),
+Optional: [fzf](https://github.com/junegunn/fzf) 0.59+ (`dash`, `go` without an id),
 [lazygit](https://github.com/jesseduffield/lazygit) (menu entry), and at least
 one coding agent CLI (claude, codex, gemini or omp). `collie doctor` checks
 all of these.
@@ -46,7 +46,7 @@ collie new checkout-fix -w shop        # all repos of a workspace
 collie add deploy-v2 -r C              # pull another repo in mid-task
 collie ls                              # id  status  priority  session(*|-)  agent  repos  needs
 collie show deploy-v2                  # fields, TASK.md contract, repos, runs, events
-collie edit deploy-v2                  # adjust TASK.md in $EDITOR (also: dash ctrl-e, prefix h e)
+collie edit deploy-v2                  # adjust TASK.md in $EDITOR (also: dash e, prefix h e)
 collie go deploy-v2                    # switch/attach (fzf picker if no id)
 collie done deploy-v2                  # accept: remove worktrees + session, keep branches
 collie archive deploy-v2               # abandon: same cleanup
@@ -115,20 +115,29 @@ finished its turn without one), `stalled` (active, no live agent), `start`
 Dashboard rows start with a glyph (red `●` needs you: answer, review, reply,
 stalled; yellow `◐` working; dim `○` todo), then aligned columns: id, state
 (the needs value, or `working`), priority (P0 red, P1 yellow, P3 dim), a colored badge per
-running agent, the age of the last event, repos. Rows come in groups under a
+running agent, the age of the last event, repos, and the task branch's PR per
+repo (`#N`: open green, draft dim, merged purple, closed red; `-` for none).
+PRs come from `gh`, cached per task for 5 minutes and refreshed in the
+background (and by `sync` and `gc`). Rows come in groups under a
 `── <group> (<n>) ──` line, the most urgent next to the prompt: needs you,
 active, todo. `tab` / `shift-tab` switch the grouping (status, priority,
-repo); it is kept for the next dashboard. `enter` goes to the
-task; `ctrl-r` runs an agent, `ctrl-v` reviews, `ctrl-e` edits TASK.md and
-`ctrl-d` marks it done (after a y/n prompt), so typing still filters. `?` opens
-the full action menu above the selected row (run agent, adopt agent, edit task,
-review, terminal, done, archive, new task): press its key, or move with ↑↓ and
-press enter; esc closes it. The header lists the direct keys. The preview shows
+repo); it is kept for the next dashboard. Keys work like lazygit: they act
+directly, and only `/` opens a filter. `enter` goes to the task; `r` runs an
+agent, `a` adopts one, `e` edits TASK.md, `v` reviews, `t` opens a terminal,
+`d` marks it done and `x` archives it (both after a y/n prompt), `s` syncs, `c`
+creates a task; `j` / `k` move, `space` marks or unmarks a task (marked rows
+show `*`), `q` or esc quits. In the `/` filter every key types; `enter` keeps
+the filter (the header shows `filter: <query>`) and returns to the keys, esc drops it. `?`
+opens the action menu above the selected row (run agent, adopt agent, edit
+task, review, terminal, done, archive, sync, new task): press its key, or move
+with ↑↓ and press enter; esc closes it. `sync` (`s`) shows `collie sync -n` for the marked
+tasks (or the selected one when none is marked), asks y/n, then syncs only
+those; switching the grouping clears the marks. The header lists the direct keys. The preview shows
 the start of TASK.md's Objective.
 
 `prefix h` opens a menu (dashboard, lazygit, terminal, new
-task, edit task, review, run agent, adopt agent, done, archive, jump to alert) for the current session's task; outside a
-task session it keeps only dashboard, lazygit, terminal, new task and jump to alert.
+task, edit task, review, run agent, adopt agent, done, archive, jump to alert, gc merged tasks) for the current session's task; outside a
+task session it keeps only dashboard, lazygit, terminal, new task, jump to alert and gc merged tasks.
 `run agent` (`r`, here and in the dashboard) switches you to the new agent window;
 plain `collie run` leaves it in the background (`-s` switches). `jump to alert` (`j`) switches to the pane of the last agent that notified. `prefix h h` goes straight to the
 dashboard. `new task` (`c`) prompts in a popup, creates the task from the
@@ -261,6 +270,10 @@ make check   # shellcheck + bats (uses an isolated tmux server per test)
 ```
 
 Scripts target bash 3.2 (macOS `/bin/bash`).
+
+`bin/collie` is the entry point; it sources shared helpers from `lib/*.sh`
+and the commands from `lib/cmd/*.sh`. A function `cmd_<name>` is the command
+`<name>` (no dispatch list to edit); its help line goes in `lib/usage.sh`.
 
 To try a checkout in your running tmux, `set -g @collie-dev on`: the menu gets
 `dev: load this checkout` (reloads the plugin from the current pane's
