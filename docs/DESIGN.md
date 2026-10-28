@@ -182,7 +182,7 @@ created: 2026-01-01
 | `collie ls [-a]` | Active tasks: id, derived status, priority, session, agent, repos, needs |
 | `collie go [<id>]` | Switch to the task session (fzf if no id); recreate it if missing |
 | `collie run [<id>] [--agent X] [-r repo] [-p prompt] [-- args]` | Launch an agent in a new task window; records a run |
-| `collie adopt [<id>] [-y]` | Restart an agent started by hand in the task's session under `collie run`, resuming its conversation (claude, omp) |
+| `collie adopt [<id>] [-y]` | Restart an agent started by hand in the task's session under `collie run`, resuming its conversation (claude, codex, omp; Codex requires one identifiable open rollout) |
 | `collie dash [-n]` | fzf dashboard, most urgent first; enter jumps to the most urgent agent window |
 | `collie set [<id>] priority=P1 title="..."` | Update priority or title; a bare field reads stdin |
 | `collie edit [<id>]` | Open TASK.md in `$EDITOR` (also `new --edit`, dash `ctrl-e` or `? e`, menu `e`) |
@@ -273,7 +273,7 @@ fire in sessions collie started and the user's settings stay untouched:
 |---|---|---|
 | claude | hooks via `--settings` (above) | working/idle/exited verified; waiting unverified |
 | omp | extension `agents/omp.ts` loaded with `-e` (omp has no command hooks): `agent_start`/`tool_execution_end` → working, `tool_approval_requested` → waiting, `tool_approval_resolved` → working, `agent_end` → idle, `session_shutdown` → exited | fake agent only |
-| codex | hooks via `-c hooks.<Event>=[...]`: `UserPromptSubmit`/`PostToolUse` → working, `PermissionRequest` → waiting, `Stop` → idle, `SessionEnd` → exited; trust once in `/hooks` | fake agent only |
+| codex | per-run hooks for state and conversation identity; visible approval/question prompts determine waiting | real 0.165.0 on macOS; standard English TUI, see UNVERIFIED |
 | gemini | hooks in a generated settings file passed as `GEMINI_CLI_SYSTEM_SETTINGS_PATH`: `BeforeAgent`/`AfterTool` → working, `Notification` (`ToolPermission`) → waiting, `AfterAgent` → idle, `SessionEnd` → exited; hooks print `{}` | fake agent only |
 | generic | wrapper exit + `window_activity`: working → idle after `@collie-silence` s (30) without output | always works, coarse; no `waiting` |
 
@@ -281,6 +281,11 @@ Agents that strip the hook environment (gemini) lose `$TMUX_PANE`;
 `collie state` then walks parent processes until it reaches a pane's process.
 The `collie _exec` wrapper waits until `collie run` has tagged the window before
 starting the agent, so the first hook never races the tagging.
+
+Codex uses a dedicated process and captures exact conversation ids for adoption
+and restore. It confirms visible human prompts before reporting waiting, since
+permission review may be automatic. See [Agent details](../README.md#agent-details)
+for setup and [UNVERIFIED](UNVERIFIED.md#p4--more-agents--doctor) for limitations.
 
 `exited` / `unknown` are also derived: a run whose window is gone (no
 `run_exited` logged) is `exited` while the session exists and `unknown` once the

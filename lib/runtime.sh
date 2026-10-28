@@ -221,13 +221,21 @@ notify() { # title body [pane]
 }
 
 # Records a state change for the window of a pane; ignores non-collie windows.
-set_state() { # pane state
-  local info id run old wid agent active attached msg
+set_state() { # pane state [expected-codex-pending-token]
+  local info id run old wid agent active attached msg applied
   info=$(tmux display-message -p -t "$1" '#{@collie_task}|#{@collie_run}|#{@collie_state}|#{window_id}|#{@collie_agent}|#{window_active}|#{session_attached}' 2>/dev/null) || return 0
   IFS='|' read -r id run old wid agent active attached <<<"$info"
   [ -n "$id" ] && [ -f "$TASKS_DIR/$id/TASK.md" ] || return 0
   [ "$2" != "$old" ] || return 0
-  tmux set-option -w -t "$wid" @collie_state "$2" 2>/dev/null || return 0
+  if [ -n "${3:-}" ]; then
+    # Compare and update on the tmux server: Stop cannot invalidate an
+    # observer between its token check and a stale waiting state write.
+    applied=$(tmux if-shell -F -t "$1" "#{==:#{@collie_codex_pending},$3}" \
+      "set-option -w -t $wid @collie_state $2 ; display-message -p changed" 2>/dev/null) || return 0
+    [ "$applied" = changed ] || return 0
+  else
+    tmux set-option -w -t "$wid" @collie_state "$2" 2>/dev/null || return 0
+  fi
   log_event "$id" agent_state "run=${run:--} state=$2"
   # no popup for the window you are looking at
   [ "$active" = 1 ] && [ "${attached:-0}" -gt 0 ] && return 0
@@ -238,7 +246,12 @@ set_state() { # pane state
   esac
   # target of `collie _jump` (menu: jump to alert)
   tmux set-option -g @collie-last-pane "$1" 2>/dev/null || true
-  notify "collie: $id" "${agent:-agent} $msg" "$1" >/dev/null 2>&1 &
+  (
+    # A hook may have resolved this state before notification delivery.
+    [ "$(tmux show-options -wqv -t "$wid" @collie_state 2>/dev/null)" = "$2" ] || exit 0
+    [ -z "${3:-}" ] || [ "$(tmux show-options -wqv -t "$wid" @collie_codex_pending 2>/dev/null)" = "$3" ] || exit 0
+    notify "collie: $id" "${agent:-agent} $msg" "$1"
+  ) >/dev/null 2>&1 &
 }
 
 # Switches a client to a pane (default "-": the last one that notified).

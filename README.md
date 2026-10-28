@@ -180,22 +180,31 @@ Claude Code, Codex and Gemini CLI report their state through hooks that
 collie passes per run (`--settings`, `-c hooks...`, a generated system
 settings file); omp through an extension loaded with `-e agents/omp.ts`
 (tool approvals and the `ask` tool count as waiting); nothing to install.
-Codex asks you to trust the hooks once in `/hooks`. Other agents count as
-idle after 30s without output (`@collie-silence`).
+Codex is tested with 0.165.0. Collie starts it with `--no-daemon` and
+`--sandbox workspace-write` for access to the task directory and other repos.
+Review and trust Collie's hooks in `/hooks`, including after they change;
+until trusted, state is estimated from output silence and the guard is inactive.
+Waiting alerts require the standard English approval/question prompts; custom
+prompts and startup trust dialogs may not notify. Other agents count as idle
+after 30s without output (`@collie-silence`).
 The same three also get `hooks/tmux-guard`, which blocks shell commands that
 would kill your tmux server (`tmux kill-server`/`kill-session`, `pkill tmux`)
 unless they name a private server with `-L`/`-S`; limits in DESIGN.md.
 Agents you start by hand in a task's session (`claude`, `codex`, `gemini`,
 `omp`, `aider`) are found by process and show up the same way, but without
 hooks they are only working or idle (by output silence) and do not notify.
-`collie adopt` (dashboard `?` → `a`, `prefix h` → `a`) stops such a Claude or omp and restarts
-it with `collie run … -- --continue` (omp: `-r <id>` of the session it holds
-open, else `-c`): same conversation, now with hooks.
+`collie adopt` (dashboard `?` → `a`, `prefix h` → `a`) restarts a hand-started
+Claude, Codex or omp with the same conversation and hooks. For Codex, start it
+with `--no-daemon` and have `lsof` installed. If Collie cannot identify the
+conversation, it leaves the process running.
 When the tmux server dies, `collie restore` (`-n` to list) restarts every
 agent run that was live, each resuming its own conversation: claude by the
-session id its `SessionStart` hook logged (`--resume <id>`), omp by the
+session id its `SessionStart` hook logged (`--resume <id>`), Codex by its logged
+id (`resume <id>`), omp by the
 latest one in its worktree (`-c`, one run per worktree); other agents are
-skipped. `set -g @collie-restore on` runs it when the plugin loads.
+skipped. Codex without a captured identity is skipped with a diagnostic, never
+resumed using the latest conversation. `set -g @collie-restore on` runs restore
+when the plugin loads. Run `collie doctor` for version and setup diagnostics.
 
 ```tmux
 set -g status-right '#{collie_status} %H:%M'   # ●waiting ●idle ●working counts

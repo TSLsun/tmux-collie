@@ -58,9 +58,14 @@ delete an item only when it is covered by a test.
       `run/session-owners/<id>.lock` it holds (`-c` took the session a reused
       tty last showed), extension reports working/idle. `waiting` (ask,
       approvals) only tested with a fake omp.
-- [ ] Codex for real: `-c hooks.<Event>=[{hooks=[...]}]` inline TOML accepted,
-      hooks listed in `/hooks`, trusted once and then firing; `PermissionRequest`
-      → waiting. Only a fake `codex` that runs the hook strings is tested.
+- [x] Codex 0.165.0 on macOS, checked 2026-10-28: hooks, approval/question
+      waits and recovery, notifications/status, adoption and exact restore.
+- [ ] Other Codex versions/platforms and localized/custom prompts are unverified.
+      Human waits may remain working; startup trust dialogs do not notify.
+- [ ] Codex adoption requires a hand-started `--no-daemon` process and `lsof`;
+      unknown or ambiguous conversations are refused.
+- [ ] Restore caveat: an old window closed without an exit record can appear
+      lost after a later server failure. Inspect `restore -n` first.
 - [ ] Gemini for real: system settings layer picked up and merged with user
       hooks; hooks enabled without extra flags; `ToolPermission` matcher;
       ancestor-pane lookup under its sanitized env. Tried 2026-10-25: two trust
@@ -71,10 +76,11 @@ delete an item only when it is covered by a test.
 - [ ] `ancestor_pane` on Linux (`ps -o ppid=`), and with deep process trees
       (gives up after 10 levels).
 - [ ] `collie doctor` version parsing for tmux builds like `next-3.6` / `3.3a`.
-- [ ] tmux kill guard in real agents: Claude `PreToolUse` exit 2 blocks the
-      Bash call and shows the reason; Codex `PreToolUse` with matcher `Bash`
-      (after trust in `/hooks`); Gemini `BeforeTool` on `run_shell_command`
-      blocks on exit 2. Tests only run the hook command a fake agent was given.
+- [x] Real Codex 0.165.0 tmux guard denial, checked 2026-10-28. Named private
+      servers pass the guard, but macOS sandbox permissions may still block
+      socket access.
+- [ ] Claude and Gemini tmux guards through real agents. Deterministic tests
+      verify their emitted hook commands and denial behavior.
 
 ## P5 — Review & lifecycle
 - [ ] `gc` against a real remote: PR merge commits (non-ff) detected after

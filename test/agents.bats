@@ -35,8 +35,8 @@ EOF
   chmod +x "$TMP/bin/codex"
   collie run x --agent codex -p ''
   working_then_idle
-  grep -q '^hooks.PermissionRequest=.*state waiting' "$ARGS"
-  c=$(sed -n 's/^hooks\.PreToolUse=\[{matcher="Bash",.*command="\(.*\)"}\]}\]$/\1/p' "$ARGS")
+  grep -q '^hooks.PermissionRequest=.*_codex-hook wait' "$ARGS"
+  c=$(sed -n 's/^hooks\.PreToolUse=\[{matcher="Bash",hooks=\[{type="command",command="\([^"]*\)"}\]}.*$/\1/p' "$ARGS")
   run sh -c "$c" <<<'{"tool_input":{"command":"tmux kill-server"}}'
   [ "$status" -eq 2 ]
   grep -qxF "$TMP/repos/B.worktrees/feat-x" "$ARGS"

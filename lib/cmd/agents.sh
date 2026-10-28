@@ -48,15 +48,16 @@ cmd_run() {
   RUN_PROMPT=$prompt
   # shellcheck disable=SC2034
   RUN_DIRS=$(awk -F'\t' -v p="$path" '$4 != p { print $4 }' "$d/repos.tsv"; printf '%s\n' "$d")
-  AGENT_HOOKS=0
+  AGENT_HOOKS=0 AGENT_HOOKS_PENDING=0 AGENT_EXTRA_HANDLED=0 AGENT_SESSION_ID=""
   if [[ $agent != */* ]] && [ -f "$PLUGIN_DIR/agents/$agent.sh" ]; then
     # shellcheck source=/dev/null
     . "$PLUGIN_DIR/agents/$agent.sh"
-    agent_argv
+    agent_argv ${extra[@]+"${extra[@]}"}
   else
     AGENT_ARGV=("$agent")
   fi
   command -v "$agent" >/dev/null || die "agent command '$agent' not found"
+  [ "$AGENT_EXTRA_HANDLED" = 1 ] || AGENT_ARGV+=(${extra[@]+"${extra[@]}"})
 
   # an agent with hooks and no prompt sits at its input box
   local st=working run wid server pane
@@ -66,8 +67,9 @@ cmd_run() {
   # the server pid tells `restore` a run lost with its server from a closed
   # window; the pane is the agent's, for `sync` to type into once it is split
   wid=$(tmux_spawn new-window -d -P -F '#{window_id} #{pid} #{pane_id}' -t "=$id:" -n "$agent" -c "$path" \
-    "$BASH" "$PLUGIN_DIR/bin/collie" _exec "$id" "$run" "${AGENT_ARGV[@]}" ${extra[@]+"${extra[@]}"})
+    "$BASH" "$PLUGIN_DIR/bin/collie" _exec "$id" "$run" "${AGENT_ARGV[@]}")
   read -r wid server pane <<<"$wid"
+  [ "$AGENT_HOOKS_PENDING" = 0 ] || AGENT_HOOKS=0
   # @collie_run last: the wrapper starts the agent once it is set
   tmux set-option -w -t "$wid" @collie_task "$id" \; set-option -w -t "$wid" @collie_path "$path" \; \
     set-option -w -t "$wid" @collie_agent "$agent" \; set-option -w -t "$wid" @collie_hooks "$AGENT_HOOKS" \; \
@@ -75,6 +77,7 @@ cmd_run() {
     set-option -w -t "$wid" @collie_run "$run"
   # an instant agent exit may log run_exited first; task_runs is order-free
   log_event "$id" run_started "run=$run agent=$agent repo=$rname window=$wid server=$server"
+  [ -z "$AGENT_SESSION_ID" ] || log_agent_session "$id" "$run" "$AGENT_SESSION_ID"
   # -s: show the new window (menu, dashboard); a script keeps its window
   if [ "$switch" = 1 ] && { [ -n "$client" ] || [ -n "${TMUX:-}" ]; }; then
     tmux switch-client ${client:+-c "$client"} -t "$wid" \; select-window -t "$wid" 2>/dev/null || true
@@ -98,7 +101,7 @@ cmd_adopt() {
   info=$(manual_runs "=$id" | head -n 1)
   [ -n "$info" ] || die "adopt: no agent started by hand in task '$id'"
   IFS=$TAB read -r a agent a wid pane pid path <<<"$info"
-  AGENT_RESUME=() AGENT_RESUME_ID=()
+  AGENT_RESUME=() AGENT_RESUME_ID=() AGENT_REQUIRE_SESSION=0
   unset -f agent_session
   # shellcheck source=/dev/null
   [ ! -f "$PLUGIN_DIR/agents/$agent.sh" ] || . "$PLUGIN_DIR/agents/$agent.sh"
@@ -106,6 +109,7 @@ cmd_adopt() {
   # its own conversation if the adapter can tell it from the pid, else the latest
   sid=""
   ! declare -F agent_session >/dev/null || sid=$(agent_session "$pid")
+  [ "$AGENT_REQUIRE_SESSION" = 0 ] || [ -n "$sid" ] || die "adopt: cannot identify the active $agent conversation; use a dedicated Codex process (--no-daemon), or run with an explicit resume id"
   if [ -n "$sid" ] && [ ${#AGENT_RESUME_ID[@]} -gt 0 ]; then
     args=("${AGENT_RESUME_ID[@]}" "$sid")
   else
@@ -151,7 +155,7 @@ lost_runs() { # id current-server-pid
     END {
       for (i = 1; i <= n; i++) {
         r = order[i]
-        if (r in seen) print r "\t" agent[r] "\t" repo[r] "\t="
+        if (r in seen) print r "\t" agent[r] "\t" repo[r] "\t=\t" sid[r]
         else if (!(r in ended) && (server[r] == "" ? !up : server[r] != srv)) lost[++m] = r
       }
       for (i = 1; i <= m; i++) {
@@ -167,7 +171,7 @@ lost_runs() { # id current-server-pid
 # there is live or resumes it already). Restored runs
 # are logged, so running it again starts nothing.
 cmd_restore() {
-  local dry=0 ids="" id d server run agent repo sid used args out
+  local dry=0 ids="" id d server run agent repo sid used args out live_sid used_sids
   while [ $# -gt 0 ]; do
     case $1 in
       -n) dry=1 ;;
@@ -187,15 +191,27 @@ cmd_restore() {
   server=$(tmux display-message -p '#{pid}' 2>/dev/null || true)
   while IFS= read -r id; do
     [ -n "$id" ] || continue
-    used=" "
-    while IFS=$TAB read -r run agent repo sid; do
-      [ "$sid" != = ] || { used="$used$agent:$repo=$run "; continue; }
-      AGENT_RESUME=() AGENT_RESUME_ID=()
+    used=" " used_sids=" "
+    while IFS=$TAB read -r run agent repo sid live_sid; do
+      if [ "$sid" = = ]; then
+        used="$used$agent:$repo=$run "
+        [ -z "$live_sid" ] || used_sids="$used_sids$agent:$live_sid "
+        continue
+      fi
+      AGENT_RESUME=() AGENT_RESUME_ID=() AGENT_REQUIRE_SESSION=0
       # shellcheck source=/dev/null
       [[ $agent == */* ]] || [ ! -f "$PLUGIN_DIR/agents/$agent.sh" ] || . "$PLUGIN_DIR/agents/$agent.sh"
       out="$id run $run: $agent in $repo:"
       if [ "$sid" != - ] && [ ${#AGENT_RESUME_ID[@]} -gt 0 ]; then
+        if [ "$AGENT_REQUIRE_SESSION" = 1 ] && [[ $used_sids == *" $agent:$sid "* ]]; then
+          echo "$out skipped: conversation already live or scheduled"
+          continue
+        fi
         args=("${AGENT_RESUME_ID[@]}" "$sid")
+        used_sids="$used_sids$agent:$sid "
+      elif [ "$AGENT_REQUIRE_SESSION" = 1 ]; then
+        echo "$out skipped: $agent conversation id missing; resume explicitly after identifying it in Codex"
+        continue
       elif [ ${#AGENT_RESUME[@]} -eq 0 ]; then
         echo "$out skipped: collie cannot resume $agent sessions"
         continue
@@ -245,6 +261,65 @@ cmd_state() {
   [ -z "$pane" ] || set_state "$pane" "$1"
 }
 
+# A real Codex hook proves trust/config loading for this window. Until then,
+# use output-silence fallback instead of claiming reliable lifecycle hooks.
+cmd__codex-hook() {
+  local pane=${TMUX_PANE:-$(ancestor_pane)}
+  [ -n "$pane" ] || return 0
+  tmux set-option -w -t "$pane" @collie_hooks 1 2>/dev/null || return 0
+  # All Codex lifecycle payloads carry session_id, including hooks first
+  # trusted after SessionStart was skipped.
+  cmd__session
+  case ${1:-} in
+    _session) : ;;
+    state)
+      if [ "${2:-}" = working ]; then
+        # A different tool may finish while a human prompt is still open.
+        # Leave the observer authoritative until the dialog closes.
+        [ -z "$(tmux show-options -wqv -t "$pane" @collie_codex_pending 2>/dev/null)" ] || return 0
+      else
+        tmux set-option -wu -t "$pane" @collie_codex_pending 2>/dev/null || true
+      fi
+      cmd_state "${2:-}" ;;
+    wait)
+      # PermissionRequest precedes hook/automatic review too: it does not
+      # prove the user must answer. Observe the TUI before sending an alert.
+      tmux set-option -w -t "$pane" @collie_codex_pending "$$" 2>/dev/null || return 0
+      "$BASH" "$PLUGIN_DIR/bin/collie" _codex-wait "$pane" "$$" >/dev/null 2>&1 &
+      ;;
+  esac
+}
+
+# Codex 0.165.0 has no approval-resolved hook. Check only the current TUI
+# footer, never scrollback: announce a human wait after two observations,
+# then recover as soon as the dialog disappears, before a slow tool ends.
+# Unknown/custom UI falls back to working; never infer a human wait from
+# an automatic permission review. Idle/exited hooks invalidate the observer;
+# working hooks can arrive from other concurrent tools while a dialog is open.
+cmd__codex-wait() { # pane pending-token
+  local info pending st screen visible=0 missing=0 seen=0
+  while :; do
+    sleep 0.2
+    info=$(tmux display-message -p -t "$1" '#{@collie_codex_pending}|#{@collie_state}' 2>/dev/null) || return 0
+    IFS='|' read -r pending st <<<"$info"
+    [ "$pending" = "$2" ] && [ "$st" != exited ] || return 0
+    screen=$(tmux capture-pane -p -t "$1" 2>/dev/null | awk 'NF { a[++n] = $0 } END { for (i = n - 3; i <= n; i++) if (i > 0) print a[i] }') || return 0
+    case $screen in
+      *'to confirm or '*'to cancel'* | *'to submit answer'* | *'to submit all'*)
+        visible=$((visible + 1)) missing=0 ;;
+      *) missing=$((missing + 1)) visible=0 ;;
+    esac
+    [ "$(tmux show-options -wqv -t "$1" @collie_codex_pending 2>/dev/null)" = "$2" ] || return 0
+    if [ "$visible" -ge 2 ] && [ "$seen" = 0 ]; then
+      set_state "$1" waiting "$2"
+      seen=1
+    elif [ "$st" = waiting ] && [ "$missing" -ge 2 ]; then
+      set_state "$1" working "$2"
+      seen=0
+    fi
+  done
+}
+
 # SessionStart hook: logs the run's conversation id (session_id in the hook's
 # JSON on stdin) for `collie restore`, when it changed (new, /clear).
 cmd__session() {
@@ -256,8 +331,12 @@ cmd__session() {
   info=$(tmux display-message -p -t "$pane" '#{@collie_task}|#{@collie_run}' 2>/dev/null) || return 0
   IFS='|' read -r id run <<<"$info"
   [ -n "$id" ] && [ -n "$run" ] && [ -f "$TASKS_DIR/$id/TASK.md" ] || return 0
-  [ "$(awk -F'\t' -v r="run=$run id=" '$2 == "agent_session" && index($3, r) == 1 { s = substr($3, length(r) + 1) } END { print s }' "$TASKS_DIR/$id/events.log")" != "$sid" ] || return 0
-  log_event "$id" agent_session "run=$run id=$sid"
+  log_agent_session "$id" "$run" "$sid"
+}
+
+log_agent_session() { # task run id
+  [ "$(awk -F'\t' -v r="run=$2 id=" '$2 == "agent_session" && index($3, r) == 1 { s = substr($3, length(r) + 1) } END { print s }' "$TASKS_DIR/$1/events.log")" != "$3" ] || return 0
+  log_event "$1" agent_session "run=$2 id=$3"
 }
 
 # Pane whose process is an ancestor of this one, for agents that strip
