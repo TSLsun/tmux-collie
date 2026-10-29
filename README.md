@@ -122,10 +122,9 @@ finished its turn without one), `stalled` (active, no live agent), `start`
 
 Dashboard rows start with a glyph (red `●` needs you: answer, review, reply,
 stalled; yellow `◐` working; dim `○` todo), then aligned columns: id, state
-(the needs value, or `working`), priority (P0 red, P1 yellow, P3 dim), a colored badge per
-running agent, the age of the last event, repos, and the task branch's PR per
-repo (`#N`: open green, draft dim, merged purple, closed red; `-` for none),
-then a yellow `⚡N` when the task is predicted to conflict with N others (base
+(the needs value, or `working`), priority (P0 red, P1 yellow, P3 dim), and the
+task branch's PR per repo (`#N`: open green, draft dim, merged purple, closed
+red; nothing for none), then a yellow `⚡N` when the task is predicted to conflict with N others (base
 counts as one; the preview names them and their files). The prediction is
 cached per task by `sync`, `sync -n` and `gc`; once a branch or base moves, it
 is hidden and recomputed in the background.
@@ -150,6 +149,10 @@ with ↑↓ and press enter; esc closes it. `sync` (`s`) shows `collie sync -n` 
 tasks (or the selected one when none is marked) in the panel, asks y/n, then syncs only
 those; switching the grouping clears the marks. The header lists the direct keys. The preview shows
 the start of TASK.md's Objective.
+The preview also shows the live agents, the age of the last event, and each
+repo's branch and PR. It sits right of the list when the rows fit beside it,
+below it otherwise, and wraps long lines. The header's key hints wrap instead
+of being cut.
 
 `prefix h` opens a menu (dashboard, lazygit, terminal, new
 task, edit task, review, run agent, adopt agent, done, archive, jump to alert, gc merged tasks) for the current session's task; outside a
@@ -183,7 +186,14 @@ collie passes per run (`--settings`, `-c hooks...`, a generated system
 settings file); omp through an extension loaded with `-e agents/omp.ts`
 (tool approvals and the `ask` tool count as waiting); nothing to install.
 Codex is tested with 0.165.0. Collie starts it with `--no-daemon` and
-`--sandbox workspace-write` for access to the task directory and other repos.
+`--approve-for-me` (which selects `workspace-write`) for automatic approval review
+within the workspace sandbox, with access to the task directory and other repos.
+New runs, explicit resumes, adoption and restore all use this mode. It requires
+a CLI supporting `--approve-for-me` (verified with 0.165.0); older CLIs may reject
+the flag. Managed requirements take precedence and may restrict automatic review.
+This uses an interactive approval policy and the automatic reviewer, preserving
+filesystem/network boundaries; it does not grant unrestricted execution.
+See the [official auto-review documentation](https://learn.chatgpt.com/docs/sandboxing/auto-review).
 Review and trust Collie's hooks in `/hooks`, including after they change;
 until trusted, state is estimated from output silence and the guard is inactive.
 Waiting alerts require the standard English approval/question prompts; custom
