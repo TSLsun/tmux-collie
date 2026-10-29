@@ -291,8 +291,8 @@ branch_of() { awk -F'\t' -v r="$2" '$1 == r { print $3 }' "$(task_dir "$1")/repo
 @test "manual agent: one started by hand in a task session shows up, idle by silence" {
   collie new x
   mkdir -p "$TMP/bin"
-  ln -s "$(command -v sleep)" "$TMP/bin/claude"
-  tmux new-window -d -t "=x:" "sh -c '$TMP/bin/claude 300; :'"
+  fake_agent "$TMP/bin/claude"
+  tmux new-window -d -t "=x:" "sh -c '$TMP/bin/claude -c \"read -t 300\"; :'"
   # ps must retain the full executable path even in a narrow terminal.
   export COLUMNS=40
   wait_for '[ "$(COLLIE_SILENCE=999 agent_of x)" = working ]'
@@ -305,11 +305,11 @@ branch_of() { awk -F'\t' -v r="$2" '$1 == r { print $3 }' "$(task_dir "$1")/repo
 @test "adopt: stops a hand-started agent and resumes it under collie run" {
   collie new x
   mkdir -p "$TMP/bin" "$TMP/manual"
-  ln -s "$(command -v sleep)" "$TMP/manual/claude"
+  fake_agent "$TMP/manual/claude"
   printf '#!/bin/sh\necho "$@" >"%s/args"\nexec sleep 300\n' "$TMP" >"$TMP/bin/claude"
   chmod +x "$TMP/bin/claude"
   export PATH="$TMP/bin:$PATH"
-  tmux new-window -d -t "=x:" -c "$TMP/repos/A/feat-x" "sh -c '$TMP/manual/claude 300; :'"
+  tmux new-window -d -t "=x:" -c "$TMP/repos/A/feat-x" "sh -c '$TMP/manual/claude -c \"read -t 300\"; :'"
   wait_for '[ "$(agent_of x)" = working ]'
   run collie adopt x </dev/null
   [ "$status" -ne 0 ]
