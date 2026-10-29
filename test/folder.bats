@@ -87,7 +87,7 @@ teardown() { teardown_env; }
   [ ! -s "$(task_dir trip)/commits.txt" ]
   run collie _preview trip
   [[ "$output" == *"trip-2027  folder  $F"* && "$output" != *removed* ]]
-  [[ "$(collie history -n)" == *"	done	trip	"* ]]
+  [[ "$(collie history -n)" == *"  done  trip  "* ]]
 }
 
 @test "reopen: a folder task comes back in place; a vanished folder refuses" {

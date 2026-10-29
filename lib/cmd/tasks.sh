@@ -213,9 +213,9 @@ cmd_show() {
   fi
 }
 
-# Finished tasks, newest first: finish date, status, id, title, branches, PR
-# (#n of the first pull/merge request URL in REPORT.md). A pattern keeps the
-# tasks whose TASK.md or REPORT.md contains it, ignoring case.
+# Finished tasks, newest first, tab-separated: finish date, status, id, title,
+# branches, PR (#n of the first pull/merge request URL in REPORT.md). A pattern
+# keeps the tasks whose TASK.md or REPORT.md contains it, ignoring case.
 history_rows() { # [pattern]
   local d st title bs name b rep fin _
   for d in "$TASKS_DIR"/*; do
@@ -240,8 +240,34 @@ history_rows() { # [pattern]
   done | sort -t "$TAB" -k1,1r -k3,3
 }
 
+# history_rows aligned for reading: each column but the last (PR) padded to its
+# widest cell, two blanks apart. When the rows are wider than <width> (0: no
+# limit), titles then branches give way, down to 12 columns, cut with "…". <keyed> 1 starts
+# each row with the id and a tab, for fzf.
+history_table() { # width keyed
+  awk -F'\t' -v width="$1" -v keyed="$2" '
+    function max(a, b) { return a > b ? a : b }
+    { n++; for (i = 1; i <= 6; i++) { c[n, i] = $i; w[i] = max(w[i], length($i)) } }
+    END {
+      t = w[6]; for (i = 1; i <= 5; i++) t += w[i] + 2
+      for (i = 4; i <= 5 && width > 0 && t > width; i++) {
+        m = w[i] - max(w[i] < 12 ? w[i] : 12, w[i] - (t - width)); w[i] -= m; t -= m
+      }
+      for (r = 1; r <= n; r++) {
+        s = keyed ? c[r, 3] "\t" : ""
+        for (i = 1; i <= 5; i++) {
+          v = c[r, i]; l = length(v)
+          # "…" is one column, though awk may count its bytes
+          if (l > w[i]) { v = substr(v, 1, w[i] - 1) "…"; l = w[i] }
+          s = s v sprintf("%" (w[i] - l + 2) "s", "")
+        }
+        print s c[r, 6]
+      }
+    }'
+}
+
 cmd_history() {
-  local list=0 pat="" rows self
+  local list=0 pat="" rows self w COLUMNS=${COLUMNS:-}
   while [ $# -gt 0 ]; do
     case $1 in
       -n) list=1 ;;
@@ -250,16 +276,21 @@ cmd_history() {
     esac
     shift
   done
+  # rows fit the terminal (or COLUMNS); piped elsewhere they keep whole titles
+  [ -n "$COLUMNS" ] || [ ! -t 1 ] || { COLUMNS=$(stty size </dev/tty 2>/dev/null) && COLUMNS=${COLUMNS#* }; } || COLUMNS=""
   if [ "$list" -eq 1 ] || [ ! -t 1 ] || ! command -v fzf >/dev/null; then
-    history_rows "$pat"
+    history_rows "$pat" | history_table "${COLUMNS:-0}" 0
     return
   fi
   rows=$(history_rows "$pat")
   [ -n "$rows" ] || die "history: no finished tasks${pat:+ matching $pat}"
+  w=$(history_table 0 0 <<<"$rows" | awk '{ w = length > w ? length : w } END { print w + 0 }')
+  preview_layout "$w"
+  rows=$(history_table "$WIDTH" 1 <<<"$rows")
   self="'$BASH' '$PLUGIN_DIR/bin/collie'"
-  printf '%s\n' "$rows" | fzf --delimiter='\t' --no-sort --prompt='history> ' --header='enter: show' \
-    --preview="$self _preview {3}" --preview-window=right,50% \
-    --bind="enter:execute($self show {3} | sh -c \"\${PAGER:-less}\")" >/dev/null || true
+  printf '%s\n' "$rows" | fzf --delimiter='\t' --with-nth=2.. --no-sort --prompt='history> ' --header='enter: show' \
+    --preview="$self _preview {1}" --preview-window="$PREVIEW" \
+    --bind="enter:execute($self show {1} | sh -c \"\${PAGER:-less}\")" >/dev/null || true
 }
 
 # $EDITOR may carry arguments (EDITOR='code --wait'); like git, let sh split it.
