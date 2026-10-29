@@ -7,6 +7,33 @@ run_agent() {
   RUN_AGENT=${RUN_AGENT:-claude}
 }
 
+# Allocate and record a run in one per-task critical section. A subshell
+# keeps cleanup traps local to this launch, including callers like handoff.
+start_run() ( # task agent repo path argv...
+  local id=$1 agent=$2 repo=$3 path=$4 lock run wid server pane i=0
+  shift 4
+  lock="$TASKS_DIR/$id/run.lock"
+  until mkdir "$lock" 2>/dev/null; do
+    i=$((i + 1))
+    [ "$i" -lt 200 ] || die "run: timed out waiting for $lock"
+    sleep 0.05
+  done
+  # Bash 3.2 unwinds function locals before EXIT on an explicit exit.
+  # Capture the quoted path now so failures still release the lock.
+  # shellcheck disable=SC2064
+  trap "rmdir $(printf '%q' "$lock")" EXIT
+  trap 'exit 129' HUP
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  run=$(awk -F'\t' '$2 == "run_started" { n++ } END { print n + 1 }' "$TASKS_DIR/$id/events.log") || exit
+  ensure_session "$id" || exit
+  wid=$(tmux_spawn new-window -d -P -F '#{window_id} #{pid} #{pane_id}' -t "=$id:" -n "$agent" -c "$path" \
+    "$BASH" "$PLUGIN_DIR/bin/collie" _exec "$id" "$run" "$@") || exit
+  read -r wid server pane <<<"$wid"
+  log_event "$id" run_started "run=$run agent=$agent repo=$repo window=$wid server=$server" || exit
+  printf '%s %s %s %s\n' "$run" "$wid" "$server" "$pane"
+)
+
 cmd_run() {
   local id="" agent="" repo="" prompt=$DEFAULT_PROMPT custom=0 extra=() switch=0 client=""
   while [ $# -gt 0 ]; do
@@ -62,22 +89,19 @@ cmd_run() {
   # an agent with hooks and no prompt sits at its input box
   local st=working run wid server pane
   [ "$AGENT_HOOKS" = 0 ] || [ -n "$prompt" ] || st=idle
-  run=$(($(awk -F'\t' '$2 == "run_started" { n++ } END { print n + 0 }' "$d/events.log") + 1))
-  ensure_session "$id"
   # the server pid tells `restore` a run lost with its server from a closed
   # window; the pane is the agent's, for `sync` to type into once it is split
-  wid=$(tmux_spawn new-window -d -P -F '#{window_id} #{pid} #{pane_id}' -t "=$id:" -n "$agent" -c "$path" \
-    "$BASH" "$PLUGIN_DIR/bin/collie" _exec "$id" "$run" "${AGENT_ARGV[@]}")
-  read -r wid server pane <<<"$wid"
+  wid=$(start_run "$id" "$agent" "$rname" "$path" "${AGENT_ARGV[@]}") || return
+  read -r run wid server pane <<<"$wid"
   [ "$AGENT_HOOKS_PENDING" = 0 ] || AGENT_HOOKS=0
   # @collie_run last: the wrapper starts the agent once it is set
   tmux set-option -w -t "$wid" @collie_task "$id" \; set-option -w -t "$wid" @collie_path "$path" \; \
     set-option -w -t "$wid" @collie_agent "$agent" \; set-option -w -t "$wid" @collie_hooks "$AGENT_HOOKS" \; \
     set-option -w -t "$wid" @collie_pane "$pane" \; set-option -w -t "$wid" @collie_state "$st" \; \
-    set-option -w -t "$wid" @collie_run "$run"
-  # an instant agent exit may log run_exited first; task_runs is order-free
-  log_event "$id" run_started "run=$run agent=$agent repo=$rname window=$wid server=$server"
-  [ -z "$AGENT_SESSION_ID" ] || log_agent_session "$id" "$run" "$AGENT_SESSION_ID"
+    set-option -w -t "$wid" @collie_run "$run" || return
+  if [ -n "$AGENT_SESSION_ID" ]; then
+    log_agent_session "$id" "$run" "$AGENT_SESSION_ID" || return
+  fi
   # -s: show the new window (menu, dashboard); a script keeps its window
   if [ "$switch" = 1 ] && { [ -n "$client" ] || [ -n "${TMUX:-}" ]; }; then
     tmux switch-client ${client:+-c "$client"} -t "$wid" \; select-window -t "$wid" 2>/dev/null || true
@@ -303,8 +327,8 @@ cmd_restore() {
       fi
       if [ "$dry" -eq 1 ]; then
         echo "$out ${args[*]}"
-      elif ("$BASH" "$PLUGIN_DIR/bin/collie" run "$id" -r "$repo" --agent "$agent" -p '' -- "${args[@]}"); then
-        log_event "$id" run_restored "run=$run as=$(awk -F'\t' '$2 == "run_started" { n++ } END { print n + 0 }' "$TASKS_DIR/$id/events.log")"
+      elif (cmd_run "$id" -r "$repo" --agent "$agent" -p '' -- "${args[@]}" &&
+        log_event "$id" run_restored "run=$run as=$RUN_STARTED"); then
         echo "$out restored (${args[*]})"
       else
         echo "$out skipped: collie run failed"

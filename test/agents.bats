@@ -16,6 +16,52 @@ setup() {
 }
 teardown() { teardown_env; }
 
+@test "concurrent runs get distinct IDs and keep their exit events" {
+  collie go x
+  export REAL_TMUX
+  REAL_TMUX=$(command -v tmux)
+  cat >"$TMP/bin/tmux" <<'EOF'
+#!/bin/sh
+# Widen the allocation-to-log gap without touching the user's server.
+[ "$1" != new-window ] || sleep 0.3
+exec "$REAL_TMUX" "$@"
+EOF
+  printf '#!/bin/sh\nexit 0\n' >"$TMP/bin/stub"
+  chmod +x "$TMP/bin/tmux" "$TMP/bin/stub"
+  collie run x --agent stub -p '' >"$TMP/run-a" 2>&1 &
+  a=$!
+  collie run x --agent stub -p '' >"$TMP/run-b" 2>&1 &
+  b=$!
+  wait "$a"
+  wait "$b"
+  ids=$(awk -F'\t' '$2 == "run_started" { split($3, a, " "); print a[1] }' "$(task_dir x)/events.log" | sort)
+  [ "$ids" = $'run=1\nrun=2' ]
+  wait_for '[ "$(grep -c "run_exited" "$(task_dir x)/events.log")" -eq 2 ]'
+  grep -q 'run_exited.*run=1 code=0' "$(task_dir x)/events.log"
+  grep -q 'run_exited.*run=2 code=0' "$(task_dir x)/events.log"
+  [ -n "$(run_pane x 1)" ]
+  [ -n "$(run_pane x 2)" ]
+}
+
+@test "failed spawn releases the run lock without consuming an ID" {
+  collie go x
+  export REAL_TMUX
+  REAL_TMUX=$(command -v tmux)
+  cat >"$TMP/bin/tmux" <<'EOF'
+#!/bin/sh
+[ "$1" != new-window ] || exit 1
+exec "$REAL_TMUX" "$@"
+EOF
+  chmod +x "$TMP/bin/tmux"
+  run collie run x --agent sleep -- 300
+  [ "$status" -ne 0 ]
+  [ ! -d "$(task_dir x)/run.lock" ]
+  ! grep -q run_started "$(task_dir x)/events.log"
+  rm "$TMP/bin/tmux"
+  collie run x --agent sleep -- 300
+  [ -n "$(run_pane x 1)" ]
+}
+
 working_then_idle() {
   wait_for 'grep -q "state=working" "$(task_dir x)/events.log" && [ "$(agent_of x)" = idle ]'
   grep -q "agent_state	run=1 state=working" "$(task_dir x)/events.log"
