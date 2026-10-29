@@ -99,6 +99,11 @@ run_pane() { tmux list-windows -t "=$1" -F '#{@collie_run} #{pane_id}' | awk -v 
 # simulate an agent hook firing inside run <n> of task <id>
 hook() { TMUX_PANE=$(run_pane "$1" "${3:-1}") collie state "$2"; }
 
+# an agent started by hand: link $1 (named like the agent) to bash and run it
+# as `$1 -c "read -t 300"`; not to sleep, which uutils (Ubuntu 25.10+) runs
+# only under its own name
+fake_agent() { ln -s "$(command -v bash)" "$1"; }
+
 # aggregated agent column of `collie ls -a`
 agent_of() { collie ls -a | awk -F'\t' -v id="$1" '$1 == id { print $5 }'; }
 

@@ -47,7 +47,7 @@ manual_runs() { # session
     { split($0, f, "|"); a = at[f[1]]; pid = atp[f[1]] }
     f[3] != "" { next }
     a != "" { print "-\t" a "\t" (now - f[4] >= s ? "idle" : "working") "\t" f[2] "\t" f[5] "\t" pid "\t" f[6] }' \
-    <(ps -A -o pid=,ppid=,args=) \
+    <(ps -ww -A -o pid=,ppid=,args=) \
     <(tmux list-panes -s -t "$1" -F '#{pane_pid}|#{window_id}|#{@collie_state}|#{window_activity}|#{pane_id}|#{pane_current_path}' 2>/dev/null || true)
 }
 

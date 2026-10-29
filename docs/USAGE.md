@@ -62,6 +62,7 @@ flowchart TB
 |---|---|---|---|---|
 | Task record (`TASK.md`, `repos.tsv`, `events.log`, `REPORT.md`) | task | `new`, `spike` | never | yes |
 | Commit snapshot (`commits.txt`) | task | `done`, `archive` | never | yes |
+| Handoff packet (`handoffs/`) | handoff attempt | `handoff` | never | yes |
 | Branch `<type>/<id>` | repo in the task | `new`, `add`, `spike` | never (delete it yourself) | yes |
 | Worktree + `.collie` symlink | repo in the task | `new`, `add`, `spike` | `done`, `archive`, `gc` | yes |
 | tmux session `<id>` | task | `new`, `go` (rebuilds it) | `done`, `archive`, `gc` | no; `go` rebuilds it |
@@ -156,6 +157,31 @@ recorded, so they are not restored.
 
 For Codex setup and limitations, see [Agent details](../README.md#agent-details).
 
+### Cross-agent handoff
+
+To continue Claude work with Codex, or vice versa, choose the source run from
+`collie show` and write a nonempty note with completed work, decisions,
+verification, unresolved issues, and the next action:
+
+```sh
+collie show fix-retry
+collie handoff fix-retry --from 1 --agent codex --note handoff.md
+```
+
+The destination starts a fresh conversation in a separate run/window using
+the source repository; `-r <repo>` selects another repository in the same task.
+Existing worktrees, source runs, and conversation IDs are preserved. The source
+agent stays running: pause or stop its work yourself before handing off if
+concurrent edits could conflict. Handoff does not merge branches.
+
+The command prints a unique directory under the task record's `handoffs/`.
+It contains `HANDOFF.md`, `NOTE.md`, a `TASK.md` snapshot, and `REPORT.md` when
+present. These snapshots are read-only to prevent accidental edits and remain
+unchanged when later runs update the task or report. The current TASK.md stays
+authoritative. No private transcript or resume ID is passed between agents.
+Successful handoffs record a source/destination link in `events.log`; a failed
+launch keeps its packet for diagnosis without recording a successful handoff.
+
 ## 5. Where each action lives
 
 | Action | CLI | `prefix h` menu | Dashboard (`prefix h h`) |
@@ -164,6 +190,7 @@ For Codex setup and limitations, see [Agent details](../README.md#agent-details)
 | New task | `collie new` | `c` (prompts, switches to it) | `?` `c` |
 | Edit TASK.md | `collie edit` | `e` | `ctrl-e` or `?` `e` |
 | Run agent | `collie run` | `r` | `ctrl-r` or `?` `r` |
+| Continue with another agent | `collie handoff` | — | — |
 | Adopt hand-started agent | `collie adopt` | `a` | `?` `a` |
 | Restore agents after the server died | `collie restore` | — | — |
 | Go to task | `collie go` | — | `enter` (most urgent agent window) |
@@ -193,6 +220,7 @@ keys keep filtering; `?` lists every action.
 | A different branch per repo | `-r api:release/v2` |
 | Add a repo later | `collie add <id> -r infra` |
 | A second agent on the same task | `collie run <id> --agent codex [-r repo]` (one window per run) |
+| Continue another agent's work with explicit context | `collie handoff <id> --from <run> --agent <claude\|codex> --note <file>` |
 | The agent to push, open a PR and watch CI | `collie new --ship` or `set -g @collie-ship on` |
 | Move uncommitted experiments out of the way | `collie spike <id>` inside the worktree (new `exp/<id>` task, tracked changes only) |
 | Keep `exp/*` off the remote | link `hooks/pre-push` (see README) |
