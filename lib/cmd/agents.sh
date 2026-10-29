@@ -353,13 +353,32 @@ ancestor_pane() {
   done
 }
 
+# Each count is a mouse range: clicking it opens `collie _status-menu`
+# (bound in collie.tmux).
 cmd_status() {
   win_states -a | awk -F'\t' '
+    function c(st, fg) { if (n[st]) s = s " #[range=user|collie-" st "]#[fg=" fg "]●" n[st] "#[norange]" }
     { n[$5]++ }
     END {
-      if (n["waiting"]) s = s " #[fg=red]●" n["waiting"]
-      if (n["idle"]) s = s " #[fg=yellow]●" n["idle"]
-      if (n["working"]) s = s " #[fg=green]●" n["working"]
+      c("waiting", "red")
+      c("idle", "yellow")
+      c("working", "green")
       if (s != "") print substr(s, 2) "#[default]"
     }'
+}
+
+# Menu of the agents behind a status bar count; picking one jumps to it.
+cmd__status-menu() { # range client
+  local st=${1#collie-} C="$PLUGIN_DIR/bin/collie" items=() s wid run agent x k=0
+  while IFS=$TAB read -r s wid run agent x; do
+    [ "$x" = "$st" ] || continue
+    k=$((k + 1))
+    [ "$run" = - ] || [ "$run" = 1 ] || agent="$agent #$run"
+    items+=("${s//#/##}  $agent" "$([ "$k" -gt 9 ] || echo "$k")" "run-shell '$C _jump $wid ${2:-}'")
+  done < <(win_states -a)
+  if [ "$k" = 0 ]; then
+    tmux display-message ${2:+-c "$2"} "collie: no $st agents"
+    return 0
+  fi
+  tmux display-menu ${2:+-c "$2"} -T "#[align=centre] $st " -x M -y S "${items[@]}"
 }

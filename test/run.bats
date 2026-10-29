@@ -219,7 +219,34 @@ new_popup() { # keys...
   hook a waiting
   hook b idle
   run collie status
-  [ "$output" = "#[fg=red]●1 #[fg=yellow]●1 #[fg=green]●1#[default]" ]
+  [ "$output" = "#[range=user|collie-waiting]#[fg=red]●1#[norange] #[range=user|collie-idle]#[fg=yellow]●1#[norange] #[range=user|collie-working]#[fg=green]●1#[norange]#[default]" ]
+}
+
+@test "_status-menu: lists the agents behind a count, each jumps to its window" {
+  for t in a b; do
+    collie new "$t" --no-window
+    collie run "$t" -- 300
+  done
+  collie run a -- 300
+  hook b waiting
+  mkdir -p "$TMP/stub"
+  cat >"$TMP/stub/tmux" <<EOF
+#!/bin/sh
+case \$1 in display-menu | display-message) printf '%s\n' "\$@"; exit ;; esac
+exec $(command -v tmux) "\$@"
+EOF
+  chmod +x "$TMP/stub/tmux"
+  wa1=$(tmux display -p -t "$(run_pane a)" '#{window_id}')
+  wa2=$(tmux display -p -t "$(run_pane a 2)" '#{window_id}')
+  wb=$(tmux display -p -t "$(run_pane b)" '#{window_id}')
+  PATH="$TMP/stub:$PATH" run collie _status-menu collie-working cl
+  [ "$status" -eq 0 ]
+  [[ "$output" == "display-menu"$'\n'"-c"$'\n'"cl"$'\n'*" working "* ]]
+  [[ "$output" == *$'\n'"a  sleep"$'\n'"1"$'\n'"run-shell '"*"collie _jump $wa1 cl'"* ]]
+  [[ "$output" == *$'\n'"a  sleep #2"$'\n'"2"$'\n'"run-shell '"*"collie _jump $wa2 cl'"* ]]
+  [[ "$output" != *"_jump $wb"* ]]
+  PATH="$TMP/stub:$PATH" run collie _status-menu collie-idle cl
+  [[ "$output" == *"collie: no idle agents"* && "$output" != *display-menu* ]]
 }
 
 # --- claude adapter ---------------------------------------------------------
