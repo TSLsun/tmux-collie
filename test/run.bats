@@ -249,6 +249,36 @@ EOF
   [[ "$output" == *"collie: no idle agents"* && "$output" != *display-menu* ]]
 }
 
+@test "status: counts agents started by hand, in task sessions or not" {
+  mkdir "$TMP/manual"
+  fake_agent "$TMP/manual/claude"
+  collie new x --no-window
+  collie go x
+  tmux new-window -d -t '=x:' "$TMP/manual/claude -c 'read -t 300'"
+  tmux new-session -d -s own "$TMP/manual/claude -c 'read -t 300'"
+  g='#[range=user|collie-working]#[fg=green]'
+  wait_for '[ "$(COLLIE_SILENCE=999 collie status)" = "$g●2#[norange]#[default]" ]'
+  [ "$(COLLIE_SILENCE=0 collie status)" = "#[range=user|collie-idle]#[fg=yellow]●2#[norange]#[default]" ]
+  # the menu behind a count lists them too, each jumping to its pane
+  mkdir -p "$TMP/stub"
+  cat >"$TMP/stub/tmux" <<EOF
+#!/bin/sh
+case \$1 in display-menu | display-message) printf '%s\n' "\$@"; exit ;; esac
+exec $(command -v tmux) "\$@"
+EOF
+  chmod +x "$TMP/stub/tmux"
+  px=$(tmux list-panes -s -t '=x' -F '#{pane_id}' | tail -1)
+  po=$(tmux list-panes -t '=own' -F '#{pane_id}')
+  COLLIE_SILENCE=999 PATH="$TMP/stub:$PATH" run collie _status-menu collie-working cl
+  [[ "$output" == *$'\n'"x  claude"$'\n'*"collie _jump $px cl'"* && "$output" == *$'\n'"own  claude"$'\n'*"collie _jump $po cl'"* ]]
+  tmux set-option -g @collie-status-scope tasks
+  [ "$(COLLIE_SILENCE=999 collie status)" = "$g●1#[norange]#[default]" ]
+  COLLIE_SILENCE=999 PATH="$TMP/stub:$PATH" run collie _status-menu collie-working cl
+  [[ "$output" == *"_jump $px cl"* && "$output" != *"_jump $po"* ]]
+  tmux kill-session -t '=x'
+  [ -z "$(COLLIE_SILENCE=999 collie status)" ]
+}
+
 # --- claude adapter ---------------------------------------------------------
 
 @test "claude adapter: prompt, hook settings, other worktrees as --add-dir" {

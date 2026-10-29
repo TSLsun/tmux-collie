@@ -403,8 +403,10 @@ EOF
 usage: collie status
 
 Agent counts (waiting, idle, working) for the tmux status bar, as
-#{collie_status}. Read-only. With the mouse on, click a count to pick one of
-its agents and jump to its window (tmux 3.4+).
+#{collie_status}: collie runs and agents started by hand in any tmux
+session (`set -g @collie-status-scope tasks`: only in task sessions).
+Read-only. With the mouse on, click a count to pick one of its agents and
+jump to it (tmux 3.4+).
 EOF
       ;;
     doctor)
