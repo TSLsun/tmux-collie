@@ -60,6 +60,8 @@ collie run deploy-v2                   # claude in a new window of the task sess
 collie run deploy-v2 -r B -p 'fix CI'  # in repo B's worktree, custom first prompt
 collie run deploy-v2 --agent codex      # also: gemini, omp; state hooks injected per run
 collie run --agent aider -- --model x  # any command works (no state hooks)
+collie handoff deploy-v2 --from 1 --agent codex --note handoff.md
+                                      # new conversation, preserving run 1's context
 collie doctor                          # deps, agents, task/worktree consistency
 collie ls                              # agent column: waiting/idle/working/exited/unknown
 ```
@@ -207,6 +209,11 @@ hooks they are only working or idle (by output silence) and do not notify.
 Claude, Codex or omp with the same conversation and hooks. For Codex, start it
 with `--no-daemon` and have `lsof` installed. If Collie cannot identify the
 conversation, it leaves the process running.
+
+`collie handoff` continues Claude work with Codex, or vice versa, in a fresh
+run with a preserved handoff note and task context. The source agent stays
+running; see the [handoff workflow](docs/USAGE.md#cross-agent-handoff).
+
 When the tmux server dies, `collie restore` (`-n` to list) restarts every
 agent run that was live, each resuming its own conversation: claude by the
 session id its `SessionStart` hook logged (`--resume <id>`), Codex by its logged

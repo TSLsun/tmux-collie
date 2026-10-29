@@ -80,9 +80,9 @@ assert_auto_review() {
 
 @test "codex: adoption refuses unknown conversation before stopping the process" {
   mkdir "$TMP/manual"
-  ln -s "$(command -v sleep)" "$TMP/manual/codex"
+  fake_agent "$TMP/manual/codex"
   collie go x
-  tmux new-window -d -t '=x:' -c "$REPO/feat-x" "sh -c '$TMP/manual/codex 300; :'"
+  tmux new-window -d -t '=x:' -c "$REPO/feat-x" "sh -c '$TMP/manual/codex -c \"read -t 300\"; :'"
   wait_for '[ "$(agent_of x)" = working ]'
   run collie adopt x -y
   [ "$status" -ne 0 ]
@@ -119,10 +119,10 @@ assert_auto_review() {
 @test "codex: adoption resumes the sole open rollout, never the newest conversation in cwd" {
   sid=01a18329-a7c5-7212-911a-5ea662aff812
   mkdir "$TMP/manual"
-  ln -s "$(command -v sleep)" "$TMP/manual/codex"
+  fake_agent "$TMP/manual/codex"
   collie go x
   tmux new-window -d -t '=x:' -c "$REPO/feat-x" \
-    "sh -c 'exec 3>$TMP/rollout-2026-10-28T00-00-00-$sid.jsonl; $TMP/manual/codex 300; :'"
+    "sh -c 'exec 3>$TMP/rollout-2026-10-28T00-00-00-$sid.jsonl; $TMP/manual/codex -c \"read -t 300\"; :'"
   wait_for '[ "$(agent_of x)" = working ]'
   collie adopt x -y
   wait_for '[ -f "$ARGS" ]'
@@ -133,10 +133,10 @@ assert_auto_review() {
 
 @test "codex: two open rollouts are ambiguous and adoption leaves the agent running" {
   mkdir "$TMP/manual"
-  ln -s "$(command -v sleep)" "$TMP/manual/codex"
+  fake_agent "$TMP/manual/codex"
   collie go x
   tmux new-window -d -t '=x:' -c "$REPO/feat-x" \
-    "sh -c 'exec 3>$TMP/rollout-01a18329-a7c5-7212-911a-5ea662aff812.jsonl; exec 4>$TMP/rollout-01a18329-a7c5-7212-911a-5ea662aff813.jsonl; $TMP/manual/codex 300; :'"
+    "sh -c 'exec 3>$TMP/rollout-01a18329-a7c5-7212-911a-5ea662aff812.jsonl; exec 4>$TMP/rollout-01a18329-a7c5-7212-911a-5ea662aff813.jsonl; $TMP/manual/codex -c \"read -t 300\"; :'"
   wait_for '[ "$(agent_of x)" = working ]'
   run collie adopt x -y
   [ "$status" -ne 0 ]
