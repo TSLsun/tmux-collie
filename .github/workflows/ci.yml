@@ -30,3 +30,13 @@ jobs:
           HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: 1
         run: brew install bats-core parallel tmux
       - run: make ${{ runner.os == 'Linux' && 'check' || 'test' }}
+        env:
+          COLLIE_TEST_DIAGNOSTICS_DIR: ${{ runner.temp }}/collie-test-diagnostics
+      - name: Preserve tmux diagnostics on failure
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: tmux-diagnostics-${{ matrix.os }}-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/collie-test-diagnostics
+          if-no-files-found: ignore
+          retention-days: 7
