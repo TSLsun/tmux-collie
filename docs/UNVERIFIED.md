@@ -28,6 +28,10 @@ delete an item only when it is covered by a test.
       tests only use a custom `$COLLIE_NOTIFY` command.
 - [ ] Notification skipped for the active window of an attached session
       (tests never attach a client).
+- [ ] Clickable status counts on tmux 3.2/3.3 (no `range=user`): the counts
+      should still render, colored and unclickable. Click → menu → jump was
+      checked on 3.8 on 2026-10-29 with a pty client sending SGR mouse events.
+- [ ] Clicking a menu item with the mouse (only the item's key was sent).
 - [ ] `#{collie_status}` rendering in a real status bar (glyph width, colours,
       refresh every `status-interval`).
 - [ ] Latency of `collie state` from `PostToolUse` on every tool call is

@@ -431,24 +431,55 @@ ancestor_pane() {
   done
 }
 
+# Windows in the status bar's scope, as " @1 @2 ": with
+# @collie-status-scope tasks, only those of task sessions; else all ("").
+status_scope() {
+  local s w
+  STATUS_WINS=""
+  [ "$(tmux_opt @collie-status-scope)" = tasks ] || return 0
+  STATUS_WINS=" "
+  while IFS='|' read -r s w; do
+    [ ! -f "$TASKS_DIR/$s/TASK.md" ] || STATUS_WINS="$STATUS_WINS$w "
+  done < <(tmux list-windows -a -F '#{session_name}|#{window_id}' 2>/dev/null || true)
+}
+
 # Counts every agent, including ones started by hand; with
-# @collie-status-scope tasks, only those in task sessions.
+# @collie-status-scope tasks, only those in task sessions. Each count is a
+# mouse range: clicking it opens `collie _status-menu` (bound in collie.tmux).
 cmd_status() {
-  local wins="" s w
-  if [ "$(tmux_opt @collie-status-scope)" = tasks ]; then
-    wins=" "
-    while IFS='|' read -r s w; do
-      [ ! -f "$TASKS_DIR/$s/TASK.md" ] || wins="$wins$w "
-    done < <(tmux list-windows -a -F '#{session_name}|#{window_id}' 2>/dev/null || true)
-  fi
+  status_scope
   { win_states -a | cut -f5
-    manual_runs -a | awk -F'\t' -v w="$wins" 'w == "" || index(w, " " $4 " ") { print $3 }'
+    manual_runs -a | awk -F'\t' -v w="$STATUS_WINS" 'w == "" || index(w, " " $4 " ") { print $3 }'
   } | awk '
+    function c(st, fg) { if (n[st]) s = s " #[range=user|collie-" st "]#[fg=" fg "]●" n[st] "#[norange]" }
     { n[$1]++ }
     END {
-      if (n["waiting"]) s = s " #[fg=red]●" n["waiting"]
-      if (n["idle"]) s = s " #[fg=yellow]●" n["idle"]
-      if (n["working"]) s = s " #[fg=green]●" n["working"]
+      c("waiting", "red")
+      c("idle", "yellow")
+      c("working", "green")
       if (s != "") print substr(s, 2) "#[default]"
     }'
+}
+
+# Menu of the agents behind a status bar count; picking one jumps to it
+# (collie runs to their window, agents started by hand to their pane).
+cmd__status-menu() { # range client
+  local st=${1#collie-} C="$PLUGIN_DIR/bin/collie" items=() s t agent x k=0
+  status_scope
+  while IFS=$TAB read -r s t agent x; do
+    [ "$x" = "$st" ] || continue
+    k=$((k + 1))
+    items+=("${s//#/##}  $agent" "$([ "$k" -gt 9 ] || echo "$k")" "run-shell '$C _jump $t ${2:-}'")
+  done < <(
+    win_states -a | awk -F'\t' '{ a = $4; if ($3 != "-" && $3 != 1) a = a " #" $3; print $1 "\t" $2 "\t" a "\t" $5 }'
+    manual_runs -a | awk -F'\t' -v w="$STATUS_WINS" '
+      FNR == NR { j = index($0, "|"); ses[substr($0, 1, j - 1)] = substr($0, j + 1); next }
+      w == "" || index(w, " " $4 " ") { print ses[$4] "\t" $5 "\t" $2 "\t" $3 }' \
+      <(tmux list-windows -a -F '#{window_id}|#{session_name}' 2>/dev/null || true) -
+  )
+  if [ "$k" = 0 ]; then
+    tmux display-message ${2:+-c "$2"} "collie: no $st agents"
+    return 0
+  fi
+  tmux display-menu ${2:+-c "$2"} -T "#[align=centre] $st " -x M -y S "${items[@]}"
 }
