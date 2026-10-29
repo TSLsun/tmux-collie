@@ -1,12 +1,14 @@
 #!/usr/bin/env bats
 
 load helper
+load tmux_diagnostics
 
 # The fake claude records its argv and fires the SessionStart hook collie
 # gave it with the JSON the real CLI sends on stdin: a fresh session id, or
 # the one it was told to --resume.
 setup() {
   setup_env
+  setup_tmux_diagnostics
   export SHELL=/bin/sh COLLIE_NOTIFY=off COLLIE_AGENT=sleep
   mkdir "$TMP/bin"
   export PATH="$TMP/bin:$PATH" ARGS="$TMP/args"
@@ -29,12 +31,21 @@ EOF
   cd "$REPO/main"
   collie new x --no-window
 }
-teardown() { teardown_env; }
+teardown() {
+  capture_tmux_diagnostics || true
+  teardown_env
+  save_tmux_diagnostics || true
+}
 
 # kills the test's private server, the way a crash would
 server_dies() {
-  kill "$(tmux display -p '#{pid}')"
-  wait_for '! tmux list-sessions >/dev/null 2>&1'
+  local pid
+  pid=$(tmux display -p '#{pid}')
+  TMUX_DIAGNOSTICS_PIDS="${TMUX_DIAGNOSTICS_PIDS:-} $pid"
+  tmux_diagnostic_event "sending SIGTERM to pid=$pid"
+  kill "$pid"
+  wait_for '! tmux list-sessions >/dev/null 2>&1' || return
+  tmux_diagnostic_event "list-sessions stopped succeeding for pid=$pid"
 }
 
 sessions_logged() { [ "$(grep -c "agent_session	" "$(task_dir x)/events.log")" -eq "$1" ]; }
@@ -144,7 +155,7 @@ agent_windows() { tmux list-windows -t "=$1" -F '#{@collie_run}' | grep -c .; }
 @test "collie.tmux: @collie-restore on restores lost runs at load, off by default" {
   collie run x --agent omp -p ''
   server_dies
-  tmux new-session -d -s t
+  tmux_with_diagnostics new-session -d -s t
   tmux run-shell "$COLLIE_ROOT/collie.tmux"
   sleep 0.5
   ! tmux has-session -t =x 2>/dev/null
