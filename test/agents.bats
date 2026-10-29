@@ -145,7 +145,7 @@ EOF
   # omp holds run/session-owners/<id>.lock while its session is live; -c
   # would take the session the new window's tty last showed instead
   mkdir -p "$TMP/manual" "$TMP/run/session-owners"
-  ln -s "$(command -v sleep)" "$TMP/manual/omp"
+  fake_agent "$TMP/manual/omp"
   cat >"$TMP/bin/omp" <<'EOF'
 #!/bin/sh
 for a in "$@"; do printf '%s\n' "$a"; done >"$ARGS"
@@ -154,7 +154,7 @@ EOF
   chmod +x "$TMP/bin/omp"
   collie go x
   tmux new-window -d -t "=x:" -c "$TMP/repos/A/feat-x" \
-    "sh -c 'exec 3>$TMP/run/session-owners/01a18219-e205.lock; $TMP/manual/omp 300; :'"
+    "sh -c 'exec 3>$TMP/run/session-owners/01a18219-e205.lock; $TMP/manual/omp -c \"read -t 300\"; :'"
   wait_for '[ "$(agent_of x)" = working ]'
   collie adopt x -y
   wait_for '[ -f "$ARGS" ]'
@@ -164,7 +164,7 @@ EOF
 
 @test "omp adopt: without an open session it resumes the latest with -c" {
   mkdir -p "$TMP/manual"
-  ln -s "$(command -v sleep)" "$TMP/manual/omp"
+  fake_agent "$TMP/manual/omp"
   cat >"$TMP/bin/omp" <<'EOF'
 #!/bin/sh
 for a in "$@"; do printf '%s\n' "$a"; done >"$ARGS"
@@ -172,7 +172,7 @@ exec sleep 300
 EOF
   chmod +x "$TMP/bin/omp"
   collie go x
-  tmux new-window -d -t "=x:" -c "$TMP/repos/A/feat-x" "sh -c '$TMP/manual/omp 300; :'"
+  tmux new-window -d -t "=x:" -c "$TMP/repos/A/feat-x" "sh -c '$TMP/manual/omp -c \"read -t 300\"; :'"
   wait_for '[ "$(agent_of x)" = working ]'
   collie adopt x -y
   wait_for '[ -f "$ARGS" ]'
