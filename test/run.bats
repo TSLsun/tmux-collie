@@ -242,14 +242,14 @@ EOF
   # rows: session:window, agent, time in this state, priority and title
   sed -i.bak 's/^title: .*/title: A title too long for a menu row, so cut/; s/^priority: .*/priority: P1/' "$(task_dir a)/TASK.md"
   tmux set-option -w -t "$wa2" @collie_state_at $(($(date +%s) - 300))
-  PATH="$TMP/stub:$PATH" run collie _status-menu collie-working cl
+  PATH="$TMP/stub:$PATH" run collie _status-menu collie-working cl 77
   [ "$status" -eq 0 ]
-  [[ "$output" == "display-menu"$'\n'"-c"$'\n'"cl"$'\n'*" working "* ]]
+  [[ "$output" == "display-menu"$'\n'"-c"$'\n'"cl"$'\n'*" working "$'\n'"-x"$'\n'"77"$'\n'"-y"$'\n'"S"$'\n'* ]]
   [[ "$output" == *$'\n'"a:1  sleep     "[0-9]"s  P1 A title too long for a menu…"$'\n'"1"$'\n'"run-shell '"*"collie _jump $wa1 cl'"* ]]
   [[ "$output" == *$'\n'"a:2  sleep ##2  5m  P1 A title too long for a menu…"$'\n'"2"$'\n'"run-shell '"*"collie _jump $wa2 cl'"* ]]
   [[ "$output" != *"_jump $wb"* ]]
   PATH="$TMP/stub:$PATH" run collie _status-menu collie-waiting cl
-  [[ "$output" == *$'\n'"b:1  sleep  "[0-9]"s  P2 b"$'\n'"1"$'\n'* ]]
+  [[ "$output" == *$'\n'"-x"$'\n'"R"$'\n'* && "$output" == *$'\n'"b:1  sleep  "[0-9]"s  P2 b"$'\n'"1"$'\n'* ]]
   PATH="$TMP/stub:$PATH" run collie _status-menu collie-idle cl
   [[ "$output" == *"collie: no idle agents"* && "$output" != *display-menu* ]]
 }

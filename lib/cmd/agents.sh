@@ -466,8 +466,9 @@ cmd_status() {
 # (collie runs to their window, agents started by hand to their pane). A row
 # is "session:window  agent  age  priority title" (the directory for agents
 # outside a task); age is the time in this state, or without output when
-# idle.
-cmd__status-menu() { # range client
+# idle. It opens at column x (the click), above a bottom status bar or below
+# a top one; tmux keeps it on screen.
+cmd__status-menu() { # range client [x]
   local st=${1#collie-} C="$PLUGIN_DIR/bin/collie" items=() locs=() ts=() ags=() ages=() descs=()
   local s t loc agent age path w1=0 w2=0 w3=0 cw i k line
   status_scope
@@ -531,5 +532,5 @@ cmd__status-menu() { # range client
     line=${line%"${line##*[! ]}"}
     items+=("${line//#/##}" "$([ "$k" -gt 9 ] || echo "$k")" "run-shell '$C _jump ${ts[i]} ${2:-}'")
   done
-  tmux display-menu ${2:+-c "$2"} -T "#[align=centre] $st " -x M -y S "${items[@]}"
+  tmux display-menu ${2:+-c "$2"} -T "#[align=centre] $st " -x "${3:-R}" -y S "${items[@]}"
 }
