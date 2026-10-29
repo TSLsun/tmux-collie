@@ -219,7 +219,34 @@ new_popup() { # keys...
   hook a waiting
   hook b idle
   run collie status
-  [ "$output" = "#[fg=red]●1 #[fg=yellow]●1 #[fg=green]●1#[default]" ]
+  [ "$output" = "#[range=user|collie-waiting]#[fg=red]●1#[norange] #[range=user|collie-idle]#[fg=yellow]●1#[norange] #[range=user|collie-working]#[fg=green]●1#[norange]#[default]" ]
+}
+
+@test "_status-menu: lists the agents behind a count, each jumps to its window" {
+  for t in a b; do
+    collie new "$t" --no-window
+    collie run "$t" -- 300
+  done
+  collie run a -- 300
+  hook b waiting
+  mkdir -p "$TMP/stub"
+  cat >"$TMP/stub/tmux" <<EOF
+#!/bin/sh
+case \$1 in display-menu | display-message) printf '%s\n' "\$@"; exit ;; esac
+exec $(command -v tmux) "\$@"
+EOF
+  chmod +x "$TMP/stub/tmux"
+  wa1=$(tmux display -p -t "$(run_pane a)" '#{window_id}')
+  wa2=$(tmux display -p -t "$(run_pane a 2)" '#{window_id}')
+  wb=$(tmux display -p -t "$(run_pane b)" '#{window_id}')
+  PATH="$TMP/stub:$PATH" run collie _status-menu collie-working cl
+  [ "$status" -eq 0 ]
+  [[ "$output" == "display-menu"$'\n'"-c"$'\n'"cl"$'\n'*" working "* ]]
+  [[ "$output" == *$'\n'"a  sleep"$'\n'"1"$'\n'"run-shell '"*"collie _jump $wa1 cl'"* ]]
+  [[ "$output" == *$'\n'"a  sleep #2"$'\n'"2"$'\n'"run-shell '"*"collie _jump $wa2 cl'"* ]]
+  [[ "$output" != *"_jump $wb"* ]]
+  PATH="$TMP/stub:$PATH" run collie _status-menu collie-idle cl
+  [[ "$output" == *"collie: no idle agents"* && "$output" != *display-menu* ]]
 }
 
 @test "status: counts agents started by hand, in task sessions or not" {
@@ -229,10 +256,25 @@ new_popup() { # keys...
   collie go x
   tmux new-window -d -t '=x:' "$TMP/manual/claude -c 'read -t 300'"
   tmux new-session -d -s own "$TMP/manual/claude -c 'read -t 300'"
-  wait_for '[ "$(COLLIE_SILENCE=999 collie status)" = "#[fg=green]●2#[default]" ]'
-  [ "$(COLLIE_SILENCE=0 collie status)" = "#[fg=yellow]●2#[default]" ]
+  g='#[range=user|collie-working]#[fg=green]'
+  wait_for '[ "$(COLLIE_SILENCE=999 collie status)" = "${g}●2#[norange]#[default]" ]'
+  [ "$(COLLIE_SILENCE=0 collie status)" = "#[range=user|collie-idle]#[fg=yellow]●2#[norange]#[default]" ]
+  # the menu behind a count lists them too, each jumping to its pane
+  mkdir -p "$TMP/stub"
+  cat >"$TMP/stub/tmux" <<EOF
+#!/bin/sh
+case \$1 in display-menu | display-message) printf '%s\n' "\$@"; exit ;; esac
+exec $(command -v tmux) "\$@"
+EOF
+  chmod +x "$TMP/stub/tmux"
+  px=$(tmux list-panes -s -t '=x' -F '#{pane_id}' | tail -1)
+  po=$(tmux list-panes -t '=own' -F '#{pane_id}')
+  COLLIE_SILENCE=999 PATH="$TMP/stub:$PATH" run collie _status-menu collie-working cl
+  [[ "$output" == *$'\n'"x  claude"$'\n'*"collie _jump $px cl'"* && "$output" == *$'\n'"own  claude"$'\n'*"collie _jump $po cl'"* ]]
   tmux set-option -g @collie-status-scope tasks
-  [ "$(COLLIE_SILENCE=999 collie status)" = "#[fg=green]●1#[default]" ]
+  [ "$(COLLIE_SILENCE=999 collie status)" = "${g}●1#[norange]#[default]" ]
+  COLLIE_SILENCE=999 PATH="$TMP/stub:$PATH" run collie _status-menu collie-working cl
+  [[ "$output" == *"_jump $px cl"* && "$output" != *"_jump $po"* ]]
   tmux kill-session -t '=x'
   [ -z "$(COLLIE_SILENCE=999 collie status)" ]
 }
