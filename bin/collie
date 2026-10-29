@@ -41,8 +41,9 @@ warn() { printf 'collie: %s\n' "$*" >&2; }
 . "$PLUGIN_DIR/lib/cmd/admin.sh"
 
 # every cmd_<name> function is the command <name>: adding one needs no list here
-case "${1:-help}" in
-  help | -h | --help) usage ;;
+[ $# -gt 0 ] || set -- help
+case $1 in
+  -h | --help) usage ;;
   -v | --version) echo "collie $VERSION" ;;
   *)
     if ! declare -F "cmd_$1" >/dev/null; then
@@ -51,6 +52,7 @@ case "${1:-help}" in
     fi
     cmd=$1
     shift
+    case ${1:-} in -h | --help) cmd_help "$cmd"; exit ;; esac
     "cmd_$cmd" "$@"
     ;;
 esac
