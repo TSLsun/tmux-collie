@@ -48,7 +48,7 @@ _collie() {
     'status:status-bar counts'
     'repos:discovered repos'
     'workspaces:named repo sets'
-    'help:usage'
+    'help:overview; help <command> for details'
   )
   if (( CURRENT == 2 )); then
     _describe command cmds
@@ -70,6 +70,7 @@ _collie() {
     sync | restore) compadd -- -n; _collie_tasks ;;
     show | review) _collie_tasks -a ;;
     add | edit | go | run | adopt | done | archive) _collie_tasks ;;
+    help) compadd concepts workflows all; _describe command cmds ;;
   esac
 }
 
