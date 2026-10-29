@@ -23,8 +23,9 @@ win_states() { # list-windows target args
 # known agent among their process or its descendants (up to 6 levels; agents
 # inside another agent don't count). Without hooks the state is working until
 # @collie-silence seconds without output, then idle.
-manual_runs() { # session
-  local silence=${COLLIE_SILENCE:-$(tmux_opt @collie-silence)}
+manual_runs() { # session, or -a for every session
+  local silence=${COLLIE_SILENCE:-$(tmux_opt @collie-silence)} scope=(-s -t "$1")
+  [ "$1" != -a ] || scope=(-a)
   stamp %s
   awk -v now="$NOW" -v s="${silence:-30}" '
     function base(p) { sub(/.*\//, "", p); sub(/\.(js|mjs|ts)$/, "", p); return p }
@@ -48,7 +49,7 @@ manual_runs() { # session
     f[3] != "" { next }
     a != "" { print "-\t" a "\t" (now - f[4] >= s ? "idle" : "working") "\t" f[2] "\t" f[5] "\t" pid "\t" f[6] }' \
     <(ps -ww -A -o pid=,ppid=,args=) \
-    <(tmux list-panes -s -t "$1" -F '#{pane_pid}|#{window_id}|#{@collie_state}|#{window_activity}|#{pane_id}|#{pane_current_path}' 2>/dev/null || true)
+    <(tmux list-panes "${scope[@]}" -F '#{pane_pid}|#{window_id}|#{@collie_state}|#{window_activity}|#{pane_id}|#{pane_current_path}' 2>/dev/null || true)
 }
 
 # Runs of a task as "run<TAB>agent<TAB>state<TAB>window": agent windows (also

@@ -431,9 +431,10 @@ ancestor_pane() {
   done
 }
 
+# Counts every agent, including ones started by hand (also outside tasks).
 cmd_status() {
-  win_states -a | awk -F'\t' '
-    { n[$5]++ }
+  { win_states -a | cut -f5; manual_runs -a | cut -f3; } | awk '
+    { n[$1]++ }
     END {
       if (n["waiting"]) s = s " #[fg=red]●" n["waiting"]
       if (n["idle"]) s = s " #[fg=yellow]●" n["idle"]
