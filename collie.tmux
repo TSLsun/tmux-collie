@@ -34,6 +34,15 @@ for side in status-left status-right; do
   esac
 done
 
+# With the mouse on, clicking a count of collie status lists its agents
+# (bin/collie _status-menu). A MouseUp1Status binding of the user's is kept.
+cur=$(tmux list-keys -T root MouseUp1Status 2>/dev/null)
+case $cur in "" | *_status-menu*)
+  tmux bind-key -n MouseUp1Status if-shell -F '#{m:collie-*,#{mouse_status_range}}' \
+    "run-shell \"'$BIN/collie' _status-menu #{q:mouse_status_range} #{q:client_name}\""
+  ;;
+esac
+
 # @collie-restore on: restart the agents lost with the previous server
 # (bin/collie restore; restored runs are logged, so a reload starts nothing).
 [ "$(tmux show-options -gqv @collie-restore)" != on ] || tmux run-shell -b "'$BIN/collie' restore >/dev/null 2>&1"
