@@ -62,7 +62,8 @@ agents:
                       codex requires its captured conversation id; never guesses latest
   state <working|waiting|idle|exited>
                       called by agent hooks; no-op outside a collie window
-  status              agent counts for the status bar (#{collie_status})
+  status              agent counts for the status bar (#{collie_status});
+                      with mouse on, click a count to pick an agent to jump to
 
 admin:
   doctor              dependencies, agents, and task/git/tmux consistency

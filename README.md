@@ -229,6 +229,11 @@ pane; set `@collie-terminal` to the terminal's bundle id if it is not detected
 (e.g. `com.mitchellh.ghostty`). Without it, notifications are unchanged; use
 `prefix h j`.
 
+With `set -g mouse on`, clicking a count opens a menu of the agents behind it;
+picking one jumps to its window (tmux 3.4+; the plugin binds `MouseUp1Status`
+unless you already bound it). Hovering cannot show anything: tmux has no mouse
+move events.
+
 Windows carry `@collie_state`, usable in `window-status-format`.
 
 Configuration:
