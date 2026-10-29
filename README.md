@@ -112,7 +112,7 @@ or spot tasks to combine.
 ### Dashboard and menu
 
 ```sh
-collie dash                            # fzf: needs you > active > todo; tab regroups
+collie dash                            # fzf: needs you > active > todo; tab regroups; u: runs
 collie set deploy-v2 priority=P1 "title=Ship v2"
 ```
 

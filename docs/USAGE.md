@@ -190,10 +190,11 @@ launch keeps its packet for diagnosis without recording a successful handoff.
 | New task | `collie new` | `c` (prompts, switches to it) | `?` `c` |
 | Edit TASK.md | `collie edit` | `e` | `ctrl-e` or `?` `e` |
 | Run agent | `collie run` | `r` | `ctrl-r` or `?` `r` |
-| Continue with another agent | `collie handoff` | — | — |
+| Continue with another agent | `collie handoff` | — | `u`, then `h` on the run (note in `$EDITOR`) |
 | Adopt hand-started agent | `collie adopt` | `a` | `?` `a` |
 | Restore agents after the server died | `collie restore` | — | — |
 | Go to task | `collie go` | — | `enter` (most urgent agent window) |
+| Runs of a task | `collie show` | — | `u` (`enter`: its window, `esc`: back) |
 | Jump to last alert | — | `j` | — |
 | Review | `collie review` | `v` | `ctrl-v` or `?` `v` |
 | Shell in worktree | — | `t` (popup) | `?` `t` |
