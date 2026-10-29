@@ -71,10 +71,11 @@ cmd_run() {
   read -r wid server pane <<<"$wid"
   [ "$AGENT_HOOKS_PENDING" = 0 ] || AGENT_HOOKS=0
   # @collie_run last: the wrapper starts the agent once it is set
+  stamp %s
   tmux set-option -w -t "$wid" @collie_task "$id" \; set-option -w -t "$wid" @collie_path "$path" \; \
     set-option -w -t "$wid" @collie_agent "$agent" \; set-option -w -t "$wid" @collie_hooks "$AGENT_HOOKS" \; \
     set-option -w -t "$wid" @collie_pane "$pane" \; set-option -w -t "$wid" @collie_state "$st" \; \
-    set-option -w -t "$wid" @collie_run "$run"
+    set-option -w -t "$wid" @collie_state_at "$NOW" \; set-option -w -t "$wid" @collie_run "$run"
   # an instant agent exit may log run_exited first; task_runs is order-free
   log_event "$id" run_started "run=$run agent=$agent repo=$rname window=$wid server=$server"
   [ -z "$AGENT_SESSION_ID" ] || log_agent_session "$id" "$run" "$AGENT_SESSION_ID"
