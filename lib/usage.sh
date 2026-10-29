@@ -403,7 +403,8 @@ EOF
 usage: collie status
 
 Agent counts (waiting, idle, working) for the tmux status bar, as
-#{collie_status}. Read-only.
+#{collie_status}: collie runs and agents started by hand in any tmux
+session. Read-only.
 EOF
       ;;
     doctor)
