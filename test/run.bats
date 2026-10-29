@@ -231,6 +231,10 @@ new_popup() { # keys...
   tmux new-session -d -s own "$TMP/manual/claude -c 'read -t 300'"
   wait_for '[ "$(COLLIE_SILENCE=999 collie status)" = "#[fg=green]●2#[default]" ]'
   [ "$(COLLIE_SILENCE=0 collie status)" = "#[fg=yellow]●2#[default]" ]
+  tmux set-option -g @collie-status-scope tasks
+  [ "$(COLLIE_SILENCE=999 collie status)" = "#[fg=green]●1#[default]" ]
+  tmux kill-session -t '=x'
+  [ -z "$(COLLIE_SILENCE=999 collie status)" ]
 }
 
 # --- claude adapter ---------------------------------------------------------

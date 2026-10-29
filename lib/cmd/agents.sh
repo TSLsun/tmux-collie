@@ -431,9 +431,19 @@ ancestor_pane() {
   done
 }
 
-# Counts every agent, including ones started by hand (also outside tasks).
+# Counts every agent, including ones started by hand; with
+# @collie-status-scope tasks, only those in task sessions.
 cmd_status() {
-  { win_states -a | cut -f5; manual_runs -a | cut -f3; } | awk '
+  local wins="" s w
+  if [ "$(tmux_opt @collie-status-scope)" = tasks ]; then
+    wins=" "
+    while IFS='|' read -r s w; do
+      [ ! -f "$TASKS_DIR/$s/TASK.md" ] || wins="$wins$w "
+    done < <(tmux list-windows -a -F '#{session_name}|#{window_id}' 2>/dev/null || true)
+  fi
+  { win_states -a | cut -f5
+    manual_runs -a | awk -F'\t' -v w="$wins" 'w == "" || index(w, " " $4 " ") { print $3 }'
+  } | awk '
     { n[$1]++ }
     END {
       if (n["waiting"]) s = s " #[fg=red]●" n["waiting"]
