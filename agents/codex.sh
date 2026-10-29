@@ -25,7 +25,8 @@ agent_argv() { # forwarded CLI arguments; resume must precede the prompt
   guard=$(codex_hook PreToolUse '' "$PLUGIN_DIR/hooks/tmux-guard" Bash)
   waiting=$(codex_hook PreToolUse wait '' request_user_input)
   waiting=${waiting#*=\[}
-  AGENT_ARGV=(codex --no-daemon --sandbox workspace-write
+  # This preset selects workspace-write itself and conflicts with --sandbox.
+  AGENT_ARGV=(codex --no-daemon --approve-for-me
     -c "${guard%]},$waiting"
     -c "$(codex_hook SessionStart _session)"
     -c "$(codex_hook UserPromptSubmit 'state working')"

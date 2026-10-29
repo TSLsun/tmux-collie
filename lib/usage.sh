@@ -54,6 +54,10 @@ agents:
                       start an agent in a new task window (default agent:
                       $COLLIE_AGENT, @collie-agent, else claude); -p '' = no prompt;
                       -s: switch the (current or -c) client to the window
+  handoff [<id>] --from run --agent claude|codex --note file [-r repo]
+                      continue another agent's run in a fresh conversation;
+                      preserve note/task/report snapshots and link both runs;
+                      default repo: source run's repo; source agent stays running
   adopt [<id>] [-y]   restart an agent you started by hand in the task's session
                       under collie run, resuming its conversation (claude, codex, omp);
                       codex requires an identifiable dedicated process (--no-daemon)

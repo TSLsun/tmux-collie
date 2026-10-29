@@ -100,8 +100,8 @@ EOF
   [ "$(printf '%s\n' "$output" | cut -f1 | paste -s -d' ' -)" = "b c d e a g f" ]
   [ "$(printf '%s\n' "$output" | cut -f1,7 | paste -s -d' ' -)" = "b	answer c	reply d	review e	stalled a	- g	start f	start" ]
   # a stalled task needs you too
-  [[ "$(collie _rows | sed $'s/\033\\[[0-9;]*m//g' | cut -f2 | sed -n 5p)" == "● e "*" stalled "* ]]
-  [[ "$(collie _rows | sed -n 6p)" == *"── needs you (4) ─"* ]]
+  [[ "$(collie _rows | sed $'s/\033\\[[0-9;]*m//g' | cut -f2 | sed -n 4p)" == "● e "*" stalled "* ]]
+  [[ "$(collie _rows | sed -n 5p)" == *"── needs you (4) ─"* ]]
 }
 
 @test "status: review once the agent is idle and REPORT.md is fresh; working stays active" {
@@ -167,7 +167,7 @@ EOF
   [ "$(FZF_PROMPT='collie> ' FZF_POS=3 collie _key k x)" = up ]
 }
 
-@test "_rows: column names, then aligned rows grouped needs you > active > todo" {
+@test "_rows: aligned rows grouped needs you > active > todo" {
   for t in a bb ccc-long; do collie new "$t" --no-window; done
   collie run a -- 300
   collie run bb -- 300
@@ -175,32 +175,33 @@ EOF
   collie set ccc-long priority=P0
   run collie _rows
   [ "$status" -eq 0 ]
-  [ "$(printf '%s\n' "$output" | cut -f1 | paste -s -d, -)" = ",bb,,a,,ccc-long," ]
+  [ "$(printf '%s\n' "$output" | cut -f1 | paste -s -d, -)" = "bb,,a,,ccc-long," ]
   plain=$(printf '%s\n' "$output" | sed $'s/\033\\[[0-9;]*m//g' | cut -f2)
-  [ "$(printf '%s\n' "$plain" | sed -n 1p)" = "  TASK      STATE    PRI  AGENT  AGE  REPOS  PR" ]
-  [ "$(printf '%s\n' "$plain" | sed -n 2p)" = "● bb        answer   P2   sleep  now  A      -" ]
-  [ "$(printf '%s\n' "$plain" | sed -n 3p)" = "── needs you (1) ──────────────────────────────" ]
-  [ "$(printf '%s\n' "$plain" | sed -n 4p)" = "◐ a         working  P2   sleep  now  A      -" ]
-  [ "$(printf '%s\n' "$plain" | sed -n 6p)" = "○ ccc-long  start    P0   -      now  A      -" ]
-  [ "$(printf '%s\n' "$plain" | sed -n 7p)" = "── todo (1) ───────────────────────────────────" ]
+  [ "$(printf '%s\n' "$plain" | sed -n 1p)" = "● bb        answer   P2" ]
+  [ "$(printf '%s\n' "$plain" | sed -n 2p)" = "── needs you (1) ──────" ]
+  [ "$(printf '%s\n' "$plain" | sed -n 3p)" = "◐ a         working  P2" ]
+  [ "$(printf '%s\n' "$plain" | sed -n 5p)" = "○ ccc-long  start    P0" ]
+  [ "$(printf '%s\n' "$plain" | sed -n 6p)" = "── todo (1) ───────────" ]
   [[ "$output" == *$'\033[31m●'* && "$output" == *$'\033[33m◐'* && "$output" == *$'\033[1;31mP0'* ]]
   [ "$(paste -s -d, - <"$COLLIE_STATE_DIR/dash-rows")" = "bb,,a,,ccc-long," ]
   # dash -n keeps the same order, ungrouped
   [ "$(collie dash -n | cut -f1 | paste -s -d' ' -)" = "bb a ccc-long" ]
 }
 
-@test "_rows: group by priority (P0..P3) or repo; age of the last event" {
+@test "_rows: group by priority (P0..P3) or repo; the preview has the last event's age" {
   for t in a b c; do collie new "$t" --no-window; done
   collie set b priority=P0
   collie set c priority=P3
   printf '2020-01-01T00:00:00Z\tnote\t\n' >>"$(task_dir c)/events.log"
   plain=$(collie _rows priority | sed $'s/\033\\[[0-9;]*m//g')
-  [ "$(printf '%s\n' "$plain" | cut -f1 | paste -s -d, -)" = ",b,,a,,c," ]
-  [[ "$(printf '%s\n' "$plain" | sed -n 3p)" == *"── P0 (1) ─"* ]]
-  [[ "$(printf '%s\n' "$plain" | sed -n 7p)" == *"── P3 (1) ─"* ]]
-  [[ "$(printf '%s\n' "$plain" | sed -n 6p)" == *"  P3   -      "*"w  A      -" ]]
-  [ "$(collie _rows repo | cut -f1 | paste -s -d, -)" = ",b,a,c," ]
-  [[ "$(collie _rows repo | sed -n 5p)" == *"── A (3) ─"* ]]
+  [ "$(printf '%s\n' "$plain" | cut -f1 | paste -s -d, -)" = "b,,a,,c," ]
+  [[ "$(printf '%s\n' "$plain" | sed -n 2p)" == *"── P0 (1) ─"* ]]
+  [[ "$(printf '%s\n' "$plain" | sed -n 6p)" == *"── P3 (1) ─"* ]]
+  [ "$(printf '%s\n' "$plain" | sed -n 5p | cut -f2)" = "○ c  start  P3" ]
+  [[ "$(collie _preview c)" == *$'\n'"last event "*"w ago"$'\n'* ]]
+  [[ "$(collie _preview a)" == *$'\n'"last event now"$'\n'* ]]
+  [ "$(collie _rows repo | cut -f1 | paste -s -d, -)" = "b,a,c," ]
+  [[ "$(collie _rows repo | sed -n 4p)" == *"── A (3) ─"* ]]
 }
 
 # gh stub: answers `pr list --head <branch>` from $TMP/prs ("<repo>:<branch>
@@ -231,9 +232,9 @@ branch_of() { awk -F'\t' -v r="$2" '$1 == r { print $3 }' "$(task_dir "$1")/repo
   [ "$(collie dash -n | cut -f1,8 | sort | paste -s -d, -)" = $'w\t-,x\t#244:open #12:merged,y\t#7:draft,z\t#3:closed' ]
   run collie _rows
   plain=$(printf '%s\n' "$output" | sed $'s/\033\\[[0-9;]*m//g' | cut -f2)
-  [ "$(printf '%s\n' "$plain" | sed -n 1p)" = "  TASK  STATE  PRI  AGENT  AGE  REPOS  PR" ]
-  [[ "$plain" == *$'\n'"○ x     start  P2   -      now  A,B    #244 #12"$'\n'* ]]
-  [[ "$plain" == *$'\n'"○ w     start  P2   -      now  A      -"$'\n'* ]]
+  [[ "$plain" == *"○ x  start  P2  #244 #12"$'\n'* ]]
+  [[ "$plain" == "○ w  start  P2"$'\n'* ]]
+  [[ "$(collie _preview x)" == *$'\n'"  A  $(branch_of x A)  #244 open  "* ]]
   [[ "$output" == *$'\033[32m#244\033[0m \033[35m#12\033[0m'* ]]
   [[ "$output" == *$'\033[2m#7\033[0m'* && "$output" == *$'\033[31m#3\033[0m'* ]]
   # a fresh cache: no gh call on render
@@ -260,13 +261,13 @@ branch_of() { awk -F'\t' -v r="$2" '$1 == r { print $3 }' "$(task_dir "$1")/repo
   [ "$(collie dash -n | cut -f1,8 | sort | paste -s -d, -)" = $'x\t-,y\t#5:merged' ]
   run collie _rows
   [ "$status" -eq 0 ]
-  [[ "$(printf '%s\n' "$output" | sed $'s/\033\\[[0-9;]*m//g')" == *"○ x     start  P2   -      now  A      -"* ]]
+  [ "$(printf '%s\n' "$output" | sed $'s/\033\\[[0-9;]*m//g' | cut -f2 | sed -n 1p)" = "○ x  start  P2" ]
 }
 
 @test "_group: tab cycles the grouping, kept across dashboards; not while the menu is up" {
   collie new a --no-window
   [[ "$(FZF_PROMPT='collie> ' collie _group next)" == "change-header(enter: go  tab: group by "$'\033[1;33m'"priority"$'\033[0m'"  /: filter  space: mark"$'\n'"r: run  v: review  e: edit  d: done  s: sync  ?: more)+reload("*"_rows)" ]]
-  [[ "$(collie _rows | sed -n 3p)" == *"── P2 (1) ─"* ]]
+  [[ "$(collie _rows | sed -n 2p)" == *"── P2 (1) ─"* ]]
   FZF_PROMPT='collie> ' collie _group next >/dev/null
   [ "$(cat "$COLLIE_STATE_DIR/dash-group")" = repo ]
   [[ "$(FZF_PROMPT='collie> ' collie _group next)" == *"group by "$'\033[1;33m'"status"$'\033'* ]]
@@ -290,11 +291,13 @@ branch_of() { awk -F'\t' -v r="$2" '$1 == r { print $3 }' "$(task_dir "$1")/repo
 @test "manual agent: one started by hand in a task session shows up, idle by silence" {
   collie new x
   mkdir -p "$TMP/bin"
-  ln -s "$(command -v sleep)" "$TMP/bin/claude"
-  tmux new-window -d -t "=x:" "sh -c '$TMP/bin/claude 300; :'"
+  fake_agent "$TMP/bin/claude"
+  tmux new-window -d -t "=x:" "sh -c '$TMP/bin/claude -c \"read -t 300\"; :'"
+  # ps must retain the full executable path even in a narrow terminal.
+  export COLUMNS=40
   wait_for '[ "$(COLLIE_SILENCE=999 agent_of x)" = working ]'
   [ "$(COLLIE_SILENCE=0 agent_of x)" = idle ]
-  [[ "$(collie _rows | sed $'s/\033\\[[0-9;]*m//g')" == *"  claude  "* ]]
+  [[ "$(collie _preview x)" == *$'\n'"claude · last event "* ]]
   run collie show x
   [[ "$output" == *"-	claude	"* ]]
 }
@@ -302,11 +305,11 @@ branch_of() { awk -F'\t' -v r="$2" '$1 == r { print $3 }' "$(task_dir "$1")/repo
 @test "adopt: stops a hand-started agent and resumes it under collie run" {
   collie new x
   mkdir -p "$TMP/bin" "$TMP/manual"
-  ln -s "$(command -v sleep)" "$TMP/manual/claude"
+  fake_agent "$TMP/manual/claude"
   printf '#!/bin/sh\necho "$@" >"%s/args"\nexec sleep 300\n' "$TMP" >"$TMP/bin/claude"
   chmod +x "$TMP/bin/claude"
   export PATH="$TMP/bin:$PATH"
-  tmux new-window -d -t "=x:" -c "$TMP/repos/A/feat-x" "sh -c '$TMP/manual/claude 300; :'"
+  tmux new-window -d -t "=x:" -c "$TMP/repos/A/feat-x" "sh -c '$TMP/manual/claude -c \"read -t 300\"; :'"
   wait_for '[ "$(agent_of x)" = working ]'
   run collie adopt x </dev/null
   [ "$status" -ne 0 ]
@@ -479,7 +482,54 @@ branch_of() { awk -F'\t' -v r="$2" '$1 == r { print $3 }' "$(task_dir "$1")/repo
   tmux send-keys -t =d: q
   wait_for "tmux capture-pane -p -t =d: | grep -q dash-exit"
 }
+@test "_rows: whole ids (fzf filters on them); the preview goes below when rows do not fit beside it" {
+  local id=luwa-201949-ulh-spark-operations-runbook
+  collie new "$id" --no-window
+  printf 'A\t244\topen\n' >"$(task_dir "$id")/pr.tsv"
+  [ "$(collie _rows | sed $'s/\033\\[[0-9;]*m//g' | cut -f2 | sed -n 1p)" = "○ $id  start  P2  #244" ]
+  [ "$(cat "$COLLIE_STATE_DIR/dash-width")" -eq 59 ]
+  # 140 columns: a 66-column list holds the rows; 120: 56 does not
+  [[ "$(FZF_COLUMNS=140 FZF_PROMPT='collie> ' collie _key resize x)" == "change-preview-window(right,50%,wrap)+change-header("* ]]
+  [[ "$(FZF_COLUMNS=120 FZF_PROMPT='collie> ' collie _key resize x)" == "change-preview-window(down,45%,wrap)+change-header("* ]]
+  # the menu stays open across a resize
+  [ -z "$(FZF_COLUMNS=120 FZF_PROMPT='▸ run agent ' collie _key resize x)" ]
+}
 
+@test "dash header: key hints wrap at the list's width, none cut" {
+  local c w h l out
+  export LC_ALL=C.UTF-8
+  collie new x --no-window
+  collie _rows >/dev/null
+  for c in 300 120 80 60 40; do
+    # short rows: the preview is right while the list keeps 40 columns
+    w=$((c - c / 2 - 4))
+    [ "$w" -ge 40 ] || w=$((c - 3))
+    out=$(FZF_COLUMNS=$c FZF_PROMPT='collie> ' FZF_QUERY=dep collie _key resize x)
+    h=${out#*+change-header(}
+    h=$(sed $'s/\033\\[[0-9;]*m//g' <<<"${h%)}")
+    while IFS= read -r l; do [ "${#l}" -le "$w" ] || { echo "$c: ${#l} > $w: $l"; false; }; done <<<"$h"
+    # every hint whole, in order
+    [ "$(sed 's/  /\n/g' <<<"$h" | paste -s -d, -)" = "filter: dep,esc: clear,enter: go,tab: group by status,/: filter,space: mark,r: run,v: review,e: edit,d: done,s: sync,?: more" ]
+  done
+  [ "$(FZF_COLUMNS=300 collie _key resize x | grep -c .)" -eq 2 ]
+}
+
+@test "dash: at 80 columns a long id row keeps state, priority and PR; the preview goes below" {
+  command -v fzf >/dev/null || skip "fzf not installed"
+  local id=luwa-201949-ulh-spark-operations-runbook
+  collie new "$id" --no-window
+  printf 'A\t244\topen\n' >"$(task_dir "$id")/pr.tsv"
+  tmux -f /dev/null new-session -d -s d -x 80 -y 24 \
+    "'${COLLIE_BASH:-bash}' '$COLLIE_ROOT/bin/collie' dash; sleep 60"
+  wait_for "tmux capture-pane -p -t =d: | grep -q 'objective:'"
+  tmux capture-pane -p -t =d: >"$TMP/screen"
+  grep -q "$id  start  P2  #244" "$TMP/screen"
+  grep -q "enter: go  tab: group by status  /: filter  space: mark" "$TMP/screen"
+  grep -q "r: run  v: review  e: edit  d: done  s: sync  ?: more" "$TMP/screen"
+  ! grep -q "··" "$TMP/screen"
+  # the preview sits below the list
+  [ "$(grep -n 'objective:' "$TMP/screen" | cut -d: -f1)" -gt "$(grep -n '?: more' "$TMP/screen" | cut -d: -f1)" ]
+}
 @test "dash: actions answer in the panel while the list stays (no full-screen popup)" {
   command -v fzf >/dev/null || skip "fzf not installed"
   collie new w --no-window
