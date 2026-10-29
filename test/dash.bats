@@ -293,6 +293,8 @@ branch_of() { awk -F'\t' -v r="$2" '$1 == r { print $3 }' "$(task_dir "$1")/repo
   mkdir -p "$TMP/bin"
   ln -s "$(command -v sleep)" "$TMP/bin/claude"
   tmux new-window -d -t "=x:" "sh -c '$TMP/bin/claude 300; :'"
+  # ps must retain the full executable path even in a narrow terminal.
+  export COLUMNS=40
   wait_for '[ "$(COLLIE_SILENCE=999 agent_of x)" = working ]'
   [ "$(COLLIE_SILENCE=0 agent_of x)" = idle ]
   [[ "$(collie _preview x)" == *$'\n'"claude · last event "* ]]
