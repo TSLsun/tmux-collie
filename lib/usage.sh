@@ -30,6 +30,7 @@ tasks:
 
 agents:
   run [<id>]          start an agent in a new window of the task session
+  handoff [<id>]      continue a claude/codex run with the other agent
   adopt [<id>] [-y]   restart a hand-started agent under collie run
   restore [<id>] [-n] restart the agents lost with the tmux server
   state <state>       called by agent hooks; no-op outside a collie window
@@ -98,7 +99,8 @@ REPORT.md written by the agent to .collie/REPORT.md when it finishes: what
 changes   creates branch + worktree   new, add, spike, reopen (worktree only)
           removes worktree + session  done, archive, gc
           creates/rebuilds session    new, go, reopen, spike
-          starts agent windows        run, adopt, restore, new --run
+          starts agent windows        run, handoff, adopt, restore,
+                                      new --run
           commits/pushes              sync (merge commit, push if upstream)
           fetches origin              new, add, done, gc, sync
           edits TASK.md               set, edit, done/archive/reopen (status)
@@ -344,6 +346,29 @@ omp get state hooks per run; any other command runs without them.
   collie run deploy-v2 -r B --agent codex -p 'fix CI'
 EOF
       ;;
+    handoff)
+      cat <<'EOF'
+usage: collie handoff [<id>] --from run --agent claude|codex --note file
+                      [-r repo]
+
+Continue claude run N with codex, or vice versa, in a fresh conversation:
+a new run window like `collie run`, in the source run's repo (-r: another
+repo of the task). Run numbers come from `collie show`.
+
+  --from run      source run number (must be claude or codex)
+  --agent name    destination agent, the other of claude/codex
+  --note file     nonempty note: done, decisions, verification, open issues,
+                  next action
+  -r repo         start in that repo's worktree instead
+
+Writes a read-only packet under the task record's handoffs/ (HANDOFF.md,
+NOTE.md, TASK.md and REPORT.md snapshots) and prints its path; logs the
+link between both runs. The source agent keeps running: stop it first if
+edits could conflict. No branches are merged.
+
+  collie handoff fix-retry --from 1 --agent codex --note handoff.md
+EOF
+      ;;
     adopt)
       cat <<'EOF'
 usage: collie adopt [<id>] [-y]
@@ -417,7 +442,7 @@ EOF
 }
 
 # the public commands, in overview order
-HELP_COMMANDS='new add ls show history edit go dash set review spike gc sync done archive reopen run adopt restore state status doctor repos workspaces'
+HELP_COMMANDS='new add ls show history edit go dash set review spike gc sync done archive reopen run handoff adopt restore state status doctor repos workspaces'
 
 cmd_help() {
   local c

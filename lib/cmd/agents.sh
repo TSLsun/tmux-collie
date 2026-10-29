@@ -82,6 +82,84 @@ cmd_run() {
   if [ "$switch" = 1 ] && { [ -n "$client" ] || [ -n "${TMUX:-}" ]; }; then
     tmux switch-client ${client:+-c "$client"} -t "$wid" \; select-window -t "$wid" 2>/dev/null || true
   fi
+  # Callers that launch a continuation need the actual new run, not a guess
+  # based on the tail of an event log another agent can append to.
+  RUN_STARTED=$run
+}
+
+# Cross-agent continuation uses a fresh conversation and explicit context,
+# never a source agent's private transcript or its resume/session ID.
+cmd_handoff() {
+  local id="" from="" agent="" note="" repo="" source source_agent source_repo
+  local d name c b path selected="" packet prompt RUN_STARTED=""
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --from | --agent | --note | -r)
+        if [ $# -lt 2 ] || [ -z "${2:-}" ]; then
+          die "handoff: $1 needs a value"
+        fi
+        case $1 in
+          --from) from=$2 ;;
+          --agent) agent=$2 ;;
+          --note) note=$2 ;;
+          -r) repo=$2 ;;
+        esac
+        shift ;;
+      -*) die "handoff: unknown option $1" ;;
+      *) [ -z "$id" ] || die "handoff: too many arguments"; id=$1 ;;
+    esac
+    shift
+  done
+  task_id "$id"
+  [[ $from =~ ^[1-9][0-9]*$ ]] || die "handoff: --from needs a positive source run number"
+  case $agent in claude | codex) ;; *) die "handoff: --agent must be claude or codex" ;; esac
+  if [ ! -f "$note" ] || [ ! -r "$note" ] || ! grep -q '[^[:space:]]' "$note"; then
+    die "handoff: --note needs a readable, nonempty note file"
+  fi
+  d="$TASKS_DIR/$id"
+  source=$(awk -F'\t' -v r="$from" '
+    $2 == "run_started" {
+      n = split($3, a, " "); run = agent = repo = ""
+      for (i = 1; i <= n; i++) {
+        if (index(a[i], "run=") == 1) run = substr(a[i], 5)
+        if (index(a[i], "agent=") == 1) agent = substr(a[i], 7)
+        if (index(a[i], "repo=") == 1) repo = substr(a[i], 6)
+      }
+      if (run == r) { print agent "\t" repo; exit }
+    }' "$d/events.log")
+  [ -n "$source" ] || die "handoff: source run $from does not belong to task '$id'"
+  IFS=$TAB read -r source_agent source_repo <<<"$source"
+  case $source_agent in claude | codex) ;; *) die "handoff: source run must use claude or codex" ;; esac
+  [ "$source_agent" != "$agent" ] || die "handoff: destination agent must be different from source"
+  repo=${repo:-$source_repo}
+  while IFS=$TAB read -r name c b path; do
+    [ "$name" != "$repo" ] || selected=$path
+  done <"$d/repos.tsv"
+  [ -n "$selected" ] || die "repo '$repo' is not part of task '$id'"
+  [ -d "$selected" ] || die "missing worktree $selected"
+  command -v "$agent" >/dev/null || die "agent command '$agent' not found"
+
+  # Unique directories preserve earlier attempts too. Read-only permissions
+  # prevent accidental edits, not deliberate changes by the file owner.
+  mkdir -p "$d/handoffs"
+  packet=$(mktemp -d "$d/handoffs/from-$from-to-$agent.XXXXXX")
+  cp "$note" "$packet/NOTE.md"
+  cp "$d/TASK.md" "$packet/TASK.md"
+  [ ! -f "$d/REPORT.md" ] || cp "$d/REPORT.md" "$packet/REPORT.md"
+  {
+    printf '# Handoff context\n\nsource_run=%s source_agent=%s destination_agent=%s repo=%s\n\n' "$from" "$source_agent" "$agent" "$repo"
+    printf 'Read NOTE.md and the TASK.md snapshot in this directory, and REPORT.md if present.\n'
+    printf 'Then read the current task contract at %s/TASK.md; it remains authoritative.\n' "$d"
+    printf 'The note is context, not a replacement for the task contract.\n'
+    printf 'This is a fresh conversation. The source agent has not been stopped.\n'
+    printf 'Continue in the existing task worktrees; preserve all previous runs.\n'
+  } >"$packet/HANDOFF.md"
+  chmod a-w "$packet/"* "$packet"
+  prompt="Task $id. Continue $source_agent run $from as $agent. Read the handoff packet at $packet/HANDOFF.md and the current task contract at $d/TASK.md before continuing. If its Objective is empty, ask what to do. When finished, write a short report to $d/REPORT.md."
+  # A failed launch leaves the packet for diagnosis, but no success event.
+  cmd_run "$id" --agent "$agent" -r "$repo" -p "$prompt"
+  log_event "$id" run_handoff "from=$from to=$RUN_STARTED source=$source_agent agent=$agent repo=$repo packet=${packet##*/}"
+  printf '%s\n' "$packet"
 }
 
 # Restarts an agent started by hand in the task's session as a `collie run`
