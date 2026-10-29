@@ -404,7 +404,8 @@ usage: collie status
 
 Agent counts (waiting, idle, working) for the tmux status bar, as
 #{collie_status}: collie runs and agents started by hand in any tmux
-session. Read-only.
+session (`set -g @collie-status-scope tasks`: only in task sessions).
+Read-only.
 EOF
       ;;
     doctor)

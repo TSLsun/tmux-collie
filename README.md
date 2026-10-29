@@ -226,6 +226,7 @@ when the plugin loads. Run `collie doctor` for version and setup diagnostics.
 
 ```tmux
 set -g status-right '#{collie_status} %H:%M'   # ●waiting ●idle ●working counts
+set -g @collie-status-scope 'all'              # all | tasks: skip hand-started agents outside tasks
 set -g @collie-agent 'claude'                  # default agent ($COLLIE_AGENT wins)
 set -g @collie-notify 'on'                     # on | off | command "title" "body"
 set -g @collie-restore 'off'                   # on: collie restore at plugin load
