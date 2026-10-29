@@ -7,7 +7,7 @@ test:
 	bats --print-output-on-failure --jobs $(JOBS) test/
 
 lint:
-	shellcheck -x bin/collie collie.tmux agents/*.sh hooks/pre-push hooks/tmux-guard test/helper.bash
+	shellcheck -x bin/collie collie.tmux agents/*.sh hooks/pre-push hooks/tmux-guard test/helper.bash test/tmux_diagnostics.bash
 	# lib files share globals: one sets a variable another reads
 	shellcheck -x -e SC2034,SC2153 lib/*.sh lib/cmd/*.sh
 	zsh -n completions/_collie
