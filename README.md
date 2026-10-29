@@ -51,6 +51,7 @@ collie go deploy-v2                    # switch/attach (fzf picker if no id)
 collie done deploy-v2                  # accept: remove worktrees + session, keep branches
 collie archive deploy-v2               # abandon: same cleanup
 collie reopen deploy-v2                # closed by mistake: worktrees back on the kept branches
+collie help                            # overview; help <command>, concepts, workflows, all
 ```
 
 ### Agents

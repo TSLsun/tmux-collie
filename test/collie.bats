@@ -445,6 +445,52 @@ past_run() {
   [[ "$output" == *new* && "$output" == *done* && "$output" == *workspaces* ]]
   run collie bogus
   [ "$status" -ne 0 ]
+  run collie
+  [ "$status" -eq 0 ]
+  [[ "$output" == "usage: collie <command>"* && "$output" == *COLLIE_TASK* ]]
+}
+
+@test "help: every command has details, in the overview and completions" {
+  local c cmds
+  cmds=$(sed -n 's/^cmd_\([a-z][a-z-]*\)().*/\1/p' "$COLLIE_ROOT"/lib/cmd/*.sh)
+  [ "$(echo "$cmds" | wc -l)" -gt 20 ]
+  run collie help
+  for c in $cmds; do
+    [[ "$output" == *$'\n'"  $c "* ]] || { echo "not in overview: $c"; false; }
+    grep -q "^    '$c:" "$COLLIE_ROOT/completions/_collie" || { echo "no completion: $c"; false; }
+    run collie help "$c"
+    [ "$status" -eq 0 ]
+    [[ "$output" == "usage: collie $c"* ]] || { echo "bad help: $c"; false; }
+    run collie help all
+    [[ "$output" == *"--- collie $c ---"* ]] || { echo "not in all: $c"; false; }
+    run collie help
+  done
+}
+
+@test "help: <command> -h prints its help without running it" {
+  run collie new x -h
+  [ "$status" -ne 0 ] # -h only counts right after the command
+  run collie new -h
+  [ "$status" -eq 0 ]
+  [ "$output" = "$(collie help new)" ]
+  [ ! -e "$COLLIE_STATE_DIR/tasks" ] || [ -z "$(ls "$COLLIE_STATE_DIR/tasks")" ]
+  run collie done --help
+  [ "$status" -eq 0 ]
+  [[ "$output" == "usage: collie done"* ]]
+}
+
+@test "help: topics for agents; unknown topic fails; fits 80 columns" {
+  run collie help concepts
+  [ "$status" -eq 0 ]
+  [[ "$output" == *COLLIE_TASK* && "$output" == *REPORT.md* && "$output" == *archived* ]]
+  [[ "$output" == *read-only* ]]
+  run collie help workflows
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"collie new"* && "$output" == *"collie run"* ]]
+  run collie help bogus
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"no command or topic 'bogus'"* ]]
+  [ -z "$(collie help all | awk 'length > 80')" ]
 }
 
 @test "new: ship off by default leaves TASK.md as the template" {
