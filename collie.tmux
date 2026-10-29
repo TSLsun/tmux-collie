@@ -35,11 +35,13 @@ for side in status-left status-right; do
 done
 
 # With the mouse on, clicking a count of collie status lists its agents
-# (bin/collie _status-menu). A MouseUp1Status binding of the user's is kept.
+# (bin/collie _status-menu) at the click: #{mouse_x} is passed on, since a
+# menu from run-shell has no mouse event for -x M. A MouseUp1Status binding of
+# the user's is kept.
 cur=$(tmux list-keys -T root MouseUp1Status 2>/dev/null)
 case $cur in "" | *_status-menu*)
   tmux bind-key -n MouseUp1Status if-shell -F '#{m:collie-*,#{mouse_status_range}}' \
-    "run-shell \"'$BIN/collie' _status-menu #{q:mouse_status_range} #{q:client_name}\""
+    "run-shell \"'$BIN/collie' _status-menu #{q:mouse_status_range} #{q:client_name} #{mouse_x}\""
   ;;
 esac
 

@@ -71,10 +71,11 @@ cmd_run() {
   read -r wid server pane <<<"$wid"
   [ "$AGENT_HOOKS_PENDING" = 0 ] || AGENT_HOOKS=0
   # @collie_run last: the wrapper starts the agent once it is set
+  stamp %s
   tmux set-option -w -t "$wid" @collie_task "$id" \; set-option -w -t "$wid" @collie_path "$path" \; \
     set-option -w -t "$wid" @collie_agent "$agent" \; set-option -w -t "$wid" @collie_hooks "$AGENT_HOOKS" \; \
     set-option -w -t "$wid" @collie_pane "$pane" \; set-option -w -t "$wid" @collie_state "$st" \; \
-    set-option -w -t "$wid" @collie_run "$run"
+    set-option -w -t "$wid" @collie_state_at "$NOW" \; set-option -w -t "$wid" @collie_run "$run"
   # an instant agent exit may log run_exited first; task_runs is order-free
   log_event "$id" run_started "run=$run agent=$agent repo=$rname window=$wid server=$server"
   [ -z "$AGENT_SESSION_ID" ] || log_agent_session "$id" "$run" "$AGENT_SESSION_ID"
@@ -462,24 +463,74 @@ cmd_status() {
 }
 
 # Menu of the agents behind a status bar count; picking one jumps to it
-# (collie runs to their window, agents started by hand to their pane).
-cmd__status-menu() { # range client
-  local st=${1#collie-} C="$PLUGIN_DIR/bin/collie" items=() s t agent x k=0
+# (collie runs to their window, agents started by hand to their pane). A row
+# is "session:window  agent  age  priority title" (the directory for agents
+# outside a task); age is the time in this state, or without output when
+# idle. It opens at column x (the click), above a bottom status bar or below
+# a top one; tmux keeps it on screen.
+cmd__status-menu() { # range client [x]
+  local st=${1#collie-} C="$PLUGIN_DIR/bin/collie" items=() locs=() ts=() ags=() ages=() descs=()
+  local s t loc agent age path w1=0 w2=0 w3=0 cw i k line
   status_scope
-  while IFS=$TAB read -r s t agent x; do
-    [ "$x" = "$st" ] || continue
-    k=$((k + 1))
-    items+=("${s//#/##}  $agent" "$([ "$k" -gt 9 ] || echo "$k")" "run-shell '$C _jump $t ${2:-}'")
+  stamp %s
+  # fields split at \037: the age may be empty, and tabs would merge
+  while IFS=$'\037' read -r s t loc agent age path; do
+    if [ -f "$TASKS_DIR/$s/TASK.md" ]; then
+      fm_get "$TASKS_DIR/$s/TASK.md" title
+      path=$FM
+      fm_get "$TASKS_DIR/$s/TASK.md" priority
+      path="${FM:+$FM }$path"
+    else
+      path=${path##*/}
+    fi
+    [ "${#loc}" -le 20 ] || loc="${s:0:$((19 - ${#loc} + ${#s}))}…:${loc##*:}"
+    [ "${#agent}" -le 12 ] || agent="${agent:0:11}…"
+    [ "${#loc}" -le "$w1" ] || w1=${#loc}
+    [ "${#agent}" -le "$w2" ] || w2=${#agent}
+    [ "${#age}" -le "$w3" ] || w3=${#age}
+    locs+=("$loc") ts+=("$t") ags+=("$agent") ages+=("$age") descs+=("$path")
   done < <(
-    win_states -a | awk -F'\t' '{ a = $4; if ($3 != "-" && $3 != 1) a = a " #" $3; print $1 "\t" $2 "\t" a "\t" $5 }'
-    manual_runs -a | awk -F'\t' -v w="$STATUS_WINS" '
-      FNR == NR { j = index($0, "|"); ses[substr($0, 1, j - 1)] = substr($0, j + 1); next }
-      w == "" || index(w, " " $4 " ") { print ses[$4] "\t" $5 "\t" $2 "\t" $3 }' \
-      <(tmux list-windows -a -F '#{window_id}|#{session_name}' 2>/dev/null || true) -
+    {
+      win_states -a | awk -F'\t' -v st="$st" '$5 == st { a = $4; if ($3 != "-" && $3 != 1) a = a " #" $3; print "w\t" $1 "\t" $2 "\t" $2 "\t" a "\t" }'
+      manual_runs -a | awk -F'\t' -v w="$STATUS_WINS" -v st="$st" '
+        FNR == NR { j = index($0, "|"); ses[substr($0, 1, j - 1)] = substr($0, j + 1); next }
+        $3 == st && (w == "" || index(w, " " $4 " ")) { print "m\t" ses[$4] "\t" $5 "\t" $4 "\t" $2 "\t" $7 }' \
+        <(tmux list-windows -a -F '#{window_id}|#{session_name}' 2>/dev/null || true) -
+    } | awk -F'\t' -v now="$NOW" -v st="$st" '
+      function ago(n) {
+        if (n == "") return ""
+        if (n < 0) n = 0
+        return n < 60 ? n "s" : n < 3600 ? int(n / 60) "m" : n < 86400 ? int(n / 3600) "h" : int(n / 86400) "d"
+      }
+      FNR == NR { split($0, f, "|"); ix[f[1]] = f[2]; cur[f[1]] = f[3]; at[f[1]] = f[4]; act[f[1]] = f[5]; next }
+      {
+        w = $4; n = ""
+        if ($1 == "w" && cur[w] == st && at[w] != "") n = now - at[w]
+        else if (st == "idle") n = now - act[w]
+        print $2 "\037" $3 "\037" $2 ":" ix[w] "\037" $5 "\037" ago(n) "\037" $6
+      }' <(tmux list-windows -a -F '#{window_id}|#{window_index}|#{@collie_state}|#{@collie_state_at}|#{window_activity}' 2>/dev/null || true) -
   )
-  if [ "$k" = 0 ]; then
+  if [ "${#ts[@]}" = 0 ]; then
     tmux display-message ${2:+-c "$2"} "collie: no $st agents"
     return 0
   fi
-  tmux display-menu ${2:+-c "$2"} -T "#[align=centre] $st " -x M -y S "${items[@]}"
+  # a menu wider than the client does not open: the description gets the rest
+  cw=$(tmux list-clients -F '#{client_name}|#{client_width}' 2>/dev/null | awk -F'|' -v c="${2:-}" '$1 == c || c == "" { print $2; exit }') || true
+  cw=$((${cw:-80} - w1 - w2 - w3 - 14))
+  [ "$cw" -le 32 ] || cw=32
+  for i in "${!ts[@]}"; do
+    k=$((i + 1))
+    path=${descs[i]}
+    if [ "${#path}" -gt "$cw" ]; then
+      path=${path:0:$((cw > 1 ? cw - 1 : 0))}
+      path="${path%"${path##*[! ]}"}…"
+    fi
+    [ "$cw" -gt 0 ] || path=""
+    printf -v line "%s%*s  %s%*s" "${locs[i]}" $((w1 - ${#locs[i]})) "" "${ags[i]}" $((w2 - ${#ags[i]})) ""
+    [ "$w3" = 0 ] || printf -v line "%s  %*s%s" "$line" $((w3 - ${#ages[i]})) "" "${ages[i]}"
+    line="$line  $path"
+    line=${line%"${line##*[! ]}"}
+    items+=("${line//#/##}" "$([ "$k" -gt 9 ] || echo "$k")" "run-shell '$C _jump ${ts[i]} ${2:-}'")
+  done
+  tmux display-menu ${2:+-c "$2"} -T "#[align=centre] $st " -x "${3:-R}" -y S "${items[@]}"
 }
