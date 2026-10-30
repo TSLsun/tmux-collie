@@ -114,11 +114,20 @@ default_base() {
 
 # Branch is merged when its tip is in base, or when merging it into base would
 # not change base's tree (squash merges). Needs git >= 2.38 for the latter.
+# Base may have since edited the squashed lines, so merging into base conflicts:
+# then also accept any commit on base since the fork, among those touching the
+# branch's paths, that the merge would leave unchanged.
 merged_into() { # common branch base
-  local tree
-  git --git-dir="$1" merge-base --is-ancestor "refs/heads/$2" "$3" && return 0
-  tree=$(git --git-dir="$1" merge-tree --write-tree "$3" "refs/heads/$2" 2>/dev/null) || return 1
-  [ "${tree%%$'\n'*}" = "$(git --git-dir="$1" rev-parse "$3^{tree}")" ]
+  local g=(git --git-dir="$1") b="refs/heads/$2" mb tree c t paths=()
+  "${g[@]}" merge-base --is-ancestor "$b" "$3" && return 0
+  mb=$("${g[@]}" merge-base "$3" "$b") || return 1
+  while IFS= read -r -d '' c; do paths+=("$c"); done < <("${g[@]}" diff -z --name-only "$mb" "$b")
+  [ ${#paths[@]} -gt 0 ] || return 0
+  while read -r c t; do
+    tree=$("${g[@]}" merge-tree --write-tree "$c" "$b" 2>/dev/null) || continue
+    [ "${tree%%$'\n'*}" = "$t" ] && return 0
+  done < <("${g[@]}" log -1 --format='%H %T' "$3"; GIT_LITERAL_PATHSPECS=1 "${g[@]}" log --format='%H %T' "$mb..$3" -- "${paths[@]}")
+  return 1
 }
 
 # Updates origin's refs so merges done on the remote count; no-op without an
