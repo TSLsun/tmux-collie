@@ -132,6 +132,8 @@ switches to grouping by priority or repo, keeping this order inside a group.
   REPORT.md      # agent's final report (P5)
   events.log     # append-only: ts<TAB>event<TAB>k=v ...
   commits.txt    # written by done/archive: per repo, branch commits + diff stat
+  flow/          # a flow: FLOW (definition snapshot), NN-<step>/ per step
+                 # (PROMPT.md, inputs, REVIEW.md/SUMMARY.md, DONE), advance.log
   repos/<repo> -> worktree path (symlink)
 
 <repo worktree>/.collie -> ~/.local/state/collie/tasks/<id>
@@ -248,10 +250,15 @@ One file per agent, `agents/<name>.sh`, sourced by `collie run`:
 
 ```bash
 AGENT_HOOKS=1         # 1 if the agent reports state through `collie state`
+AGENT_MODELS=1        # 1 if agent_argv maps RUN_MODEL/RUN_EFFORT to flags
 agent_argv            # sets AGENT_ARGV from RUN_PROMPT (initial prompt),
-                      # RUN_NAME (session name, "<id>: <title>") and
+                      # RUN_NAME (session name, "<id>: <title>"),
                       # RUN_DIRS (other worktrees + task dir, one per line)
+                      # and RUN_MODEL/RUN_EFFORT (`collie run --model/--effort`)
 ```
+
+The wrapper exports `COLLIE_TASK` and `COLLIE_RUN` to the agent, so
+`collie flow done` knows which run signals.
 
 An agent name without an adapter file runs as-is (generic adapter):
 `collie run --agent aider -- --model x`. `collie run` checks the command

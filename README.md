@@ -63,6 +63,8 @@ collie run deploy-v2 --agent codex      # also: gemini, omp; state hooks injecte
 collie run --agent aider -- --model x  # any command works (no state hooks)
 collie handoff deploy-v2 --from 1 --agent codex --note handoff.md
                                       # new conversation, preserving run 1's context
+collie new fix-x -m 'fix the crash' --flow review-loop --run
+                                      # claude implements, codex reviews, claude fixes, PR
 collie doctor                          # deps, agents, task/worktree consistency
 collie ls                              # agent column: waiting/idle/working/exited/unknown
 ```
@@ -214,6 +216,13 @@ conversation, it leaves the process running.
 `collie handoff` continues Claude work with Codex, or vice versa, in a fresh
 run with a preserved handoff note and task context. The source agent stays
 running; see the [handoff workflow](docs/USAGE.md#cross-agent-handoff).
+
+A flow runs a task through several agents without you carrying results
+between them: the built-in `review-loop` has Claude implement, Codex review,
+Claude fix in its own conversation until the review is ok (at most two
+rounds), then ship the PR. You are notified only when a step needs you, when
+the flow stops, and when it is done. Define your own in
+`~/.config/collie/flows/`; see [Flows](docs/USAGE.md#flows).
 
 When the tmux server dies, `collie restore` (`-n` to list) restarts every
 agent run that was live, each resuming its own conversation: claude by the
