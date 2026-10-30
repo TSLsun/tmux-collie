@@ -293,6 +293,12 @@ set_state() { # pane state [expected-codex-pending-token]
   ) >/dev/null 2>&1 &
 }
 
+# Types a one-line prompt into an agent's pane; a pause before Enter, so
+# agents that detect pastes still submit.
+send_prompt() { # pane text
+  tmux send-keys -t "$1" -l "$2" && sleep 0.3 && tmux send-keys -t "$1" Enter
+}
+
 # Switches a client to a pane (default "-": the last one that notified).
 cmd__jump() { # [pane|-] [client]
   local pane=${1:--}
