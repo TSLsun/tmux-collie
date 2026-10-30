@@ -52,6 +52,16 @@ EOF
 }
 teardown() { teardown_env; }
 
+# flows chain several agent launches: allow loaded CI runners 30s, not 5s
+wait_for() {
+  local i
+  for i in $(seq 1 300); do
+    if eval "$1"; then return 0; fi
+    sleep 0.1
+  done
+  return 1
+}
+
 ev() { grep -c "	$1	" "$(task_dir x)/events.log" || true; }
 flow_is() { collie show x | grep -q "^  flow $1"; }
 
@@ -99,8 +109,7 @@ flow_is() { collie show x | grep -q "^  flow $1"; }
   run collie flow start review-loop x
   [ "$status" -eq 0 ]
   [[ $output == *"step implement (run 1)"* ]]
-  # five steps: give it two wait_for periods
-  wait_for "[ \$(ev flow_done) -eq 1 ]" || wait_for "[ \$(ev flow_done) -eq 1 ]"
+  wait_for "[ \$(ev flow_done) -eq 1 ]"
   d=$(task_dir x)
   # implement=1, review=2, fix typed into run 1, review=3, ship typed into run 1
   [ "$(awk -F'\t' '$2 == "flow_step" { print $3 }' "$d/events.log" | cut -d' ' -f2,5,6)" = "$(printf '%s\n' \
