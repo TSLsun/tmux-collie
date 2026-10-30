@@ -81,6 +81,40 @@ task_runs() {
     }' - "$TASKS_DIR/$id/events.log" <<<"$wins"
 }
 
+# Every run of a task, newest first, as "run<TAB>agent<TAB>repo<TAB>state<TAB>
+# window<TAB>started<TAB>note": agents started by hand first (run, repo and
+# started "-"), then each `collie run` in events.log. A logged exit wins over
+# a window still up ("exited <code>"); else the window's state; else
+# "restored" or "lost" (no exit logged, no window). The note links handoffs
+# and restores ("handoff from 1 (claude)", "restored as 4", ...), or "-".
+run_history() { # id
+  local id=$1 wins=""
+  if has_session "$id"; then
+    wins=$(win_states -t "=$id" | awk -F'\t' '$3 != "-" { print $3 "\t" $5 "\t" $2 }')
+    manual_runs "=$id" | awk -F'\t' '{ print "-\t" $2 "\t-\t" $3 "\t" $4 "\t-\tstarted by hand" }'
+  fi
+  awk -F'\t' '
+    function kv(k,  a, i, n) {
+      n = split($3, a, " ")
+      for (i = 1; i <= n; i++) if (index(a[i], k "=") == 1) return substr(a[i], length(k) + 2)
+    }
+    function add(r, s) { note[r] = (note[r] == "" ? "" : note[r] ", ") s }
+    FNR == NR { if ($1 != "") { st[$1] = $2; win[$1] = $3 }; next }
+    $2 == "run_started" { r = kv("run"); if (!(r in t)) order[++n] = r; agent[r] = kv("agent"); repo[r] = kv("repo"); t[r] = $1 }
+    $2 == "run_exited" { code[kv("run")] = kv("code") }
+    $2 == "run_restored" { r = kv("run"); rest[r] = 1; add(r, "restored as " kv("as")); add(kv("as"), "restore of " r) }
+    $2 == "run_handoff" { add(kv("from"), "handoff to " kv("to") " (" kv("agent") ")"); add(kv("to"), "handoff from " kv("from") " (" kv("source") ")") }
+    END {
+      for (i = n; i >= 1; i--) {
+        r = order[i]; w = "-"
+        if (r in code) s = "exited " code[r]
+        else if (r in st) { s = st[r]; w = win[r] }
+        else s = r in rest ? "restored" : "lost"
+        print r "\t" agent[r] "\t" (repo[r] == "" ? "-" : repo[r]) "\t" s "\t" w "\t" t[r] "\t" (r in note ? note[r] : "-")
+      }
+    }' - "$TASKS_DIR/$id/events.log" <<<"$wins"
+}
+
 # The agent's pane in window $2 of task $1 while it is still there, or
 # nothing: @collie_pane of a `collie run` window, the pane of an agent
 # started by hand, or the only pane of a run window from before @collie_pane.
@@ -228,14 +262,16 @@ set_state() { # pane state [expected-codex-pending-token]
   IFS='|' read -r id run old wid agent active attached <<<"$info"
   [ -n "$id" ] && [ -f "$TASKS_DIR/$id/TASK.md" ] || return 0
   [ "$2" != "$old" ] || return 0
+  # @collie_state_at: when the state began, for the age in `collie _status-menu`
+  stamp %s
   if [ -n "${3:-}" ]; then
     # Compare and update on the tmux server: Stop cannot invalidate an
     # observer between its token check and a stale waiting state write.
     applied=$(tmux if-shell -F -t "$1" "#{==:#{@collie_codex_pending},$3}" \
-      "set-option -w -t $wid @collie_state $2 ; display-message -p changed" 2>/dev/null) || return 0
+      "set-option -w -t $wid @collie_state $2 ; set-option -w -t $wid @collie_state_at $NOW ; display-message -p changed" 2>/dev/null) || return 0
     [ "$applied" = changed ] || return 0
   else
-    tmux set-option -w -t "$wid" @collie_state "$2" 2>/dev/null || return 0
+    tmux set-option -w -t "$wid" @collie_state "$2" \; set-option -w -t "$wid" @collie_state_at "$NOW" 2>/dev/null || return 0
   fi
   log_event "$id" agent_state "run=${run:--} state=$2"
   # no popup for the window you are looking at

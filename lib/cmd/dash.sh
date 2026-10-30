@@ -143,19 +143,25 @@ DASH_AWK_TIME='
     return int(s / 604800) "w"
   }'
 
-# Where the preview goes: right of the list when the rows (their width, cached
-# by _rows) fit beside it, below otherwise; long lines wrap. Sets PREVIEW and
-# WIDTH, the list's text width (fzf's gutter and scrollbar off) from fzf's
-# FZF_COLUMNS or COLUMNS, 0 when unknown.
-dash_layout() {
-  local c=${FZF_COLUMNS:-${COLUMNS:-0}} w=0
-  [ ! -s "$STATE_DIR/dash-width" ] || read -r w <"$STATE_DIR/dash-width" || true
+# Where the preview goes: right of the list when rows <width> wide fit beside
+# it, below otherwise; long lines wrap. Sets PREVIEW and WIDTH, the list's text
+# width (fzf's gutter and scrollbar off) from fzf's FZF_COLUMNS or COLUMNS, 0
+# when unknown.
+preview_layout() { # width
+  local c=${FZF_COLUMNS:-${COLUMNS:-0}}
   PREVIEW='right,50%,wrap' WIDTH=$((c - c / 2 - 4))
   if [ "$c" -le 3 ]; then
     WIDTH=0
-  elif [ "$WIDTH" -lt "$w" ] || [ "$WIDTH" -lt 40 ]; then
+  elif [ "$WIDTH" -lt "$1" ] || [ "$WIDTH" -lt 40 ]; then
     PREVIEW='down,45%,wrap' WIDTH=$((c - 3))
   fi
+}
+
+# preview_layout for the dashboard's rows, their width cached by _rows.
+dash_layout() {
+  local w=0
+  [ ! -s "$STATE_DIR/dash-width" ] || read -r w <"$STATE_DIR/dash-width" || true
+  preview_layout "$w"
 }
 
 # The dashboard's grouping (DASH_GROUPS), kept across dashboards. Sets GROUP.
@@ -172,8 +178,12 @@ dash_header() { # group [filter]
   local y=$'\033[1;33m' z=$'\033[0m' h n line="" len=0 out="" hints=()
   # a ")" would end fzf's change-header(...)
   [ -z "${2:-}" ] || hints+=("filter: $y${2//)/}$z" "esc: clear")
-  hints+=("enter: go" "tab: group by $y$1$z" "/: filter" "space: mark" ""
-    "r: run" "v: review" "e: edit" "d: done" "s: sync" "?: more" "")
+  if dash_runs; then
+    hints+=("runs of $y$RUNS_OF$z" "enter: go" "/: filter" "" "h: handoff" "esc: back" "")
+  else
+    hints+=("enter: go" "tab: group by $y$1$z" "/: filter" "space: mark" ""
+      "r: run" "u: runs" "v: review" "e: edit" "d: done" "s: sync" "?: more" "")
+  fi
   dash_layout
   for h in "${hints[@]}"; do
     n=${#h}
@@ -263,9 +273,50 @@ cmd__rows() { # [group]
     }'
 }
 
+# Whether the dashboard lists a task's runs (u) instead of the tasks: its
+# $COLLIE_DASH/runs holds the task id. Sets RUNS_OF to it.
+dash_runs() {
+  RUNS_OF=""
+  [ -n "${COLLIE_DASH:-}" ] && [ -s "$COLLIE_DASH/runs" ] || return 1
+  read -r RUNS_OF <"$COLLIE_DASH/runs"
+}
+
+# The runs view's rows (see run_history), newest first: the run (or the window
+# of an agent started by hand), then aligned columns: run, agent, repo, state
+# (yellow live, dim ended, red lost), age, note. $STATE_DIR/dash-rows and
+# dash-width as for _rows.
+cmd__runrows() { # [id]
+  local id=${1:-}
+  [ -n "$id" ] || { dash_runs || return 0; id=$RUNS_OF; }
+  mkdir -p "$STATE_DIR"
+  stamp %s
+  run_history "$id" | awk -F'\t' -v now="$NOW" -v cache="$STATE_DIR/dash-rows" -v width="$STATE_DIR/dash-width" "$DASH_AWK_TIME"'
+    function pad(s, w) { return s sprintf("%" (w - length(s) > 0 ? w - length(s) : 0) "s", "") }
+    function max(a, b) { return a > b ? a : b }
+    {
+      n++; key[n] = $1 == "-" ? $5 : $1; run[n] = $1 == "-" ? "-" : "#" $1
+      ag[n] = $2; rp[n] = $3; st[n] = $4; nt[n] = $7 == "-" ? "" : $7
+      a[n] = $6 == "-" ? "" : age(now - epoch($6))
+      c[n] = $4 ~ /^(working|waiting|idle)$/ ? "33" : $4 == "lost" ? "31" : "2"
+      wr = max(wr, length(run[n])); wa = max(wa, length($2)); wp = max(wp, length($3)); ws = max(ws, length($4)); wt = max(wt, length(a[n]))
+    }
+    END {
+      printf "" >cache
+      for (i = 1; i <= n; i++) {
+        l = pad(run[i], wr) "  " pad(ag[i], wa) "  " pad(rp[i], wp) "  \033[" c[i] "m" pad(st[i], ws) "\033[0m  " pad(a[i], wt)
+        if (nt[i] != "") l = l "  " nt[i]
+        w = max(w, wr + wa + wp + ws + wt + 8 + (nt[i] == "" ? 0 : 2 + length(nt[i])))
+        print key[i] "\t" l
+        print key[i] >cache
+      }
+      print w + 0 >width
+    }'
+}
+
 # fzf transform for tab / btab (next / prev): switch the dashboard grouping.
 cmd__group() { # next|prev
   case ${FZF_PROMPT:-} in "$PICK_MARK"* | "$ASK_MARK"*) return 0 ;; esac
+  ! dash_runs || return 0
   local self="'$BASH' '$PLUGIN_DIR/bin/collie'" n=${#DASH_GROUPS[@]} i
   dash_group
   for i in "${!DASH_GROUPS[@]}"; do [ "${DASH_GROUPS[$i]}" != "$GROUP" ] || break; done
@@ -284,7 +335,7 @@ cmd_dash() {
     return
   fi
   command -v fzf >/dev/null || die "dash: fzf required"
-  local self="'$BASH' '$PLUGIN_DIR/bin/collie'" rows header sel id wid k binds=() COLUMNS=${COLUMNS:-} rc=0
+  local self="'$BASH' '$PLUGIN_DIR/bin/collie'" rows header sel id wid k go binds=() COLUMNS=${COLUMNS:-} rc=0
   # fzf passes its width to reloads and transforms (FZF_COLUMNS), not to this first draw
   [ -n "$COLUMNS" ] || { COLUMNS=$(stty size </dev/tty 2>/dev/null) && COLUMNS=${COLUMNS#* }; } || COLUMNS=""
   rows=$(cmd__rows)
@@ -292,7 +343,7 @@ cmd_dash() {
   # the action panel's state (see dash_panel), for this dashboard's transforms
   export COLLIE_DASH="$STATE_DIR/dash.$$"
   mkdir -p "$COLLIE_DASH"
-  for k in $(action_items x | cut -c1) enter up down j k q space / '?' y n; do
+  for k in $(action_items x | cut -c1) enter up down j k q space / '?' y n u h; do
     binds+=(--bind="$k:transform($self _key '$k' {1} {+1})")
   done
   # after the transform: fzf ignores clear-query while the input is hidden
@@ -306,8 +357,15 @@ cmd_dash() {
     --preview="$self _preview {1}" --preview-window="$PREVIEW" \
     "${binds[@]}" \
     --bind="tab:transform($self _group next)" --bind="btab:transform($self _group prev)") || rc=$?
+  # enter in the runs view: "<task><TAB><window>" (see dash_runs_key)
+  go=$(cat "$COLLIE_DASH/go" 2>/dev/null) || go=""
   rm -rf "$COLLIE_DASH"
   [ "$rc" -eq 0 ] || return 0
+  if [ -n "$go" ]; then
+    tmux select-window -t "${go#*"$TAB"}" 2>/dev/null || true
+    cmd_go "${go%%"$TAB"*}"
+    return
+  fi
   id=${sel%%"$TAB"*}
   [ -n "$id" ] || return 0
   wid=$(cmd__target "$id")
@@ -384,7 +442,12 @@ cmd__key() { # key [id [marked id...]]
       return
       ;;
     *)
+      if dash_runs; then
+        dash_runs_key "$@"
+        return
+      fi
       case $2 in
+        u) if [ -n "$1" ]; then dash_runs_open "$1"; fi ;;
         esc)
           if [ -n "${FZF_QUERY:-}" ]; then
             # the esc bind hides the input again
@@ -431,6 +494,90 @@ cmd__key() { # key [id [marked id...]]
   else
     echo "$back"
   fi
+}
+
+# fzf actions for u: list the task's runs (see _runrows), its row kept in
+# $COLLIE_DASH/runs-pos for esc to return to; marks and a kept filter go.
+dash_runs_open() { # id
+  local self="'$BASH' '$PLUGIN_DIR/bin/collie'" pos
+  pos=$(grep -nxF -- "$1" "$STATE_DIR/dash-rows" 2>/dev/null | cut -d: -f1 | head -n 1) || pos=""
+  printf '%s\n' "$1" >"$COLLIE_DASH/runs"
+  printf '%s\n' "${pos:-1}" >"$COLLIE_DASH/runs-pos"
+  echo "clear-multi+show-input+clear-query+hide-input+change-header($(dash_header ""))+reload-sync($self _runrows)+first+refresh-preview"
+}
+
+# A key in the runs view (RUNS_OF set; see cmd__key for the arguments): j/k
+# and arrows move, / searches, q quits, esc clears a kept filter or goes back to
+# the tasks, enter goes to a run's window (the run's state in the panel when it
+# has none), h hands the run off to the other agent (see _handoff).
+dash_runs_key() { # id key
+  local self="'$BASH' '$PLUGIN_DIR/bin/collie'" w pos
+  case $2 in
+    esc)
+      if [ -n "${FZF_QUERY:-}" ]; then
+        echo "show-input+clear-query+change-header($(dash_header ""))"
+        return
+      fi
+      read -r pos <"$COLLIE_DASH/runs-pos" 2>/dev/null || pos=1
+      rm -f "$COLLIE_DASH/runs" "$COLLIE_DASH/runs-pos"
+      dash_group
+      echo "change-header($(dash_header "$GROUP"))+reload-sync($self _rows)+pos($pos)+refresh-preview"
+      ;;
+    q) echo abort ;;
+    /) echo "show-input+change-prompt($SEARCH_PROMPT)" ;;
+    up | down) echo "$2" ;;
+    j) echo down ;;
+    k) echo up ;;
+    enter)
+      [ -n "$1" ] || return 0
+      case $1 in
+        @*) w=$1 ;;
+        *) w=$(run_history "$RUNS_OF" | awk -F'\t' -v r="$1" '$1 == r { print $5 "\t" $4; exit }') ;;
+      esac
+      if [ "${w%%"$TAB"*}" = - ]; then
+        panel_msg fail "run $1 has no window (${w#*"$TAB"})"
+        echo refresh-preview
+      else
+        printf '%s\t%s\n' "$RUNS_OF" "${w%%"$TAB"*}" >"$COLLIE_DASH/go"
+        echo accept
+      fi
+      ;;
+    h) if [ -n "$1" ]; then echo "change-prompt($DASH_PROMPT)+clear-screen+execute($self _handoff '$RUNS_OF' '$1')+reload-sync($self _runrows)+first+refresh-preview"; fi ;;
+  esac
+}
+
+# Dashboard h on a run: hands a claude run off to codex or the reverse (see
+# cmd_handoff) with a note written in $EDITOR; an empty note cancels. Says
+# when the source stays live, and why a run cannot be handed off.
+cmd__handoff() { # id run
+  local id=$1 run=$2 info agent repo st to note rc=0
+  [ ! -t 1 ] || printf '\033[H\033[2J'
+  info=$(run_history "$id" | awk -F'\t' -v r="$run" '$1 == r { print $2 "\t" $3 "\t" $4; exit }')
+  IFS=$TAB read -r agent repo st <<<"$info"
+  case $agent in
+    claude) to=codex ;;
+    codex) to=claude ;;
+    *)
+      if [ "${run#@}" != "$run" ]; then
+        echo "an agent started by hand has no run to hand off: adopt it first (a)"
+      else
+        echo "run $run (${agent:-unknown}) cannot be handed off: only claude and codex runs"
+      fi
+      printf '\n[press any key]'
+      read -rsn1 _ || true
+      return 0
+      ;;
+  esac
+  printf 'handoff %s run %s (%s, %s, %s) to %s\n' "$id" "$run" "$agent" "$repo" "$st" "$to"
+  case $st in working | waiting | idle) printf 'run %s stays live: both runs share the worktree\n' "$run" ;; esac
+  printf '\nWrite the handoff note (an empty note cancels). Press any key.'
+  read -rsn1 _ || true
+  note=$(mktemp "${TMPDIR:-/tmp}/collie-note.XXXXXX")
+  sh -c "${EDITOR:-vi} \"\$1\"" "${EDITOR:-vi}" "$note" || rc=$?
+  if [ "$rc" -eq 0 ] && grep -q '[^[:space:]]' "$note"; then
+    cmd__popup "'$BASH' '$PLUGIN_DIR/bin/collie' handoff '$id' --from '$run' --agent '$to' --note '$note' >/dev/null" || true
+  fi
+  rm -f "$note"
 }
 
 # fzf actions for a dashboard action (see action_items) on a task and the
@@ -482,8 +629,10 @@ panel_msg() { # kind text
 # popup closing; then the rows reload and the panel reports: one green line
 # that fades (see _fade), or the output in red until a key.
 cmd__bg() { # key id...
-  local self="'$BASH' '$PLUGIN_DIR/bin/collie'" k=$1 a out rc=0
+  local self="'$BASH' '$PLUGIN_DIR/bin/collie'" k=$1 a out rc=0 rows=_rows
   shift
+  # the user may have opened a task's runs (u) meanwhile
+  ! dash_runs || rows=_runrows
   case $k in
     r) a=(run "$1") ;;
     a) a=(adopt "$1" -y) ;;
@@ -500,10 +649,10 @@ cmd__bg() { # key id...
   ) </dev/null >"$out" 2>&1 || rc=$?
   if [ "$rc" -eq 0 ]; then
     panel_msg ok "✓ $(action_verb "$k") $*"
-    echo "reload($self _rows)+refresh-preview+bg-transform($self _fade)"
+    echo "reload($self $rows)+refresh-preview+bg-transform($self _fade)"
   else
     panel_msg fail "✗ $(action_verb "$k") $* (exit $rc)"$'\n'"$(cat "$out")"
-    echo "reload($self _rows)+refresh-preview"
+    echo "reload($self $rows)+refresh-preview"
   fi
   rm -f "$out"
 }
@@ -674,12 +823,51 @@ cmd__target() {
   task_top "$id" | cut -f2
 }
 
+# A run of the runs view (see run_history; an agent started by hand is its
+# window): agent, repo, state, start, session, handoff/restore links, and the
+# handoff packet it came from.
+run_preview() { # id run|window
+  local d="$TASKS_DIR/$1" r
+  r=$(run_history "$1" | awk -F'\t' -v k="$2" '$1 == k || ($1 == "-" && $5 == k) { print; exit }')
+  [ -n "$r" ] || return 0
+  awk -F'\t' -v ev="$d/events.log" '
+    function kv(s, k,  a, i, n) {
+      n = split(s, a, " ")
+      for (i = 1; i <= n; i++) if (index(a[i], k "=") == 1) return substr(a[i], length(k) + 2)
+    }
+    {
+      print ($1 == "-" ? "agent started by hand" : "run #" $1) "  [" $4 "]"
+      print "agent:   " $2
+      if ($3 != "-") print "repo:    " $3
+      if ($6 != "-") print "started: " $6
+      if ($5 != "-") print "window:  " $5
+      if ($7 != "-") print "links:   " $7
+      if ($1 == "-") { print ""; print "a (on the task): adopt it as a collie run"; exit }
+      while ((getline l <ev) > 0) {
+        split(l, f, "\t")
+        if (f[2] == "agent_session" && kv(f[3], "run") == $1) sid = kv(f[3], "id")
+        if (f[2] == "run_exited" && kv(f[3], "run") == $1) end = f[1]
+        if (f[2] == "run_handoff" && kv(f[3], "to") == $1) pk = kv(f[3], "packet")
+      }
+      if (end != "") print "ended:   " end
+      if (sid != "") print "session: " sid
+      if (pk != "") print "packet:  handoffs/" pk
+      if ($4 ~ /^(working|waiting|idle)$/) print "\nenter: go to its window"
+      else if ($4 == "lost") print "\nno exit logged and no window: collie restore may bring it back"
+    }' <<<"$r"
+  case $(cut -f2 <<<"$r") in claude | codex) [ "${2#@}" != "$2" ] || echo "h: hand off to $([ "$(cut -f2 <<<"$r")" = claude ] && echo codex || echo claude)" ;; esac
+}
+
 # The task's title, status and priority, its live agents and last event's
 # age, the Objective, runs, and per repo its branch, PRs and progress.
 cmd__preview() {
   local id d name c b p base top title ids line a
   [ -z "${COLLIE_DASH:-}" ] || ! dash_panel "${1:-}" || return 0
   [ $# -eq 0 ] || [ -n "$1" ] || return 0 # a dash group separator
+  if dash_runs; then
+    run_preview "$RUNS_OF" "$1"
+    return
+  fi
   task_id "${1:-}"
   d="$TASKS_DIR/$id"
   fm_get "$d/TASK.md" title
@@ -704,8 +892,12 @@ cmd__preview() {
     f && NF && n++ < 5 { print "  " $0 }
     END { if (!n) print "  (empty)" }' "$d/TASK.md"
   echo
-  echo "runs:"
-  task_runs "$id" | sed 's/^/  /'
+  # the newest runs; ▸ marks the one enter goes to (see _target)
+  a=$(run_history "$id")
+  printf 'runs:%s\n' "$([ "$(grep -c . <<<"$a")" -le 5 ] || printf '  (newest 5 of %s; u: all)' "$(grep -c . <<<"$a")")"
+  [ -n "$a" ] || echo "  (none)"
+  [ -z "$a" ] || awk -F'\t' -v w="$(cut -f2 <<<"$top")" '
+    NR <= 5 { print ($5 == w && w != "-" ? "▸ " : "  ") ($1 == "-" ? "-" : "#" $1) "  " $2 "  " $3 "  " $4 ($7 == "-" ? "" : "  " $7) }' <<<"$a"
   echo
   echo "repos:"
   case $STATUS in done | archived)

@@ -42,7 +42,7 @@ teardown() { teardown_env; }
   tmux new-session -d -s t
   tmux run-shell "$COLLIE_ROOT/collie.tmux"
   run tmux list-keys -T root MouseUp1Status
-  [[ "$output" == *"#{m:collie-*,#{mouse_status_range}}"* && "$output" == *"collie' _status-menu #{q:mouse_status_range} #{q:client_name}"* ]]
+  [[ "$output" == *"#{m:collie-*,#{mouse_status_range}}"* && "$output" == *"collie' _status-menu #{q:mouse_status_range} #{q:client_name} #{mouse_x}"* ]]
   tmux run-shell "$COLLIE_ROOT/collie.tmux"
   [ "$(tmux list-keys -T root MouseUp1Status | grep -c _status-menu)" -eq 1 ]
   tmux bind-key -n MouseUp1Status display-message mine

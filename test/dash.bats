@@ -266,7 +266,7 @@ branch_of() { awk -F'\t' -v r="$2" '$1 == r { print $3 }' "$(task_dir "$1")/repo
 
 @test "_group: tab cycles the grouping, kept across dashboards; not while the menu is up" {
   collie new a --no-window
-  [[ "$(FZF_PROMPT='collie> ' collie _group next)" == "change-header(enter: go  tab: group by "$'\033[1;33m'"priority"$'\033[0m'"  /: filter  space: mark"$'\n'"r: run  v: review  e: edit  d: done  s: sync  ?: more)+reload("*"_rows)" ]]
+  [[ "$(FZF_PROMPT='collie> ' collie _group next)" == "change-header(enter: go  tab: group by "$'\033[1;33m'"priority"$'\033[0m'"  /: filter  space: mark"$'\n'"r: run  u: runs  v: review  e: edit  d: done  s: sync  ?: more)+reload("*"_rows)" ]]
   [[ "$(collie _rows | sed -n 2p)" == *"── P2 (1) ─"* ]]
   FZF_PROMPT='collie> ' collie _group next >/dev/null
   [ "$(cat "$COLLIE_STATE_DIR/dash-group")" = repo ]
@@ -509,7 +509,7 @@ branch_of() { awk -F'\t' -v r="$2" '$1 == r { print $3 }' "$(task_dir "$1")/repo
     h=$(sed $'s/\033\\[[0-9;]*m//g' <<<"${h%)}")
     while IFS= read -r l; do [ "${#l}" -le "$w" ] || { echo "$c: ${#l} > $w: $l"; false; }; done <<<"$h"
     # every hint whole, in order
-    [ "$(sed 's/  /\n/g' <<<"$h" | paste -s -d, -)" = "filter: dep,esc: clear,enter: go,tab: group by status,/: filter,space: mark,r: run,v: review,e: edit,d: done,s: sync,?: more" ]
+    [ "$(sed 's/  /\n/g' <<<"$h" | paste -s -d, -)" = "filter: dep,esc: clear,enter: go,tab: group by status,/: filter,space: mark,r: run,u: runs,v: review,e: edit,d: done,s: sync,?: more" ]
   done
   [ "$(FZF_COLUMNS=300 collie _key resize x | grep -c .)" -eq 2 ]
 }
@@ -525,7 +525,7 @@ branch_of() { awk -F'\t' -v r="$2" '$1 == r { print $3 }' "$(task_dir "$1")/repo
   tmux capture-pane -p -t =d: >"$TMP/screen"
   grep -q "$id  start  P2  #244" "$TMP/screen"
   grep -q "enter: go  tab: group by status  /: filter  space: mark" "$TMP/screen"
-  grep -q "r: run  v: review  e: edit  d: done  s: sync  ?: more" "$TMP/screen"
+  grep -q "r: run  u: runs  v: review  e: edit  d: done  s: sync  ?: more" "$TMP/screen"
   ! grep -q "··" "$TMP/screen"
   # the preview sits below the list
   [ "$(grep -n 'objective:' "$TMP/screen" | cut -d: -f1)" -gt "$(grep -n '?: more' "$TMP/screen" | cut -d: -f1)" ]
