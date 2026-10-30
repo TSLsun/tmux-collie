@@ -103,7 +103,8 @@ cmd_reopen() {
     shift
   done
   task_id "$id"
-  local d st name c b p created="" first=""
+  local d st name c b p created="" first="" tdir setup_backup setup_had_repos=0
+  local -a SETUP_FILES=() SETUP_LINKS=()
   d="$TASKS_DIR/$id"
   fm_get "$d/TASK.md" status
   st=$FM
@@ -118,24 +119,41 @@ cmd_reopen() {
     git --git-dir="$c" show-ref -q --verify "refs/heads/$b" ||
       die "branch '$b' in $name no longer exists"
     checked_out "$c" "$name" "$b"
-    [ ! -e "$p" ] || die "$p already exists"
+    [ ! -e "$p" ] && [ ! -L "$p" ] || die "$p already exists"
   done <"$d/repos.tsv"
 
+  tdir=$d
+  [ ! -d "$d/repos" ] || setup_had_repos=1
+  setup_backup=$(mktemp -d) || return 1
+  if ! { mkdir -p "$d/repos" && setup_snapshot "$d/events.log" && setup_snapshot "$d/TASK.md"; }; then
+    setup_abort
+    return 1
+  fi
   while IFS=$TAB read -r name c b p; do
     [ "$c" != - ] || continue
-    if ! { mkdir -p "${p%/*}" && git --git-dir="$c" worktree add -q "$p" "$b" </dev/null; }; then
-      rollback "$created"
-      exit 1
+    if ! add_worktree "$c" "$p" "$b" ""; then
+      [ "$CREATED_PARENT" != 1 ] || rmdir "${p%/*}" 2>/dev/null || true
+      setup_abort
+      return 1
     fi
-    created="$created$c$TAB$p$TAB$b${TAB}0"$'\n'
+    created="$created$c$TAB$p$TAB$b${TAB}0$TAB$CREATED_PARENT"$'\n'
   done <"$d/repos.tsv"
   while IFS=$TAB read -r name c b p; do
-    rm -f "$d/repos/$name"
-    link_worktree "$id" "$name" "$c" "$b" "$p"
+    if ! link_worktree "$id" "$name" "$c" "$b" "$p"; then
+      setup_abort
+      return 1
+    fi
     [ -n "$first" ] || first=$p
   done <"$d/repos.tsv"
-  fm_del "$d/TASK.md" status
-  log_event "$id" task_reopened "from=$st"
+  # Render off to the side; do not replace an existing metadata symlink or
+  # overwrite a user's TASK.md.tmp during the transaction.
+  if ! { cp "$d/TASK.md" "$setup_backup/task" &&
+    fm_del "$setup_backup/task" status && cat "$setup_backup/task" >"$d/TASK.md" &&
+    log_event "$id" task_reopened "from=$st"; }; then
+    setup_abort
+    return 1
+  fi
+  rm -rf "$setup_backup" || warn "could not remove setup backup $setup_backup"
   printf '%s\n' "$first"
   if [ "$window" -eq 1 ] && command -v tmux >/dev/null; then ensure_session "$id"; fi
 }
