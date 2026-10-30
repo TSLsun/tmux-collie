@@ -215,6 +215,32 @@ squash_upstream() {
   [ ! -d "$TMP/repos/A/feat-m" ]
 }
 
+@test "done: accepts a squash-merged branch after base edits the same lines" {
+  collie new m --no-window
+  commit_in "$TMP/repos/A/feat-m" m
+  squash_upstream feat/m
+  echo changed >"$TMP/origin-A/m"
+  git -C "$TMP/origin-A" commit -q -am "edit m"
+  git -C "$REPO" fetch -q origin
+  run collie done m
+  [ "$status" -eq 0 ]
+  [ ! -d "$TMP/repos/A/feat-m" ]
+}
+
+@test "done: refuses work added after a squash-merge, even once base moves on" {
+  collie new m --no-window
+  commit_in "$TMP/repos/A/feat-m" m
+  squash_upstream feat/m
+  commit_in "$TMP/repos/A/feat-m" extra
+  echo changed >"$TMP/origin-A/m"
+  git -C "$TMP/origin-A" commit -q -am "edit m"
+  git -C "$REPO" fetch -q origin
+  run collie done m
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"unmerged: A has 2 commit(s) on feat/m not in origin/"* ]]
+  [ -d "$TMP/repos/A/feat-m" ]
+}
+
 @test "done: fetches origin first, so a PR merged remotely needs no manual fetch" {
   collie new m --no-window
   commit_in "$TMP/repos/A/feat-m" m
@@ -344,14 +370,67 @@ client_session() { tmux list-clients -F '#{client_session}'; }
   run collie history -n
   [ "$status" -eq 0 ]
   [ "${#lines[@]}" -eq 2 ]
-  [[ "${lines[0]}" == 20*"	archived	new	new	feat/new	#12" ]]
-  [ "${lines[1]}" = "2020-01-02	done	old	Old one	feat/old	-" ]
+  [[ "${lines[0]}" == 20*"  archived  new  new      feat/new  #12" ]]
+  [ "${lines[1]}" = "2020-01-02  done      old  Old one  feat/old  -" ]
   run collie history -n oauth
-  [ "$output" = "${lines[0]}" ]
+  [[ "$output" == 20*"  archived  new  new  feat/new  #12" ]]
   run collie history -n pull/12
-  [[ "$output" == *"	new	"* && "$output" != *"	old	"* ]]
+  [[ "$output" == *"  new  "* && "$output" != *"  old  "* ]]
   run collie history -n nothing-matches
   [ "$status" -eq 0 ] && [ -z "$output" ]
+}
+
+@test "history -n: columns line up across mixed-length ids and titles; titles give way to COLUMNS" {
+  collie new a --no-window --title "Short"
+  collie new a-much-longer-task-id --no-window --title "A considerably longer title than the others"
+  collie new mid-id --no-window --title "Mid title"
+  echo 'https://github.com/o/r/pull/1234' >"$(task_dir mid-id)/REPORT.md"
+  local id
+  for id in a a-much-longer-task-id mid-id; do collie done "$id"; done
+  # every row's branch and PR start at the same column
+  col() { # needle line
+    local pre=${2%%"$1"*}
+    echo "${#pre}"
+  }
+  run collie history -n
+  [ "$status" -eq 0 ] && [ "${#lines[@]}" -eq 3 ]
+  [[ "$output" != *"	"* ]]
+  local l b=() p=()
+  for l in "${lines[@]}"; do
+    b+=("$(col feat/ "$l")")
+    p+=("$(col "  ${l##* }" "$l")")
+  done
+  [ "${b[0]}" = "${b[1]}" ] && [ "${b[1]}" = "${b[2]}" ]
+  [ "${p[0]}" = "${p[1]}" ] && [ "${p[1]}" = "${p[2]}" ]
+  [[ "$output" == *"A considerably longer title than the others  feat/"* ]]
+  # a narrow terminal cuts the long title with an ellipsis, rows stay aligned
+  COLUMNS=100 run collie history -n
+  [[ "$output" == *"A considerably longer t…  feat/"* ]]
+  b=()
+  for l in "${lines[@]}"; do
+    [ "${#l}" -le 100 ]
+    b+=("$(col feat/ "$l")")
+  done
+  [ "${b[0]}" = "${b[1]}" ] && [ "${b[1]}" = "${b[2]}" ]
+  [[ "$output" == *"#1234"* ]]
+}
+
+@test "history: at 80 columns the picker rows line up and the preview goes below" {
+  command -v fzf >/dev/null || skip "fzf not installed"
+  collie new a --no-window --title "Short"
+  collie new a-much-longer-task-id --no-window --title "A considerably longer title than the others"
+  echo 'https://github.com/o/r/pull/1234' >"$(task_dir a)/REPORT.md"
+  collie done a
+  collie done a-much-longer-task-id
+  tmux -f /dev/null new-session -d -s h -x 80 -y 24 \
+    "'${COLLIE_BASH:-bash}' '$COLLIE_ROOT/bin/collie' history; sleep 60"
+  wait_for "tmux capture-pane -p -t =h: | grep -q 'objective:'"
+  tmux capture-pane -p -t =h: >"$TMP/screen"
+  # titles, then branches, give way; the branch and PR columns stay put
+  grep -q "  done  a-much-longer-task-id  A considera…  feat/a-much-lo…  -\$" "$TMP/screen"
+  grep -q "  done  a                      Short         feat/a           #1234\$" "$TMP/screen"
+  # the preview sits below the list
+  [ "$(grep -n 'objective:' "$TMP/screen" | cut -d: -f1)" -gt "$(grep -n 'feat/a ' "$TMP/screen" | cut -d: -f1)" ]
 }
 
 # --- pre-push ---------------------------------------------------------------

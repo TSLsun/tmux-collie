@@ -104,6 +104,27 @@ agent_windows() { tmux list-windows -t "=$1" -F '#{@collie_run}' | grep -c .; }
   [ "$output" = "x run 3: claude in A: --resume $id1"$'\n'"x run 4: claude in A: --resume $id2" ]
 }
 
+@test "restore: records its own allocated ID when another run starts before it returns" {
+  collie run x --agent omp -p ''
+  server_dies
+  export REAL_TMUX COLLIE_ROOT
+  REAL_TMUX=$(command -v tmux)
+  cat >"$TMP/bin/tmux" <<'EOF'
+#!/bin/sh
+"$REAL_TMUX" "$@" || exit
+case " $* " in
+  *' @collie_run '*)
+    if mkdir "$COLLIE_STATE_DIR/interleaved" 2>/dev/null; then
+      bash "$COLLIE_ROOT/bin/collie" run x --agent sleep -- 300
+    fi ;;
+esac
+EOF
+  chmod +x "$TMP/bin/tmux"
+  collie restore x
+  grep -q 'run_started.*run=3 agent=sleep' "$(task_dir x)/events.log"
+  grep -q 'run_restored.*run=1 as=2$' "$(task_dir x)/events.log"
+}
+
 @test "restore: a window closed on a live server is not restored" {
   collie run x -- 300
   tmux kill-window -t "$(run_pane x)"

@@ -37,20 +37,60 @@ fm_get() { # file key
 }
 
 fm_set() {
-  VAL=$3 awk -v k="$2" '
+  fm_mutate "$1" set "$2" "$3"
+}
+
+fm_del() { # file key
+  fm_mutate "$1" del "$2"
+}
+
+# Serialize the entire read/modify/rename, not just the rename. A subshell keeps
+# cleanup traps local to this mutation (including when called under `if`).
+# TASK.md.lock is independent of the lifecycle allocator's run.lock; callers
+# may hold run.lock while updating metadata, never the reverse.
+fm_mutate() (
+  local file=$1 op=$2 key=$3 value=${4:-} lock receipt tmp='' attempts=0
+  # Resolve directory aliases such as a worktree's .collie symlink so every
+  # writer uses the same lock. Keep the temp beside the file for atomic rename.
+  case $file in */*) ;; *) file="./$file" ;; esac
+  file="$(cd "${file%/*}" && pwd -P)/${file##*/}" || return 1
+  lock="$file.lock"
+  # uutils mkdir on Ubuntu 26.04 can exit 0 after losing a creation race
+  # (uutils/coreutils#13970). Its verbose receipt is emitted only on creation;
+  # require both success and a receipt without parsing localized output.
+  while ! receipt=$(mkdir -v "$lock" 2>/dev/null) || [ -z "$receipt" ]; do
+    attempts=$((attempts + 1))
+    if [ "$attempts" -ge 400 ]; then
+      printf 'collie: timed out locking metadata %s\n' "$file" >&2
+      return 1
+    fi
+    sleep 0.025
+  done
+  # Bash 3.2 unwinds locals before EXIT on a signal-triggered explicit exit.
+  # Capture shell-quoted paths now, rather than looking up locals in the trap.
+  # shellcheck disable=SC2064
+  trap "rmdir $(printf '%q' "$lock")" EXIT
+  trap 'exit 129' HUP
+  trap 'exit 130' INT
+  trap 'exit 143' TERM
+  tmp=$(mktemp "$file.tmp.XXXXXX") || return 1
+  # shellcheck disable=SC2064
+  trap "rm -f $(printf '%q' "$tmp"); rmdir $(printf '%q' "$lock")" EXIT
+  # Preserve the original permissions; never publish a partial transform.
+  cp -p "$file" "$tmp" || return 1
+  if [ "$op" = set ]; then
+    VAL=$value awk -v k="$key" '
     BEGIN { v = ENVIRON["VAL"] }
     NR == 1 { print; next }
     !end && $0 == "---" { if (!found) print k ": " v; end = 1; print; next }
     !end && index($0, k ":") == 1 { print k ": " v; found = 1; next }
-    { print }' "$1" >"$1.tmp"
-  mv "$1.tmp" "$1"
-}
-
-fm_del() { # file key
-  awk -v k="$2" 'NR > 1 && !end && $0 == "---" { end = 1 }
-    NR == 1 || end || index($0, k ":") != 1' "$1" >"$1.tmp" || return 1
-  mv "$1.tmp" "$1"
-}
+    { print }' "$file" >"$tmp" || return 1
+  else
+    awk -v k="$key" 'NR > 1 && !end && $0 == "---" { end = 1 }
+      NR == 1 || end || index($0, k ":") != 1' "$file" >"$tmp" || return 1
+  fi
+  mv -f "$tmp" "$file" || return 1
+)
 
 # NOW: the current time in a strftime format (stamp_utc: in UTC). bash 4.2+
 # formats it without forking date; bash 3.2 still runs date.
