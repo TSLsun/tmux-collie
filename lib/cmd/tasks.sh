@@ -71,7 +71,7 @@ cmd_new() {
   valid_id "$id" || die "invalid id '$id' (use [a-z0-9-], max 40, no leading '-')"
   local tdir r
   tdir="$TASKS_DIR/$id"
-  [ ! -e "$tdir" ] || die "task '$id' already exists"
+  [ ! -e "$tdir" ] && [ ! -L "$tdir" ] || die "task '$id' already exists"
   if [ -n "$ws" ]; then
     r=$(workspace_repos "$ws") || exit 1
     for r in $r; do specs="$specs$r"$'\n'; done
@@ -79,12 +79,10 @@ cmd_new() {
   # the current repo, else the current directory as a folder
   [ -n "$specs" ] || specs="$(pwd -P)"$'\n'
 
-  if ! create_repos "$id" "$type/$id" "$from" "$specs"; then
+  if ! create_repos "$id" "$type/$id" "$from" "$specs" "${title:-$id}" "$goal" "$ship"; then
     rm -rf "$tdir"
     exit 1
   fi
-  write_task_md "$tdir" "$id" "${title:-$id}" "$goal" "$ship"
-  log_event "$id" task_created
   [ "$edit" -eq 0 ] || cmd_edit "$id"
   printf '%s\n' "${NEW_PATHS%%$'\n'*}"
   if [ "$window" -eq 1 ] && command -v tmux >/dev/null; then
@@ -119,7 +117,7 @@ cmd_add() {
   local branch
   IFS=$TAB read -r _ _ branch _ <"$TASKS_DIR/$id/repos.tsv"
   [ "$branch" != - ] || branch=feat/$id
-  create_repos "$id" "$branch" "$from" "$specs"
+  create_repos "$id" "$branch" "$from" "$specs" || return 1
   if [ "$window" -eq 1 ] && has_session "$id"; then
     local name c b p
     while IFS=$TAB read -r name c b p; do

@@ -48,7 +48,7 @@ fm_set() {
 
 fm_del() { # file key
   awk -v k="$2" 'NR > 1 && !end && $0 == "---" { end = 1 }
-    NR == 1 || end || index($0, k ":") != 1' "$1" >"$1.tmp"
+    NR == 1 || end || index($0, k ":") != 1' "$1" >"$1.tmp" || return 1
   mv "$1.tmp" "$1"
 }
 
@@ -63,7 +63,7 @@ else
 fi
 
 log_event() {
-  stamp_utc %Y-%m-%dT%H:%M:%SZ
+  stamp_utc %Y-%m-%dT%H:%M:%SZ || return 1
   printf '%s\t%s\t%s\n' "$NOW" "$2" "${3:-}" >>"$TASKS_DIR/$1/events.log"
 }
 
@@ -71,15 +71,15 @@ write_task_md() { # dir id title [objective] [ship]
   local tmpl="$CONFIG_DIR/TASK.md" ship="$CONFIG_DIR/SHIP.md"
   [ -f "$tmpl" ] || tmpl="$PLUGIN_DIR/templates/TASK.md"
   [ -f "$ship" ] || ship="$PLUGIN_DIR/templates/SHIP.md"
-  stamp %Y-%m-%d
+  stamp %Y-%m-%d || return 1
   {
     printf -- '---\nid: %s\ntitle: %s\npriority: P2\ncreated: %s\n---\n' \
-      "$2" "$3" "$NOW"
+      "$2" "$3" "$NOW" || return 1
     # objective goes under the template's "## Objective", else at the end
     OBJ=${4:-} awk 'BEGIN { o = ENVIRON["OBJ"] }
       { print }
       o != "" && !done && $0 == "## Objective" { print o; done = 1 }
-      END { if (o != "" && !done) print "\n## Objective\n" o }' "$tmpl"
+      END { if (o != "" && !done) print "\n## Objective\n" o }' "$tmpl" || return 1
     # ship on: the commit/push/PR/CI rules go at the end
     [ "${5:-0}" = 0 ] || cat "$ship"
   } >"$1/TASK.md"
