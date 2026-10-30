@@ -19,12 +19,9 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: actions/setup-python@v5
-        with:
-          python-version: 3.x
+      - uses: astral-sh/setup-uv@v10.3.3
       # pinned: zensical is pre-1.0; bump deliberately and check the build
-      - run: pip install zensical==0.0.73
-      - run: zensical build --clean --strict
+      - run: uvx zensical@0.0.73 build --clean --strict
       - if: github.event_name != 'pull_request'
         uses: actions/upload-pages-artifact@v3
         with:

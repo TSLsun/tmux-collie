@@ -1,5 +1,5 @@
 # Project homepage, built by .github/workflows/docs.yml and served on GitHub Pages.
-# Preview: pip install zensical==0.0.73 && zensical serve
+# Preview: uvx zensical@0.0.73 serve
 [project]
 site_name = "tmux-collie"
 site_description = "Herd coding agents across git worktrees, from tmux."
