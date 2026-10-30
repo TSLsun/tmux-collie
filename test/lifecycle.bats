@@ -323,6 +323,50 @@ client_session() { tmux list-clients -F '#{client_session}'; }
 
 # --- history ----------------------------------------------------------------
 
+@test "reopen: commit history reads new commits; archive keeps refreshed history without the branch" {
+  collie new m --no-window
+  wt="$TMP/repos/A/feat-m"
+  commit_in "$wt" one
+  collie archive m
+  snapshot=$(cat "$(task_dir m)/commits.txt")
+
+  # A failed reopen must leave the archived history available.
+  mkdir "$wt"
+  run collie reopen m --no-window
+  [ "$status" -ne 0 ]
+  [ "$(fm m status)" = archived ]
+  [ "$(cat "$(task_dir m)/commits.txt")" = "$snapshot" ]
+  run collie show m
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"add one"* ]]
+  rmdir "$wt"
+
+  collie reopen m --no-window
+  commit_in "$wt" two
+  run bash -c '
+    source "$1/lib/tasks.sh"
+    source "$1/lib/repos.sh"
+    source "$1/lib/runtime.sh"
+    TASKS_DIR="$COLLIE_STATE_DIR/tasks"
+    TAB=$'"'"'\t'"'"'
+    task_commits m
+  ' bash "$COLLIE_ROOT"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"add one"* && "$output" == *"add two"* ]]
+  [[ "$output" == *"2 files changed"* ]]
+  run collie _preview m
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"2 ahead"* ]]
+
+  collie archive m
+  git -C "$REPO" branch -q -D feat/m
+  for command in show _preview; do
+    run collie "$command" m
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"add one"* && "$output" == *"add two"* ]]
+  done
+}
+
 @test "done: snapshots the branch's own commits, so show keeps them after the branch is deleted" {
   collie new m --no-window
   commit_in "$TMP/repos/A/feat-m" m
