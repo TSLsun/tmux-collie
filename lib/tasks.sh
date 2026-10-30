@@ -49,13 +49,16 @@ fm_del() { # file key
 # TASK.md.lock is independent of the lifecycle allocator's run.lock; callers
 # may hold run.lock while updating metadata, never the reverse.
 fm_mutate() (
-  local file=$1 op=$2 key=$3 value=${4:-} lock tmp='' attempts=0
+  local file=$1 op=$2 key=$3 value=${4:-} lock receipt tmp='' attempts=0
   # Resolve directory aliases such as a worktree's .collie symlink so every
   # writer uses the same lock. Keep the temp beside the file for atomic rename.
   case $file in */*) ;; *) file="./$file" ;; esac
   file="$(cd "${file%/*}" && pwd -P)/${file##*/}" || return 1
   lock="$file.lock"
-  while ! mkdir "$lock" 2>/dev/null; do
+  # uutils mkdir on Ubuntu 26.04 can exit 0 after losing a creation race
+  # (uutils/coreutils#13970). Its verbose receipt is emitted only on creation;
+  # require both success and a receipt without parsing localized output.
+  while ! receipt=$(mkdir -v "$lock" 2>/dev/null) || [ -z "$receipt" ]; do
     attempts=$((attempts + 1))
     if [ "$attempts" -ge 400 ]; then
       printf 'collie: timed out locking metadata %s\n' "$file" >&2

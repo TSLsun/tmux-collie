@@ -84,6 +84,19 @@ assert_clean() {
   assert_clean
 }
 
+@test "metadata: a false-success mkdir cannot enter or remove another writer's lock" {
+  command mkdir "$f.lock"
+  # Ubuntu 26.04 uutils mkdir can return 0 after losing a creation race,
+  # but emits its verbose creation receipt only for the actual winner.
+  mkdir() { command mkdir "$@" || return 0; }
+  sleep() { :; }
+  run fm_set "$f" title changed
+  [ "$status" -ne 0 ]
+  [[ "$output" == *'timed out locking metadata'* ]]
+  cmp "$f" "$BATS_TEST_TMPDIR/original"
+  [ -d "$f.lock" ]
+}
+
 @test "metadata: failed transform preserves original and releases lock for both operations" {
   awk() { printf 'partial output\n'; return 17; }
   run fm_set "$f" title changed
