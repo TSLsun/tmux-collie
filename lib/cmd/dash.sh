@@ -143,19 +143,25 @@ DASH_AWK_TIME='
     return int(s / 604800) "w"
   }'
 
-# Where the preview goes: right of the list when the rows (their width, cached
-# by _rows) fit beside it, below otherwise; long lines wrap. Sets PREVIEW and
-# WIDTH, the list's text width (fzf's gutter and scrollbar off) from fzf's
-# FZF_COLUMNS or COLUMNS, 0 when unknown.
-dash_layout() {
-  local c=${FZF_COLUMNS:-${COLUMNS:-0}} w=0
-  [ ! -s "$STATE_DIR/dash-width" ] || read -r w <"$STATE_DIR/dash-width" || true
+# Where the preview goes: right of the list when rows <width> wide fit beside
+# it, below otherwise; long lines wrap. Sets PREVIEW and WIDTH, the list's text
+# width (fzf's gutter and scrollbar off) from fzf's FZF_COLUMNS or COLUMNS, 0
+# when unknown.
+preview_layout() { # width
+  local c=${FZF_COLUMNS:-${COLUMNS:-0}}
   PREVIEW='right,50%,wrap' WIDTH=$((c - c / 2 - 4))
   if [ "$c" -le 3 ]; then
     WIDTH=0
-  elif [ "$WIDTH" -lt "$w" ] || [ "$WIDTH" -lt 40 ]; then
+  elif [ "$WIDTH" -lt "$1" ] || [ "$WIDTH" -lt 40 ]; then
     PREVIEW='down,45%,wrap' WIDTH=$((c - 3))
   fi
+}
+
+# preview_layout for the dashboard's rows, their width cached by _rows.
+dash_layout() {
+  local w=0
+  [ ! -s "$STATE_DIR/dash-width" ] || read -r w <"$STATE_DIR/dash-width" || true
+  preview_layout "$w"
 }
 
 # The dashboard's grouping (DASH_GROUPS), kept across dashboards. Sets GROUP.
