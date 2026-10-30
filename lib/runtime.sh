@@ -216,11 +216,13 @@ repo_commits() { # dir name common branch
   git --git-dir="$3" diff --stat "$from" "$tip"
 }
 
-# A task's commits: the snapshot done/archive took, else read from its
+# A task's commits: while finished, the snapshot done/archive took; else read from its
 # branches; with neither, a pointer to the PR named in REPORT.md.
 task_commits() { # id
-  local d="$TASKS_DIR/$1" name c b out _
-  if [ -f "$d/commits.txt" ]; then
+  local d="$TASKS_DIR/$1" name c b out _ st
+  fm_get "$d/TASK.md" status
+  st=$FM
+  if { [ "$st" = "done" ] || [ "$st" = archived ]; } && [ -f "$d/commits.txt" ]; then
     out=$(cat "$d/commits.txt")
   else
     out=$(while IFS=$TAB read -r name c b _; do repo_commits "$d" "$name" "$c" "$b"; done <"$d/repos.tsv")
