@@ -262,14 +262,16 @@ set_state() { # pane state [expected-codex-pending-token]
   IFS='|' read -r id run old wid agent active attached <<<"$info"
   [ -n "$id" ] && [ -f "$TASKS_DIR/$id/TASK.md" ] || return 0
   [ "$2" != "$old" ] || return 0
+  # @collie_state_at: when the state began, for the age in `collie _status-menu`
+  stamp %s
   if [ -n "${3:-}" ]; then
     # Compare and update on the tmux server: Stop cannot invalidate an
     # observer between its token check and a stale waiting state write.
     applied=$(tmux if-shell -F -t "$1" "#{==:#{@collie_codex_pending},$3}" \
-      "set-option -w -t $wid @collie_state $2 ; display-message -p changed" 2>/dev/null) || return 0
+      "set-option -w -t $wid @collie_state $2 ; set-option -w -t $wid @collie_state_at $NOW ; display-message -p changed" 2>/dev/null) || return 0
     [ "$applied" = changed ] || return 0
   else
-    tmux set-option -w -t "$wid" @collie_state "$2" 2>/dev/null || return 0
+    tmux set-option -w -t "$wid" @collie_state "$2" \; set-option -w -t "$wid" @collie_state_at "$NOW" 2>/dev/null || return 0
   fi
   log_event "$id" agent_state "run=${run:--} state=$2"
   # no popup for the window you are looking at
