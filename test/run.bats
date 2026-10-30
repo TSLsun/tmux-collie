@@ -333,6 +333,22 @@ EOF
   [ "$(head -n 1 "$TMP/args")" = "just go" ]
 }
 
+@test "run: --model/--effort reach claude; agents without a mapping refuse them" {
+  mkdir "$TMP/bin"
+  printf '#!/bin/sh\nfor a in "$@"; do printf "%%s\\n" "$a"; done >"$CLAUDE_ARGS"\nexec sleep 300\n' >"$TMP/bin/claude"
+  chmod +x "$TMP/bin/claude"
+  export PATH="$TMP/bin:$PATH" CLAUDE_ARGS="$TMP/args"
+  collie new x --no-window
+  collie run x --agent claude --model opus --effort xhigh
+  wait_for '[ -s "$TMP/args" ]'
+  [ "$(grep -A1 -xF -- --model "$TMP/args" | tail -n 1)" = opus ]
+  [ "$(grep -A1 -xF -- --effort "$TMP/args" | tail -n 1)" = xhigh ]
+  run collie run x --model opus -- 300
+  [ "$status" -ne 0 ]
+  [[ $output == *"cannot pass --model/--effort to sleep"* ]]
+  [ "$(grep -c run_started "$(task_dir x)/events.log")" -eq 1 ]
+}
+
 @test "claude adapter: an untitled task is named by its id alone" {
   mkdir "$TMP/bin"
   printf '#!/bin/sh\nprintf "%%s\\n" "$@" >"$CLAUDE_ARGS"\nexec sleep 300\n' >"$TMP/bin/claude"

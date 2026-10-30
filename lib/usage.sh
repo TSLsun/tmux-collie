@@ -331,8 +331,8 @@ EOF
       ;;
     run)
       cat <<'EOF'
-usage: collie run [<id>] [--agent name] [-r repo] [-p prompt] [-s [-c client]]
-                  [-- args]
+usage: collie run [<id>] [--agent name] [--model m] [--effort e] [-r repo]
+                  [-p prompt] [-s [-c client]] [-- args]
 
 Start an agent in a new window of the task session, in the first repo's
 worktree (-r: that repo's). The default prompt names the task and points the
@@ -341,6 +341,9 @@ omp get state hooks per run; any other command runs without them.
 
   --agent name   agent command (default: $COLLIE_AGENT, @collie-agent, else
                  claude)
+  --model m      model for this run (claude --model, codex -m)
+  --effort e     reasoning effort (claude --effort, codex
+                 model_reasoning_effort); values are the agent's own
   -r repo        which repo's worktree to start in
   -p prompt      first prompt instead of the default; -p '' sends none
   -s             switch the current client (or -c client) to the window
