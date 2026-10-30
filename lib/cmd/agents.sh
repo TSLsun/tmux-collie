@@ -343,6 +343,9 @@ cmd_restore() {
         echo "$out skipped: collie run failed"
       fi
     done < <(lost_runs "$id" "$server")
+    if [ "$dry" -eq 0 ] && flow_running "$id"; then
+      flow_advance "$id" restore || echo "$id: flow did not advance; see collie show $id"
+    fi
   done <<<"$ids"
 }
 
@@ -356,7 +359,8 @@ cmd__exec() { # id run argv...
     sleep 0.05
   done
   trap : INT
-  "$@" || code=$?
+  # `collie flow done` tells its run by these
+  COLLIE_TASK=$id COLLIE_RUN=$run "$@" || code=$?
   trap - INT
   log_event "$id" run_exited "run=$run code=$code"
   set_state "${TMUX_PANE:-}" exited

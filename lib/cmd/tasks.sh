@@ -4,7 +4,7 @@
 cmd_new() {
   local id="" specs="" ws="" type=feat title="" from="" edit=0 window=1
   local goal="" asked=0 t ship=${COLLIE_SHIP-$(tmux_opt @collie-ship)}
-  local run=0 agent="" runargs=()
+  local run=0 agent="" runargs=() flow=""
   case $ship in on | 1 | yes | true) ship=1 ;; *) ship=0 ;; esac
   while [ $# -gt 0 ]; do
     case $1 in
@@ -18,6 +18,7 @@ cmd_new() {
       --no-window) window=0 ;;
       --ship) ship=1 ;;
       --no-ship) ship=0 ;;
+      --flow) flow=${2:?--flow needs a name}; shift ;;
       --run) run=1 ;;
       --agent) agent=${2:?--agent needs a name}; run=1; shift ;;
       -p) [ $# -ge 2 ] || die "-p needs a prompt"; runargs+=(-p "$2"); run=1; shift ;;
@@ -64,6 +65,12 @@ cmd_new() {
     asked=1
   fi
   [ -n "$id" ] || die "usage: collie new <id> [-r repo[:branch]]... [-w workspace] ..."
+  if [ -n "$flow" ]; then
+    { [ -z "$agent" ] && [ "${#runargs[@]}" -eq 0 ]; } || die "new: --flow picks the agents; drop --agent, -p and --"
+    [ "$run" = 1 ] || die "new: --flow needs --run (or later: collie flow start $flow $id)"
+    # its ship step ships; the steps before must not
+    ship=0
+  fi
   if [ "$run" = 1 ]; then
     [ "$window" = 1 ] || die "new: --run needs a session; drop --no-window"
     command -v tmux >/dev/null || die "new: --run needs tmux"
@@ -89,10 +96,18 @@ cmd_new() {
     ensure_session "$id"
     # the task exists either way: a failed run is reported, not rolled back
     local rc=0
-    [ "$run" = 0 ] || (cmd_run "$id" ${agent:+--agent "$agent"} ${runargs[@]+"${runargs[@]}"}) || rc=$?
+    if [ -n "$flow" ]; then
+      (cmd_flow start "$flow" "$id") || rc=$?
+    elif [ "$run" = 1 ]; then
+      (cmd_run "$id" ${agent:+--agent "$agent"} ${runargs[@]+"${runargs[@]}"}) || rc=$?
+    fi
     [ "$asked" -eq 0 ] || [ -z "${TMUX:-}" ] || tmux switch-client -t "=$id"
     if [ "$rc" -ne 0 ]; then
-      warn "task '$id' created; start the agent with: collie run $id"
+      if [ -n "$flow" ]; then
+        warn "task '$id' created; start the flow with: collie flow start $flow $id"
+      else
+        warn "task '$id' created; start the agent with: collie run $id"
+      fi
       # the popup closes on exit: keep the error on screen until a key
       [ "$asked" -eq 0 ] || read -rsn1 -p '[press any key]' _ || true
       exit "$rc"
@@ -197,6 +212,11 @@ cmd_show() {
   echo
   echo "runs:"
   task_runs "$id" | sed 's/^/  /'
+  if [ -f "$d/flow/FLOW" ]; then
+    echo
+    echo "flow:"
+    flow_task_lines "$id" | sed 's/^/  /'
+  fi
   echo
   echo "events:"
   tail -n 5 "$d/events.log" | sed 's/^/  /'

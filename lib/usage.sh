@@ -35,6 +35,8 @@ agents:
   restore [<id>] [-n] restart the agents lost with the tmux server
   state <state>       called by agent hooks; no-op outside a collie window
   status              agent counts for the status bar (#{collie_status})
+  flow <sub>          multi-agent flows: ls, show, start, continue, stop, done
+  wait [<id>]         wait for a run state, a flow step's done signal, a flow
 
 admin:
   doctor              dependencies, agents, and task/git/tmux consistency
@@ -153,7 +155,7 @@ help_command() {
 usage: collie new [<id>] [-r repo[:branch]]... [-w workspace] [-t type]
                   [--title text] [-m objective] [--from ref] [--edit]
                   [--no-window] [--ship|--no-ship] [--run] [--agent name]
-                  [-p prompt] [-- args]
+                  [-p prompt] [--flow name] [-- args]
 
 Create a task: its record and TASK.md, branch <type>/<id> and a worktree in
 each repo (default: the current repo, or the current directory as a folder
@@ -171,6 +173,9 @@ outside git), and tmux session <id> with a window per repo.
                     $COLLIE_SHIP, @collie-ship, else off)
   --run             start the agent as `collie run` does; --agent, -p and
                     -- are passed to run and imply --run
+  --flow name       with --run: start that flow instead of one agent (see
+                    collie help flow); its ship step ships, so TASK.md gets
+                    no Ship section
 
 No id on a tty prompts for id, type, objective, ship, and (given an
 objective) whether to start the agent. Fetches origin first; prints the
@@ -179,6 +184,7 @@ branches it created.
 
   collie new login -m 'add OAuth login' --run
   collie new deploy-v2 -r api -r web:release/v2
+  collie new fix-x -m 'fix the parser crash' --flow review-loop --run
 EOF
       ;;
     add)
@@ -352,6 +358,63 @@ omp get state hooks per run; any other command runs without them.
   collie run deploy-v2 -r B --agent codex -p 'fix CI'
 EOF
       ;;
+    flow)
+      cat <<'EOF'
+usage: collie flow ls
+       collie flow show <name>
+       collie flow start <name> [<id>]
+       collie flow continue [<id>]
+       collie flow stop [<id>]
+       collie flow done
+
+A flow runs a task through agent steps without you carrying results between
+them: e.g. claude implements, codex reviews, claude fixes in its own
+conversation until the review is ok, then ships the PR. You are notified
+when a step needs you, when the flow stops, and when it finishes.
+
+Definitions, first match: <repo>/.collie/flows/<name> (untracked, in the
+main checkout of the task's first repo), ~/.config/collie/flows/<name>,
+then the built-in ones (review-loop, implement-review). One line per step:
+
+  implement: role=implement agent=claude model=opus effort=high
+  review:    role=review    agent=codex
+  fix:       role=fix       resume=implement
+  loop:      review fix max=2
+  ship:      resume=implement
+
+Roles: implement (writes REPORT.md), review (writes REVIEW.md starting
+`verdict: ok` or `verdict: changes-needed`), fix (answers each finding in a
+`## Review response` section of REPORT.md), ship (pushes, opens the PR
+with the flow summary). resume=<step> continues that step's conversation:
+typed into its pane while it is idle, else relaunched by conversation id.
+
+  ls         flows by name, source and file; shadowed ones are marked
+  show       a flow's steps, after checking it
+  start      start a flow on a task; it is copied to the task record
+  continue   go on after a stop (after the loop limit: review again)
+  stop       stop advancing; agents keep running
+  done       for agents: the current step is complete (or create the
+             DONE file in the step's directory); the flow goes on when the
+             agent stops
+
+A step ends when its agent signals done and stops; an agent that stops
+without the signal is waiting for you. Steps, prompts and artifacts are in
+the task record's flow/ directory (collie show lists them).
+EOF
+      ;;
+    wait)
+      cat <<'EOF'
+usage: collie wait [<id>] [--run n] [--for state] [--timeout seconds]
+
+Wait until a run reaches a state (working, idle, waiting, exited; default
+idle, run the latest), until the current flow step signals done (done, the
+default while a flow runs), or until the flow finishes (flow). Exits 0 when
+reached, 1 on timeout, 2 when it cannot happen any more (the run is gone,
+the flow stopped).
+
+  collie wait fix-x --for flow --timeout 3600
+EOF
+      ;;
     handoff)
       cat <<'EOF'
 usage: collie handoff [<id>] --from run --agent claude|codex --note file
@@ -451,7 +514,7 @@ EOF
 }
 
 # the public commands, in overview order
-HELP_COMMANDS='new add ls show history edit go dash set review spike gc sync done archive reopen run handoff adopt restore state status doctor repos workspaces'
+HELP_COMMANDS='new add ls show history edit go dash set review spike gc sync done archive reopen run handoff adopt restore state status flow wait doctor repos workspaces'
 
 cmd_help() {
   local c

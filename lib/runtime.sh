@@ -104,6 +104,7 @@ run_history() { # id
     $2 == "run_exited" { code[kv("run")] = kv("code") }
     $2 == "run_restored" { r = kv("run"); rest[r] = 1; add(r, "restored as " kv("as")); add(kv("as"), "restore of " r) }
     $2 == "run_handoff" { add(kv("from"), "handoff to " kv("to") " (" kv("agent") ")"); add(kv("to"), "handoff from " kv("from") " (" kv("source") ")") }
+    $2 == "flow_step" { add(kv("run"), "flow " kv("step") (kv("round") + 0 ? " r" kv("round") : "")) }
     END {
       for (i = n; i >= 1; i--) {
         r = order[i]; w = "-"
@@ -276,11 +277,20 @@ set_state() { # pane state [expected-codex-pending-token]
     tmux set-option -w -t "$wid" @collie_state "$2" \; set-option -w -t "$wid" @collie_state_at "$NOW" 2>/dev/null || return 0
   fi
   log_event "$id" agent_state "run=${run:--} state=$2"
+  # a flow goes on when the run of its step stops; flow_advance decides
+  case $2 in idle | exited)
+    if [ -f "$TASKS_DIR/$id/flow/FLOW" ]; then
+      ("$BASH" "$PLUGIN_DIR/bin/collie" _flow-advance "$id" "${run:--}" </dev/null >>"$TASKS_DIR/$id/flow/advance.log" 2>&1 &)
+    fi ;;
+  esac
   # no popup for the window you are looking at
   [ "$active" = 1 ] && [ "${attached:-0}" -gt 0 ] && return 0
   case $2:$old in
     waiting:*) msg="is waiting for you" ;;
-    idle:working) msg="finished its turn" ;;
+    idle:working)
+      # a running flow notifies when it needs you, not after every turn
+      ! flow_running "$id" || return 0
+      msg="finished its turn" ;;
     *) return 0 ;;
   esac
   # target of `collie _jump` (menu: jump to alert)
