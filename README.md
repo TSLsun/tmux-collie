@@ -112,7 +112,7 @@ or spot tasks to combine.
 ### Dashboard and menu
 
 ```sh
-collie dash                            # fzf: needs you > active > todo; tab regroups
+collie dash                            # fzf: needs you > active > todo; tab regroups; u: runs
 collie set deploy-v2 priority=P1 "title=Ship v2"
 ```
 
@@ -238,10 +238,12 @@ pane; set `@collie-terminal` to the terminal's bundle id if it is not detected
 (e.g. `com.mitchellh.ghostty`). Without it, notifications are unchanged; use
 `prefix h j`.
 
-With `set -g mouse on`, clicking a count opens a menu of the agents behind it;
-picking one jumps to its window (tmux 3.4+; the plugin binds `MouseUp1Status`
-unless you already bound it). Hovering cannot show anything: tmux has no mouse
-move events.
+With `set -g mouse on`, clicking a count opens a menu of the agents behind it,
+next to the count; each row shows `session:window`, the agent, how long it has
+been in that state, and the task's priority and title (the directory for agents
+outside a task). Picking one jumps to its window (tmux 3.4+; the plugin binds
+`MouseUp1Status` unless you already bound it). Hovering cannot show anything:
+tmux has no mouse move events.
 
 Windows carry `@collie_state`, usable in `window-status-format`.
 
