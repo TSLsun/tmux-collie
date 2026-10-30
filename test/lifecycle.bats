@@ -215,6 +215,32 @@ squash_upstream() {
   [ ! -d "$TMP/repos/A/feat-m" ]
 }
 
+@test "done: accepts a squash-merged branch after base edits the same lines" {
+  collie new m --no-window
+  commit_in "$TMP/repos/A/feat-m" m
+  squash_upstream feat/m
+  echo changed >"$TMP/origin-A/m"
+  git -C "$TMP/origin-A" commit -q -am "edit m"
+  git -C "$REPO" fetch -q origin
+  run collie done m
+  [ "$status" -eq 0 ]
+  [ ! -d "$TMP/repos/A/feat-m" ]
+}
+
+@test "done: refuses work added after a squash-merge, even once base moves on" {
+  collie new m --no-window
+  commit_in "$TMP/repos/A/feat-m" m
+  squash_upstream feat/m
+  commit_in "$TMP/repos/A/feat-m" extra
+  echo changed >"$TMP/origin-A/m"
+  git -C "$TMP/origin-A" commit -q -am "edit m"
+  git -C "$REPO" fetch -q origin
+  run collie done m
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"unmerged: A has 2 commit(s) on feat/m not in origin/"* ]]
+  [ -d "$TMP/repos/A/feat-m" ]
+}
+
 @test "done: fetches origin first, so a PR merged remotely needs no manual fetch" {
   collie new m --no-window
   commit_in "$TMP/repos/A/feat-m" m

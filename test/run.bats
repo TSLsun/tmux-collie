@@ -239,12 +239,17 @@ EOF
   wa1=$(tmux display -p -t "$(run_pane a)" '#{window_id}')
   wa2=$(tmux display -p -t "$(run_pane a 2)" '#{window_id}')
   wb=$(tmux display -p -t "$(run_pane b)" '#{window_id}')
-  PATH="$TMP/stub:$PATH" run collie _status-menu collie-working cl
+  # rows: session:window, agent, time in this state, priority and title
+  sed -i.bak 's/^title: .*/title: A title too long for a menu row, so cut/; s/^priority: .*/priority: P1/' "$(task_dir a)/TASK.md"
+  tmux set-option -w -t "$wa2" @collie_state_at $(($(date +%s) - 300))
+  PATH="$TMP/stub:$PATH" run collie _status-menu collie-working cl 77
   [ "$status" -eq 0 ]
-  [[ "$output" == "display-menu"$'\n'"-c"$'\n'"cl"$'\n'*" working "* ]]
-  [[ "$output" == *$'\n'"a  sleep"$'\n'"1"$'\n'"run-shell '"*"collie _jump $wa1 cl'"* ]]
-  [[ "$output" == *$'\n'"a  sleep #2"$'\n'"2"$'\n'"run-shell '"*"collie _jump $wa2 cl'"* ]]
+  [[ "$output" == "display-menu"$'\n'"-c"$'\n'"cl"$'\n'*" working "$'\n'"-x"$'\n'"77"$'\n'"-y"$'\n'"S"$'\n'* ]]
+  [[ "$output" == *$'\n'"a:1  sleep     "[0-9]"s  P1 A title too long for a menu…"$'\n'"1"$'\n'"run-shell '"*"collie _jump $wa1 cl'"* ]]
+  [[ "$output" == *$'\n'"a:2  sleep ##2  5m  P1 A title too long for a menu…"$'\n'"2"$'\n'"run-shell '"*"collie _jump $wa2 cl'"* ]]
   [[ "$output" != *"_jump $wb"* ]]
+  PATH="$TMP/stub:$PATH" run collie _status-menu collie-waiting cl
+  [[ "$output" == *$'\n'"-x"$'\n'"R"$'\n'* && "$output" == *$'\n'"b:1  sleep  "[0-9]"s  P2 b"$'\n'"1"$'\n'* ]]
   PATH="$TMP/stub:$PATH" run collie _status-menu collie-idle cl
   [[ "$output" == *"collie: no idle agents"* && "$output" != *display-menu* ]]
 }
@@ -270,7 +275,13 @@ EOF
   px=$(tmux list-panes -s -t '=x' -F '#{pane_id}' | tail -1)
   po=$(tmux list-panes -t '=own' -F '#{pane_id}')
   COLLIE_SILENCE=999 PATH="$TMP/stub:$PATH" run collie _status-menu collie-working cl
-  [[ "$output" == *$'\n'"x  claude"$'\n'*"collie _jump $px cl'"* && "$output" == *$'\n'"own  claude"$'\n'*"collie _jump $po cl'"* ]]
+  # no age while working by hand; outside a task, the directory
+  [[ "$output" == *$'\n'"x:1    claude  P2 x"$'\n'*"collie _jump $px cl'"* && "$output" == *$'\n'"own:0  claude  ${PWD##*/}"$'\n'*"collie _jump $po cl'"* ]]
+  # idle: time without output
+  tmux set-option -g @collie-status-scope tasks
+  COLLIE_SILENCE=0 PATH="$TMP/stub:$PATH" run collie _status-menu collie-idle cl
+  [[ "$output" == *$'\n'"x:1  claude  "[0-9]"s  P2 x"$'\n'* ]]
+  tmux set-option -gu @collie-status-scope
   tmux set-option -g @collie-status-scope tasks
   [ "$(COLLIE_SILENCE=999 collie status)" = "${g}●1#[norange]#[default]" ]
   COLLIE_SILENCE=999 PATH="$TMP/stub:$PATH" run collie _status-menu collie-working cl
