@@ -71,7 +71,8 @@ _collie() {
     sync | restore) compadd -- -n; _collie_tasks ;;
     handoff) compadd -- --from --agent --note -r; _collie_tasks ;;
     show | review) _collie_tasks -a ;;
-    add | edit | go | run | adopt | done | archive) _collie_tasks ;;
+    run) compadd -- --agent --model --effort -r -p -s; _collie_tasks ;;
+    add | edit | go | adopt | done | archive) _collie_tasks ;;
     help) compadd concepts workflows all; _describe command cmds ;;
   esac
 }

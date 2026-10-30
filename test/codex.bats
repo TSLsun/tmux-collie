@@ -64,6 +64,16 @@ assert_auto_review() {
   assert_auto_review
 }
 
+@test "codex: --model/--effort map to -m and model_reasoning_effort before resume" {
+  collie run x --agent codex --model gpt-x --effort high -p 'go on' -- resume exact-id
+  wait_for '[ -f "$ARGS" ]'
+  [ "$(tail -n 7 "$ARGS")" = "$(printf '%s\n' -m gpt-x -c 'model_reasoning_effort="high"' resume exact-id 'go on')" ]
+  grep -q "run_model	run=1 model=gpt-x effort=high" "$(task_dir x)/events.log"
+  run collie run x --agent codex --effort 'high" x'
+  [ "$status" -ne 0 ]
+  [[ $output == *"invalid effort"* ]]
+}
+
 @test "codex: missing restore identity is diagnosed without guessing latest" {
   printf '2020-01-01T00:00:00Z\trun_started\trun=1 agent=codex repo=A window=@1\n' >>"$(task_dir x)/events.log"
   run collie restore -n x
