@@ -1,0 +1,5 @@
+# implement-review: claude implements, codex reviews once. ok ships;
+# changes-needed stops the flow for you to decide.
+implement: role=implement agent=claude
+review:    role=review    agent=codex
+ship:      resume=implement

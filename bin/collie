@@ -34,10 +34,12 @@ warn() { printf 'collie: %s\n' "$*" >&2; }
 . "$PLUGIN_DIR/lib/worktree.sh"
 . "$PLUGIN_DIR/lib/tmux.sh"
 . "$PLUGIN_DIR/lib/runtime.sh"
+. "$PLUGIN_DIR/lib/flows.sh"
 . "$PLUGIN_DIR/lib/cmd/tasks.sh"
 . "$PLUGIN_DIR/lib/cmd/lifecycle.sh"
 . "$PLUGIN_DIR/lib/cmd/agents.sh"
 . "$PLUGIN_DIR/lib/cmd/dash.sh"
+. "$PLUGIN_DIR/lib/cmd/flows.sh"
 . "$PLUGIN_DIR/lib/cmd/admin.sh"
 
 # every cmd_<name> function is the command <name>: adding one needs no list here

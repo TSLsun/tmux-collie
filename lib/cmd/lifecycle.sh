@@ -403,10 +403,7 @@ cmd_sync() {
         if [ -n "$win" ]; then
           pane=$(agent_pane "$id" "$win")
           if [ -n "$pane" ]; then
-            # a pause before Enter, so agents that detect pastes still submit
-            tmux send-keys -t "$pane" -l "$msg"
-            sleep 0.3
-            tmux send-keys -t "$pane" Enter
+            send_prompt "$pane" "$msg"
             out="sent to the agent in $win"
           else
             out="agent pane not found, resolve it in $p"

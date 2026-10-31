@@ -1,0 +1,9 @@
+# review-loop: claude implements, codex reviews, claude fixes in its own
+# conversation until the review is ok (at most 2 fix rounds), then ships.
+# Copy to ~/.config/collie/flows/ (or <repo>/.collie/flows/) to change it;
+# pin models there, e.g.  agent=claude model=opus effort=high
+implement: role=implement agent=claude
+review:    role=review    agent=codex
+fix:       role=fix       resume=implement
+loop:      review fix max=2
+ship:      resume=implement

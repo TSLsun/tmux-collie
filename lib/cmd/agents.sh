@@ -36,9 +36,12 @@ start_run() ( # task agent repo path argv...
 
 cmd_run() {
   local id="" agent="" repo="" prompt=$DEFAULT_PROMPT custom=0 extra=() switch=0 client=""
+  local RUN_MODEL="" RUN_EFFORT=""
   while [ $# -gt 0 ]; do
     case $1 in
       --agent) agent=${2:?--agent needs a name}; shift ;;
+      --model) RUN_MODEL=${2:?--model needs a name}; shift ;;
+      --effort) RUN_EFFORT=${2:?--effort needs a level}; shift ;;
       -r) repo=${2:?-r needs a repo}; shift ;;
       -s) switch=1 ;;
       -c) client=${2:?-c needs a client}; shift ;;
@@ -52,6 +55,9 @@ cmd_run() {
   task_id "$id"
   command -v tmux >/dev/null || die "run: tmux required"
   [ -n "$agent" ] || { run_agent; agent=$RUN_AGENT; }
+  # passed into agent config (codex -c): no quotes or spaces
+  [[ $RUN_MODEL =~ ^[A-Za-z0-9._:/-]*$ ]] || die "run: invalid model '$RUN_MODEL'"
+  [[ $RUN_EFFORT =~ ^[a-z]*$ ]] || die "run: invalid effort '$RUN_EFFORT'"
 
   local d name c b p rname="" rc="" path=""
   d="$TASKS_DIR/$id"
@@ -75,7 +81,7 @@ cmd_run() {
   RUN_PROMPT=$prompt
   # shellcheck disable=SC2034
   RUN_DIRS=$(awk -F'\t' -v p="$path" '$4 != p { print $4 }' "$d/repos.tsv"; printf '%s\n' "$d")
-  AGENT_HOOKS=0 AGENT_HOOKS_PENDING=0 AGENT_EXTRA_HANDLED=0 AGENT_SESSION_ID=""
+  AGENT_HOOKS=0 AGENT_HOOKS_PENDING=0 AGENT_EXTRA_HANDLED=0 AGENT_SESSION_ID="" AGENT_MODELS=0
   if [[ $agent != */* ]] && [ -f "$PLUGIN_DIR/agents/$agent.sh" ]; then
     # shellcheck source=/dev/null
     . "$PLUGIN_DIR/agents/$agent.sh"
@@ -83,6 +89,7 @@ cmd_run() {
   else
     AGENT_ARGV=("$agent")
   fi
+  [ "$AGENT_MODELS" = 1 ] || [ -z "$RUN_MODEL$RUN_EFFORT" ] || die "run: collie cannot pass --model/--effort to $agent"
   command -v "$agent" >/dev/null || die "agent command '$agent' not found"
   [ "$AGENT_EXTRA_HANDLED" = 1 ] || AGENT_ARGV+=(${extra[@]+"${extra[@]}"})
 
@@ -103,6 +110,7 @@ cmd_run() {
   if [ -n "$AGENT_SESSION_ID" ]; then
     log_agent_session "$id" "$run" "$AGENT_SESSION_ID" || return
   fi
+  [ -z "$RUN_MODEL$RUN_EFFORT" ] || log_event "$id" run_model "run=$run model=${RUN_MODEL:--} effort=${RUN_EFFORT:--}" || return
   # -s: show the new window (menu, dashboard); a script keeps its window
   if [ "$switch" = 1 ] && { [ -n "$client" ] || [ -n "${TMUX:-}" ]; }; then
     tmux switch-client ${client:+-c "$client"} -t "$wid" \; select-window -t "$wid" 2>/dev/null || true
@@ -335,6 +343,9 @@ cmd_restore() {
         echo "$out skipped: collie run failed"
       fi
     done < <(lost_runs "$id" "$server")
+    if [ "$dry" -eq 0 ] && flow_running "$id"; then
+      flow_advance "$id" restore || echo "$id: flow did not advance; see collie show $id"
+    fi
   done <<<"$ids"
 }
 
@@ -348,7 +359,8 @@ cmd__exec() { # id run argv...
     sleep 0.05
   done
   trap : INT
-  "$@" || code=$?
+  # `collie flow done` tells its run by these
+  COLLIE_TASK=$id COLLIE_RUN=$run "$@" || code=$?
   trap - INT
   log_event "$id" run_exited "run=$run code=$code"
   set_state "${TMUX_PANE:-}" exited

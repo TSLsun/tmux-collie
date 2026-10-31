@@ -63,6 +63,7 @@ flowchart TB
 | Task record (`TASK.md`, `repos.tsv`, `events.log`, `REPORT.md`) | task | `new`, `spike` | never | yes |
 | Commit snapshot (`commits.txt`) | task | `done`, `archive` | never | yes |
 | Handoff packet (`handoffs/`) | handoff attempt | `handoff` | never | yes |
+| Flow record (`flow/`: definition, a directory per step) | flow | `flow start`, each step | never | yes |
 | Branch `<type>/<id>` | repo in the task | `new`, `add`, `spike` | never (delete it yourself) | yes |
 | Worktree + `.collie` symlink | repo in the task | `new`, `add`, `spike` | `done`, `archive`, `gc` | yes |
 | tmux session `<id>` | task | `new`, `go` (rebuilds it) | `done`, `archive`, `gc` | no; `go` rebuilds it |
@@ -182,6 +183,87 @@ authoritative. No private transcript or resume ID is passed between agents.
 Successful handoffs record a source/destination link in `events.log`; a failed
 launch keeps its packet for diagnosis without recording a successful handoff.
 
+### Flows
+
+A flow is a team pattern defined once: each step names a role, an agent and
+optionally a model and effort. collie starts each step, notices when it is
+done, hands its result to the next one, and stops for you only when needed.
+
+```sh
+collie new fix-retry -m 'retry failed uploads' --flow review-loop --run
+collie flow start review-loop fix-retry   # or on an existing task
+collie show fix-retry                     # current step, step directories
+collie flow continue fix-retry            # after a stop
+```
+
+Flow files are plain lines; the first match wins:
+
+1. `<repo>/.collie/flows/<name>`: the untracked `.collie/` of the main checkout
+   of the task's first repo (beside its git dir; in task worktrees `.collie`
+   is the link to the task record, so flows are never committed there)
+2. `~/.config/collie/flows/<name>`
+3. built-in: `review-loop`, `implement-review`
+
+```
+# review-loop
+implement: role=implement agent=claude model=opus effort=high
+review:    role=review    agent=codex  effort=high
+fix:       role=fix       resume=implement
+loop:      review fix max=2
+ship:      resume=implement
+```
+
+`model` and `effort` go to the agent's own flags (claude `--model`/`--effort`,
+codex `-m`/`model_reasoning_effort`); left out, the agent's defaults apply.
+`collie flow show <name>` checks a file and prints its steps. Agents need
+lifecycle hooks (claude, codex, gemini, omp); Codex hooks must be trusted in
+`/hooks` first, or its steps never finish.
+
+```mermaid
+flowchart LR
+  I[implement<br>claude, run 1] --> R[review<br>codex, new run]
+  R -- changes-needed --> F[fix<br>claude, run 1 again]
+  F --> R
+  R -- ok --> S[ship<br>claude, run 1 again]
+  R -- "changes-needed after max fixes" --> H((you))
+  S --> D((PR ready))
+```
+
+| Role | Gets | Must leave |
+|---|---|---|
+| `implement` | TASK.md | commits, `REPORT.md` |
+| `review` | TASK.md, REPORT.md, `DIFF.patch` against the base, the previous review | `REVIEW.md` whose first line is `verdict: ok` or `verdict: changes-needed`, numbered findings; the worktrees unchanged |
+| `fix` | `REVIEW.md` | commits, a `## Review response` section in REPORT.md: each finding fixed or declined, and why |
+| `ship` (the `ship:` line) | the Ship rules (SHIP.md), `SUMMARY.md` | push, a PR whose body includes SUMMARY.md, its URL in REPORT.md |
+
+A step is done when its agent signals it (`collie flow done`, or creating the
+`DONE` file in the step's directory) **and** stops. Agents are told to do
+both; one that stops without the signal is asking you something, and collie
+notifies you. Nothing polls: the agents' own idle and exit hooks advance the
+flow, and `collie restore` picks it up after the tmux server died.
+
+`resume=<step>` continues that step's conversation: the prompt is typed into
+its pane once it is idle (while it is busy, the flow waits), or, when its
+window is gone, the agent is relaunched with its logged conversation id.
+Other steps start a fresh run.
+
+The flow stops and notifies you when the review is still `changes-needed`
+after `max` fix rounds (`collie flow continue` reviews once more), when a
+step's artifact is still missing after one reminder, when the reviewer
+changed a worktree, or when a step's agent exits without the signal.
+`collie flow stop` stops advancing; agents keep running.
+
+Each step gets a directory in the task record's `flow/` (`01-implement`,
+`02-review`, ...) with its prompt, inputs and output; the definition is copied
+to `flow/FLOW` at start, so editing it later changes nothing. Role prompts
+come from `templates/roles/`; put your own in `~/.config/collie/roles/<role>.md`.
+`events.log` records `flow_started`, `flow_step`, `step_done`,
+`flow_verdict`, `flow_retry`, `flow_stopped`, `flow_continued`, `flow_done`;
+the dashboard's runs view (`u`) notes which step each run played.
+
+`collie wait <id> --for flow` blocks until the flow is done (exit 0) or
+stopped (exit 2); `--for idle|waiting|exited --run N` waits for a run.
+
 ## 5. Where each action lives
 
 | Action | CLI | `prefix h` menu | Dashboard (`prefix h h`) |
@@ -191,6 +273,7 @@ launch keeps its packet for diagnosis without recording a successful handoff.
 | Edit TASK.md | `collie edit` | `e` | `ctrl-e` or `?` `e` |
 | Run agent | `collie run` | `r` | `ctrl-r` or `?` `r` |
 | Continue with another agent | `collie handoff` | — | `u`, then `h` on the run (note in `$EDITOR`) |
+| Run a multi-agent flow | `collie new … --flow <name> --run`, `collie flow start` | — | — |
 | Adopt hand-started agent | `collie adopt` | `a` | `?` `a` |
 | Restore agents after the server died | `collie restore` | — | — |
 | Go to task | `collie go` | — | `enter` (most urgent agent window) |
