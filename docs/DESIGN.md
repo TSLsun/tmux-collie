@@ -291,7 +291,7 @@ starting the agent, so the first hook never races the tagging.
 
 Codex uses a dedicated process and captures exact conversation ids for adoption
 and restore. It confirms visible human prompts before reporting waiting, since
-permission review may be automatic. See [Agent details](../README.md#agent-details)
+permission review may be automatic. See [Agent details](https://github.com/TSLsun/tmux-collie#agent-details)
 for setup and [UNVERIFIED](UNVERIFIED.md#p4--more-agents--doctor) for limitations.
 
 `exited` / `unknown` are also derived: a run whose window is gone (no

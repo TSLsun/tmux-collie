@@ -1,7 +1,7 @@
 # tmux-collie — Usage at a glance
 
 Diagrams and tables for how a task moves from `collie new` to `done`. The
-[README](../README.md) has every flag; [DESIGN.md](DESIGN.md) has the reasons.
+[README](https://github.com/TSLsun/tmux-collie#readme) has every flag; [DESIGN.md](DESIGN.md) has the reasons.
 
 ## 1. The everyday loop
 
@@ -156,7 +156,7 @@ runs lost with a dead tmux server (claude and codex by their logged session id, 
 the worktree's latest conversation); agents started by hand are not
 recorded, so they are not restored.
 
-For Codex setup and limitations, see [Agent details](../README.md#agent-details).
+For Codex setup and limitations, see [Agent details](https://github.com/TSLsun/tmux-collie#agent-details).
 
 ### Cross-agent handoff
 
