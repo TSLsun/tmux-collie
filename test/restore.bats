@@ -104,6 +104,32 @@ agent_windows() { tmux list-windows -t "=$1" -F '#{@collie_run}' | grep -c .; }
   [ "$output" = "x run 3: claude in A: --resume $id1"$'\n'"x run 4: claude in A: --resume $id2" ]
 }
 
+@test "wait: follows a restored run, and its done signal carries over" {
+  collie run x --agent claude -p ''
+  collie run x --agent claude -p ''
+  wait_for 'sessions_logged 2'
+  COLLIE_TASK=x COLLIE_RUN=1 collie signal done
+  server_dies
+  # signalled, then lost: done; lost without the signal: cannot happen
+  collie wait x --run 1 --done --timeout 5
+  run collie wait x --run 2 --done --timeout 5
+  [ "$status" -eq 2 ]
+  collie restore
+  grep -q "run_restored	run=1 as=3$" "$(task_dir x)/events.log"
+  hook x working 3
+  hook x working 4
+  collie wait x --run 1 --state working --timeout 5
+  run collie wait x --run 1 --done --timeout 1
+  [ "$status" -eq 1 ]
+  hook x idle 3
+  collie wait x --run 1 --done --timeout 5
+  run collie wait x --run 2 --done --timeout 1
+  [ "$status" -eq 1 ]
+  COLLIE_TASK=x COLLIE_RUN=4 collie signal done
+  hook x idle 4
+  collie wait x --run 2 --done --timeout 5
+}
+
 @test "restore: records its own allocated ID when another run starts before it returns" {
   collie run x --agent omp -p ''
   server_dies
