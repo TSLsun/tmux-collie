@@ -81,6 +81,32 @@ task_runs() {
     }' - "$TASKS_DIR/$id/events.log" <<<"$wins"
 }
 
+# Sets RUN_STATE (working, idle, waiting, else gone) and RUN_WIN of a run.
+run_state() { # id run
+  local l
+  # no early exit: task_runs would die of SIGPIPE under pipefail
+  l=$(task_runs "$1" | awk -F'\t' -v r="$2" '$1 == r && !f { print $3 "\t" $4; f = 1 }')
+  RUN_STATE=${l%%"$TAB"*} RUN_WIN=${l#*"$TAB"}
+  case $RUN_STATE in working | idle | waiting) ;; *) RUN_STATE=gone RUN_WIN=- ;; esac
+}
+
+# Sets RUN_LIVE (the run, followed through restores) and RUN_DONE (1 when
+# its latest turn signalled done: a run_signal after the run's last
+# run_prompt, carried over by restores).
+run_resolve() { # id run
+  local l
+  l=$(awk -F'\t' -v r="$2" '
+    function kv(k,  a, i, n) {
+      n = split($3, a, " ")
+      for (i = 1; i <= n; i++) if (index(a[i], k "=") == 1) return substr(a[i], length(k) + 2)
+    }
+    $2 == "run_signal" && kv("signal") == "done" { d[kv("run")] = 1 }
+    $2 == "run_prompt" { d[kv("run")] = 0 }
+    $2 == "run_restored" { as[kv("run")] = kv("as"); if (d[kv("run")]) d[kv("as")] = 1 }
+    END { while (r in as) r = as[r]; print r "\t" d[r] + 0 }' "$TASKS_DIR/$1/events.log")
+  RUN_LIVE=${l%%"$TAB"*} RUN_DONE=${l#*"$TAB"}
+}
+
 # Every run of a task, newest first, as "run<TAB>agent<TAB>repo<TAB>state<TAB>
 # window<TAB>started<TAB>note": agents started by hand first (run, repo and
 # started "-"), then each `collie run` in events.log. A logged exit wins over

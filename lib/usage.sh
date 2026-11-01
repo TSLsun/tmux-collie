@@ -33,6 +33,8 @@ agents:
   handoff [<id>]      continue a claude/codex run with the other agent
   adopt [<id>] [-y]   restart a hand-started agent under collie run
   restore [<id>] [-n] restart the agents lost with the tmux server
+  wait [<id>]         block until a run reaches a state or signals done
+  signal done         called by an agent: its run's current turn is done
   state <state>       called by agent hooks; no-op outside a collie window
   status              agent counts for the status bar (#{collie_status})
 
@@ -396,6 +398,33 @@ session id, omp by the worktree's latest). Never guesses: runs without a
 known conversation are skipped. -n lists them; read-only.
 EOF
       ;;
+    wait)
+      cat <<'EOF'
+usage: collie wait [<id>] [--run n] [--done | --state state] [--timeout s]
+
+Block until a run (default: the latest) reaches a state: working, idle
+(the default), waiting or exited. --done waits until the run's current
+turn has signalled done (`collie signal done`) and the run is no longer
+working. A restored run is followed to the run that replaced it. Polls
+events.log and tmux every half second; read-only.
+
+Exit 0 when reached, 1 on timeout (or a usage error), 2 when it cannot
+happen any more (the run is gone; for --done, gone without the signal).
+
+  collie wait fix-x --run 2 --done --timeout 3600
+EOF
+      ;;
+    signal)
+      cat <<'EOF'
+usage: collie signal done
+
+Run by an agent inside its collie run: logs that the run's current turn is
+done (a run_signal event), for `collie wait --done`. The task and run come
+from $COLLIE_TASK and $COLLIE_RUN, set for every collie run. The signal
+counts until the run is prompted again (a run_prompt event) and carries
+over to the run `collie restore` starts in its place.
+EOF
+      ;;
     state)
       cat <<'EOF'
 usage: collie state <working|waiting|idle|exited>
@@ -451,7 +480,7 @@ EOF
 }
 
 # the public commands, in overview order
-HELP_COMMANDS='new add ls show history edit go dash set review spike gc sync done archive reopen run handoff adopt restore state status doctor repos workspaces'
+HELP_COMMANDS='new add ls show history edit go dash set review spike gc sync done archive reopen run handoff adopt restore wait signal state status doctor repos workspaces'
 
 cmd_help() {
   local c

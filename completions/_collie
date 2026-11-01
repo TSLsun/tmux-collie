@@ -37,6 +37,8 @@ _collie() {
     'handoff:continue another agent run with preserved context'
     'adopt:restart an agent started by hand under collie run'
     'restore:restart agents lost with the tmux server'
+    'wait:block until a run reaches a state or signals done'
+    'signal:agent signals its turn is done'
     'review:per-repo commits and diffs'
     'spike:branch the current worktree into an exp/ task'
     'gc:finish merged tasks'
@@ -60,9 +62,12 @@ _collie() {
     -w) _collie_workspaces; return ;;
     -t) compadd feat fix chore docs refactor test exp; return ;;
     --agent) compadd claude codex gemini omp; return ;;
+    --state) compadd working idle waiting exited; return ;;
   esac
   case ${words[2]} in
     state) compadd working waiting idle exited ;;
+    signal) compadd done ;;
+    wait) compadd -- --run --done --state --timeout; _collie_tasks ;;
     set) compadd -S '=' priority title; _collie_tasks ;;
     ls) compadd -- -a ;;
     new) compadd -- -r -w -t -m --title --from --edit --no-window --ship --no-ship --run --agent -p ;;

@@ -356,11 +356,58 @@ cmd__exec() { # id run argv...
     sleep 0.05
   done
   trap : INT
-  "$@" || code=$?
+  # `collie signal done` tells its run by these
+  COLLIE_TASK=$id COLLIE_RUN=$run "$@" || code=$?
   trap - INT
   log_event "$id" run_exited "run=$run code=$code"
   set_state "${TMUX_PANE:-}" exited
   exec "${SHELL:-/bin/sh}"
+}
+
+# Waits until a run reaches a state, or signals done and stops. Follows
+# restores. Exit 0 when reached, 1 on timeout, 2 when it cannot happen any
+# more (the run is gone).
+cmd_wait() {
+  local id="" run="" want=idle timeout=0 start=$SECONDS
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --run) run=${2:?--run needs a number}; shift ;;
+      --state) want=${2:?--state needs a state}; shift ;;
+      --done) want="done" ;;
+      --timeout) timeout=${2:?--timeout needs seconds}; shift ;;
+      -*) die "wait: unknown option $1" ;;
+      *) [ -z "$id" ] || die "wait: too many arguments"; id=$1 ;;
+    esac
+    shift
+  done
+  task_id "$id"
+  [[ $timeout =~ ^[0-9]+$ ]] || die "wait: --timeout needs seconds"
+  case $want in "done" | working | idle | waiting | exited) ;; *) die "wait: --state working|idle|waiting|exited" ;; esac
+  [ -n "$run" ] || run=$(awk -F'\t' '$2 == "run_started" { n++ } END { print n + 0 }' "$TASKS_DIR/$id/events.log")
+  [[ $run =~ ^[1-9][0-9]*$ ]] || die "wait: no run to wait for"
+  while :; do
+    run_resolve "$id" "$run"
+    run_state "$id" "$RUN_LIVE"
+    case $want in
+      "done") [ "$RUN_DONE" = 0 ] || [ "$RUN_STATE" = working ] || return 0 ;;
+      exited) [ "$RUN_STATE" != gone ] || return 0 ;;
+      *) [ "$RUN_STATE" != "$want" ] || return 0 ;;
+    esac
+    [ "$RUN_STATE" != gone ] || exit 2
+    [ "$timeout" = 0 ] || [ $((SECONDS - start)) -lt "$timeout" ] || exit 1
+    sleep 0.5
+  done
+}
+
+# Run by an agent in its run's window: logs that its turn is done.
+cmd_signal() {
+  local id run=${COLLIE_RUN:-}
+  [ $# -eq 1 ] && [ "$1" = "done" ] || die "usage: collie signal done"
+  task_id ""
+  [ -n "$run" ] || [ -z "${TMUX_PANE:-}" ] ||
+    run=$(tmux display-message -p -t "$TMUX_PANE" '#{@collie_run}' 2>/dev/null || true)
+  [[ $run =~ ^[1-9][0-9]*$ ]] || die "signal: not inside a collie run"
+  log_event "$id" run_signal "run=$run signal=done"
 }
 
 cmd_state() {
