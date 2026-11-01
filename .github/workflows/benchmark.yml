@@ -1,0 +1,48 @@
+name: test benchmarks
+on:
+  pull_request:
+    paths:
+      - '.github/workflows/benchmark.yml'
+      - 'scripts/benchmark-tests.py'
+  workflow_dispatch:
+
+jobs:
+  measure:
+    timeout-minutes: 60
+    strategy:
+      fail-fast: false
+      matrix:
+        os: [ubuntu-latest, macos-latest]
+        jobs: [1, 2, 4, 8]
+        mode: [files, tests]
+    runs-on: ${{ matrix.os }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Linux dependencies
+        if: runner.os == 'Linux'
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y --no-install-recommends bats parallel tmux zsh
+          mkdir -p "$RUNNER_TEMP/fzf-bin"
+          curl -fsSL https://github.com/junegunn/fzf/releases/download/v0.73.0/fzf-0.73.0-linux_amd64.tar.gz | tar -xz -C "$RUNNER_TEMP/fzf-bin"
+          echo "$RUNNER_TEMP/fzf-bin" >> "$GITHUB_PATH"
+      - name: macOS dependencies
+        if: runner.os == 'macOS'
+        env:
+          HOMEBREW_NO_AUTO_UPDATE: 1
+          HOMEBREW_NO_INSTALL_CLEANUP: 1
+          HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: 1
+        run: brew install bats-core parallel tmux fzf
+      - name: Measure suite and repeated stress files
+        env:
+          COLLIE_TEST_DIAGNOSTICS_DIR: ${{ runner.temp }}/diagnostics
+        run: python3 scripts/benchmark-tests.py --jobs ${{ matrix.jobs }} --mode ${{ matrix.mode }} --output "$RUNNER_TEMP/measurements"
+      - name: Retain observations and diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: benchmark-${{ matrix.os }}-${{ matrix.jobs }}-${{ matrix.mode }}-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/measurements
+            ${{ runner.temp }}/diagnostics
+          retention-days: 14
