@@ -649,7 +649,9 @@ cmd__bg() { # key id...
   ) </dev/null >"$out" 2>&1 || rc=$?
   if [ "$rc" -eq 0 ]; then
     panel_msg ok "✓ $(action_verb "$k") $*"
-    echo "reload($self $rows)+refresh-preview+bg-transform($self _fade)"
+    # Finish replacing the rows before starting the fade transform: older
+    # fzf releases can cancel an outstanding async reload at that boundary.
+    echo "reload-sync($self $rows)+refresh-preview+bg-transform($self _fade)"
   else
     panel_msg fail "✗ $(action_verb "$k") $* (exit $rc)"$'\n'"$(cat "$out")"
     echo "reload($self $rows)+refresh-preview"
