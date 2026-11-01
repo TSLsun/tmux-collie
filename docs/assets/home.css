@@ -1,0 +1,166 @@
+/* Homepage (docs/index.md): hero, terminal mockups, feature rows. */
+:root {
+  --term-bg: #0d1117;
+  --term-fg: #d6dde6;
+  --term-dim: #7d8590;
+  --term-red: #ff6b6b;
+  --term-yellow: #f2c94c;
+  --term-green: #3fb950;
+  --term-amber: #ffb000;
+  --tmux-bar: #1f8a3b;
+}
+
+.hero {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1.15fr);
+  gap: 2rem;
+  align-items: center;
+  margin: 1rem 0 2.5rem;
+}
+.hero h1 {
+  font-family: var(--md-code-font-family);
+  font-weight: 700;
+  margin-bottom: 0.2em;
+  color: var(--md-default-fg-color);
+}
+.hero .tagline {
+  font-size: 1.25rem;
+  line-height: 1.4;
+  margin-top: 0;
+}
+.hero .status-note {
+  font-size: 0.75rem;
+  color: var(--md-default-fg-color--light);
+}
+
+/* terminal window */
+.term {
+  background: var(--term-bg);
+  color: var(--term-fg);
+  border-radius: 8px;
+  overflow: hidden;
+  box-shadow: 0 6px 24px rgba(0, 0, 0, 0.25);
+  margin: 1em 0;
+  min-width: 0;
+}
+.term pre {
+  margin: 0;
+  padding: 0.9rem 1rem;
+  font-size: 0.72rem;
+  line-height: 1.55;
+  overflow-x: auto;
+  color: var(--term-fg);
+  background: transparent;
+}
+.term-title {
+  font-family: var(--md-code-font-family);
+  font-size: 0.65rem;
+  color: var(--term-dim);
+  padding: 0.45rem 1rem 0.45rem 3.6rem;
+  border-bottom: 1px solid #222a33;
+  position: relative;
+}
+.term-title::before {
+  content: "";
+  position: absolute;
+  left: 1rem;
+  top: 50%;
+  width: 0.55rem;
+  height: 0.55rem;
+  margin-top: -0.275rem;
+  border-radius: 50%;
+  background: #ff5f57;
+  box-shadow: 0.85rem 0 #febc2e, 1.7rem 0 #28c840;
+}
+.term .p { color: var(--term-amber); }
+.term .d { color: var(--term-dim); }
+.term .r { color: var(--term-red); }
+.term .y { color: var(--term-yellow); }
+.term .g { color: var(--term-green); }
+
+/* tmux status line and menu */
+.tmux-bar {
+  display: flex;
+  justify-content: space-between;
+  gap: 1rem;
+  background: var(--tmux-bar);
+  color: #000;
+  font-family: var(--md-code-font-family);
+  font-size: 0.68rem;
+  padding: 0.15rem 0.6rem;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.tmux-bar b { font-weight: 700; }
+.tmux-bar .r { color: #b00000; }
+.tmux-bar .y { color: #6b5200; }
+.tmux-bar .g { color: #003d10; }
+.tmux-menu {
+  margin: 1.2rem 1rem 0.6rem auto;
+  width: fit-content;
+  max-width: calc(100% - 2rem);
+  border: 1px solid var(--term-dim);
+}
+.tmux-menu .menu-title {
+  text-align: center;
+  font-family: var(--md-code-font-family);
+  font-size: 0.68rem;
+  border-bottom: 1px solid var(--term-dim);
+  padding: 0.1rem 0;
+}
+.tmux-menu pre { padding: 0.3rem 0.6rem; }
+
+/* cards */
+.cards {
+  display: grid;
+  grid-template-columns: repeat(auto-fit, minmax(14rem, 1fr));
+  gap: 1rem;
+  margin: 1.5rem 0;
+}
+.card {
+  border: 1px solid var(--md-default-fg-color--lightest);
+  border-radius: 8px;
+  padding: 0.2rem 1rem;
+}
+.card h3 { margin-top: 0.8em; }
+.cards.small .card { font-size: 0.7rem; padding: 0.6rem 0.9rem; }
+.cards.small .card p { margin: 0; }
+
+/* loop stepper */
+.steps {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem;
+  margin: 1rem 0 1.5rem;
+}
+.steps a {
+  font-family: var(--md-code-font-family);
+  font-size: 0.75rem;
+  padding: 0.3rem 0.75rem;
+  border-radius: 999px;
+  border: 1px solid var(--md-default-fg-color--lighter);
+  color: var(--md-default-fg-color);
+}
+.steps a:hover { border-color: var(--md-accent-fg-color); color: var(--md-accent-fg-color); }
+.steps b { color: var(--md-accent-fg-color); margin-right: 0.3em; }
+
+/* feature rows: text beside a mockup */
+.feature {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) minmax(0, 1fr);
+  gap: 2rem;
+  align-items: center;
+  margin: 1rem 0 2rem;
+}
+.feature h3 { margin-top: 0; }
+
+@media screen and (max-width: 60em) {
+  .hero, .feature { grid-template-columns: minmax(0, 1fr); gap: 0.5rem; }
+}
+
+.md-typeset .steps a { text-decoration: none; }
+.md-typeset .hero .md-button--primary {
+  background-color: var(--term-amber);
+  border-color: var(--term-amber);
+  color: #000;
+}

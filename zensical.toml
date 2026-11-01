@@ -1,0 +1,59 @@
+# Project homepage, built by .github/workflows/docs.yml and served on GitHub Pages.
+# Preview: uvx zensical@0.0.73 serve
+[project]
+site_name = "tmux-collie"
+site_description = "Herd coding agents across git worktrees, from tmux."
+site_url = "https://tslsun.github.io/tmux-collie/"
+repo_url = "https://github.com/TSLsun/tmux-collie"
+repo_name = "TSLsun/tmux-collie"
+edit_uri = "edit/main/docs/"
+copyright = "MIT licensed"
+extra_css = ["assets/home.css"]
+nav = [
+  { "Home" = "index.md" },
+  { "Usage" = "USAGE.md" },
+  { "Design" = "DESIGN.md" },
+  { "Unverified" = "UNVERIFIED.md" },
+]
+# design notes linked from DESIGN.md and README, not part of the reading path
+not_in_nav = "FOLDER-TASKS.md"
+
+[project.theme]
+language = "en"
+features = [
+  "content.code.copy",
+  "navigation.footer",
+  "navigation.top",
+  "navigation.tracking",
+  "search.highlight",
+]
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: dark)"
+scheme = "slate"
+primary = "black"
+accent = "amber"
+toggle.icon = "lucide/sun"
+toggle.name = "Switch to light mode"
+
+[[project.theme.palette]]
+media = "(prefers-color-scheme: light)"
+scheme = "default"
+primary = "black"
+accent = "amber"
+toggle.icon = "lucide/moon"
+toggle.name = "Switch to dark mode"
+
+[project.markdown_extensions]
+admonition = {}
+attr_list = {}
+md_in_html = {}
+tables = {}
+toc.permalink = true
+toc.slugify = { object = "pymdownx.slugs.slugify", kwds = { case = "lower" } }
+pymdownx.highlight.anchor_linenums = true
+pymdownx.inlinehilite = {}
+pymdownx.keys = {}
+pymdownx.superfences.custom_fences = [
+  { name = "mermaid", class = "mermaid", format = "pymdownx.superfences.fence_code_format" },
+]

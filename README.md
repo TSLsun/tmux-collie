@@ -1,6 +1,7 @@
 # tmux-collie
 
 Herd coding agents across git worktrees, from tmux.
+Homepage with a feature tour: <https://tslsun.github.io/tmux-collie/>
 
 > **Status: 0.x, experimental.** Interfaces may change without notice.
 
