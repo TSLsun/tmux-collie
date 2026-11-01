@@ -46,6 +46,7 @@ collie new deploy-v2 -r A -r B:release/v2   # per-repo branch
 collie new checkout-fix -w shop        # all repos of a workspace
 collie add deploy-v2 -r C              # pull another repo in mid-task
 collie ls                              # id  status  priority  session(*|-)  agent  repos  needs
+collie brief                           # what waits on you: one line + the command to act, per task
 collie show deploy-v2                  # fields, TASK.md contract, repos, runs, events
 collie edit deploy-v2                  # adjust TASK.md in $EDITOR (also: dash e, prefix h e)
 collie go deploy-v2                    # switch/attach (fzf picker if no id)

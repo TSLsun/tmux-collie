@@ -14,6 +14,7 @@ tasks:
   new [<id>]          create a task: branch + worktree per repo, tmux session
   add [<id>] -r repo  attach more repos to an existing task
   ls [-a]             list tasks: id, status, priority, session, agent, needs
+  brief               what waits on you: one line per task, with the command
   show [<id>]         fields, TASK.md, repos, agent runs, events, REPORT.md
   history [-n] [pat]  finished tasks, newest first; searches TASK.md/REPORT.md
   edit [<id>]         open the task's TASK.md in $EDITOR
@@ -44,7 +45,8 @@ discovery:
   workspaces          named repo sets from ~/.config/collie/workspaces
 
 Omitted <id> falls back to $COLLIE_TASK, set in every pane of a task session.
-Read-only: ls show history review dash status doctor repos workspaces, and -n.
+Read-only: ls brief show history review dash status doctor repos workspaces,
+and -n.
 Status: todo -> active -> review -> done | archived (derived; see concepts).
 Agents: read .collie/TASK.md first, write .collie/REPORT.md when finished.
 EOF
@@ -105,9 +107,9 @@ changes   creates branch + worktree   new, add, spike, reopen (worktree only)
           fetches origin              new, add, done, gc, sync
           edits TASK.md               set, edit, done/archive/reopen (status)
           never deletes branches or the task record
-          read-only                   ls show history review dash status
-                                      doctor repos workspaces; -n variants
-                                      (gc -n still fetches origin)
+          read-only                   ls brief show history review dash
+                                      status doctor repos workspaces; -n
+                                      variants (gc -n still fetches origin)
 EOF
 }
 
@@ -198,6 +200,17 @@ usage: collie ls [-a]
 List live tasks, tab-separated: id, status, priority, session (* exists,
 - none), agent (most urgent run state), repos, needs (answer, review, reply,
 stalled, start, -). -a includes done and archived. Read-only.
+EOF
+      ;;
+    brief)
+      cat <<'EOF'
+usage: collie brief
+
+What waits on you, most urgent first (answer, reply, findings, review,
+stalled; then priority, id): one line per task with what it waits on and
+the command to act. review shows REPORT.md's first line and the PR with its
+state and CI from the cache the dashboard keeps (never calls gh). Prints
+"nothing waits on you" when nothing does. Read-only.
 EOF
       ;;
     show)
@@ -448,7 +461,7 @@ EOF
 }
 
 # the public commands, in overview order
-HELP_COMMANDS='new add ls show history edit go dash set review spike gc sync done archive reopen run handoff adopt restore state status doctor repos workspaces'
+HELP_COMMANDS='new add ls brief show history edit go dash set review spike gc sync done archive reopen run handoff adopt restore state status doctor repos workspaces'
 
 cmd_help() {
   local c

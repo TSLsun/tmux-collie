@@ -146,6 +146,16 @@ The dashboard sorts tasks in that urgency (`answer` > `reply` > `review` >
 (needs you, active, todo); `tab` /
 `shift-tab` regroup by priority or repo.
 
+`collie brief` is the short form: one line per task that needs you, in the
+same order, with what it waits on and the command to act. It reads only
+local state and the dashboard's PR cache, so it never touches the network:
+
+```text
+answer   login (P1): an agent waits for your answer  ->  collie go login
+review   deploy-v2 (P2): Added blue/green deploy. | PR https://github.com/o/r/pull/12 (open, CI pass)  ->  collie review deploy-v2
+stalled  cache (P2): its agents were lost with the tmux server  ->  collie restore cache
+```
+
 Agents get hooks per run, nothing installed: claude, codex, gemini, omp.
 Any other command (`--agent aider`) runs without hooks. Agents you start by
 hand in a task's session are detected by process (working/idle only, no
