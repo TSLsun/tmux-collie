@@ -208,6 +208,28 @@ squash_upstream() {
   [ "$(fm m status)" = done ]
 }
 
+@test "gc -n: buckets each worktree wip:N, scratch:N or clean; total counts clean only" {
+  make_normal_repo B
+  cd "$TMP"
+  collie new m -r A -r B --no-window
+  commit_in "$TMP/repos/A/feat-m" m
+  commit_in "$TMP/repos/B.worktrees/feat-m" m
+  REPO=$TMP/repos/A merge_upstream feat/m
+  git -C "$TMP/origin-B" fetch -q "$TMP/repos/B" feat/m
+  git -C "$TMP/origin-B" merge -q --ff-only FETCH_HEAD
+  git -C "$TMP/repos/B" fetch -q origin
+  echo edit >>"$TMP/repos/A/feat-m/m"
+  echo staged >"$TMP/repos/A/feat-m/s" && git -C "$TMP/repos/A/feat-m" add s
+  echo new >"$TMP/repos/A/feat-m/n1"
+  run --separate-stderr collie gc -n
+  [ "$status" -eq 0 ]
+  [ "${lines[0]}" = m ]
+  [[ "${lines[1]}" =~ ^"  A  wip:2 scratch:1  "[0-9]+K$ ]]
+  [[ "${lines[2]}" =~ ^"  B  clean  "([0-9]+)K$ ]]
+  [ "${lines[3]}" = "would reclaim ${BASH_REMATCH[1]}K (wip/scratch are skipped)" ]
+  [ -d "$TMP/repos/A/feat-m" ] && [ -z "$(fm m status)" ]
+}
+
 # --- done -------------------------------------------------------------------
 
 @test "done: accepts a squash-merged branch without --force" {
