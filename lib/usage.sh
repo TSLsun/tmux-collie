@@ -21,6 +21,7 @@ tasks:
   dash [-n]           fzf dashboard, most urgent first
   set [<id>] f=v...   set priority (P0..P3) or title
   review [<id>] [-p]  per-repo commits, diff stat, dirty files, REPORT.md
+  verify [<id>]       run TASK.md's ## Verify sh blocks in each worktree
   spike <id> [-u]     new exp/<id> task with this worktree's uncommitted changes
   gc [-n]             finish tasks whose branches are merged into base
   sync [<id>...] [-n] merge base into active task branches and push them
@@ -104,6 +105,7 @@ changes   creates branch + worktree   new, add, spike, reopen (worktree only)
           commits/pushes              sync (merge commit, push if upstream)
           fetches origin              new, add, done, gc, sync
           edits TASK.md               set, edit, done/archive/reopen (status)
+          runs your commands          verify (TASK.md ## Verify blocks)
           never deletes branches or the task record
           read-only                   ls show history review dash status
                                       doctor repos workspaces; -n variants
@@ -267,6 +269,23 @@ usage: collie review [<id>] [-p]
 Per repo: commits since the branch started, diff stat (-p: the full patch),
 dirty files; then REPORT.md. Folders list files modified since the first
 run. Read-only.
+EOF
+      ;;
+    verify)
+      cat <<'EOF'
+usage: collie verify [<id>] [-r repo]
+
+Run the fenced ```sh blocks under TASK.md's "## Verify" in each repo's
+worktree (-r: only that repo), in order, each with `sh -e`, stdin from
+/dev/null and your environment. A repo stops at its first failing block.
+Output goes to the terminal and to verify/<time>-<repo>.log in the task
+dir; a verify event records pass/fail, the exit code and the log. show,
+review and the dash preview print the last result per repo; it does not
+change the task's status. Exits non-zero if any repo fails. No blocks:
+says so, exits 0, records nothing.
+
+  collie verify login
+  collie verify login -r api
 EOF
       ;;
     spike)
@@ -448,7 +467,7 @@ EOF
 }
 
 # the public commands, in overview order
-HELP_COMMANDS='new add ls show history edit go dash set review spike gc sync done archive reopen run handoff adopt restore state status doctor repos workspaces'
+HELP_COMMANDS='new add ls show history edit go dash set review verify spike gc sync done archive reopen run handoff adopt restore state status doctor repos workspaces'
 
 cmd_help() {
   local c

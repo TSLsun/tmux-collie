@@ -38,6 +38,7 @@ _collie() {
     'adopt:restart an agent started by hand under collie run'
     'restore:restart agents lost with the tmux server'
     'review:per-repo commits and diffs'
+    'verify:run TASK.md Verify blocks in each worktree'
     'spike:branch the current worktree into an exp/ task'
     'gc:finish merged tasks'
     'sync:merge base into active task branches'
@@ -71,6 +72,7 @@ _collie() {
     sync | restore) compadd -- -n; _collie_tasks ;;
     handoff) compadd -- --from --agent --note -r; _collie_tasks ;;
     show | review) _collie_tasks -a ;;
+    verify) compadd -- -r; _collie_tasks ;;
     add | edit | go | run | adopt | done | archive) _collie_tasks ;;
     help) compadd concepts workflows all; _describe command cmds ;;
   esac

@@ -25,6 +25,7 @@ Shortest path for a one-repo change, from inside that repo:
 collie new fix-retry -t fix -m 'retry 5xx on upload'   # worktree + session
 collie run fix-retry                                   # agent reads .collie/TASK.md
 collie review fix-retry                                # commits, diff stat, REPORT.md
+collie verify fix-retry                                # run TASK.md's ## Verify blocks
 # merge fix/fix-retry (PR or locally), then:
 collie gc                                              # or: collie done fix-retry
 collie history                                         # later: finished tasks, their commits and REPORT.md
@@ -197,6 +198,7 @@ launch keeps its packet for diagnosis without recording a successful handoff.
 | Runs of a task | `collie show` | — | `u` (`enter`: its window, `esc`: back) |
 | Jump to last alert | — | `j` | — |
 | Review | `collie review` | `v` | `ctrl-v` or `?` `v` |
+| Run TASK.md Verify blocks | `collie verify` | — | — (last result in the preview) |
 | Shell in worktree | — | `t` (popup) | `?` `t` |
 | lazygit | — | `g` | — |
 | Done | `collie done` | `d` (confirms) | `ctrl-d` or `?` `d` (confirms) |

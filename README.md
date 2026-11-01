@@ -72,6 +72,7 @@ collie ls                              # agent column: waiting/idle/working/exit
 
 ```sh
 collie review deploy-v2                # commits, diff stat, dirty files, REPORT.md
+collie verify deploy-v2                # run TASK.md's ## Verify sh blocks in each worktree
 collie spike try-cache                 # from a dirty worktree: exp/try-cache task with the same changes
 collie spike try-cache -u              # ...plus untracked (non-ignored) files
 collie gc                              # finish tasks whose branches were merged
@@ -151,7 +152,8 @@ with ↑↓ and press enter; esc closes it. `sync` (`s`) shows `collie sync -n` 
 tasks (or the selected one when none is marked) in the panel, asks y/n, then syncs only
 those; switching the grouping clears the marks. The header lists the direct keys. The preview shows
 the start of TASK.md's Objective.
-The preview also shows the live agents, the age of the last event, and each
+The preview also shows the live agents, the age of the last event, the last
+`collie verify` result per repo, and each
 repo's branch and PR. It sits right of the list when the rows fit beside it,
 below it otherwise, and wraps long lines. The header's key hints wrap instead
 of being cut.
