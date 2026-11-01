@@ -44,24 +44,27 @@ collie() {
   "${COLLIE_BASH:-bash}" "$COLLIE_ROOT/bin/collie" "$@"
 }
 
-# Repos are built once per test file and copied per test: git is slow to spawn
-# on macOS. Parallel tests may race to build; `ln -sn` lets exactly one win.
+# Publish one immutable template per suite, then copy it into each test's
+# private directory. Concurrent builders publish only after completion;
+# `ln -sn` lets exactly one win. Unused candidates go with the suite tempdir.
 repo_template() {
-  TPL="$BATS_FILE_TMPDIR/tpl"
+  local cache=${BATS_SUITE_TMPDIR:-$BATS_FILE_TMPDIR}
+  TPL="$cache/tpl"
   [ -e "$TPL" ] && return
   local t
-  t="$(mktemp -d "$BATS_FILE_TMPDIR/tpl.XXXXXX")"
-  # origin repo with one commit on main
-  git init -q "$t/origin"
+  t="$(mktemp -d "$cache/tpl.XXXXXX")"
+  # Sample hooks are inactive and expensive to copy into every fixture.
+  # Tests that exercise hooks explicitly configure core.hooksPath.
+  git init -q --template= "$t/origin"
   git -C "$t/origin" commit -q --allow-empty -m init
   # bare layout: <root>/.bare + .git file + <root>/main worktree
-  git clone -q --bare "$t/origin" "$t/bare/.bare"
+  git clone -q --template= --bare "$t/origin" "$t/bare/.bare"
   echo "gitdir: ./.bare" >"$t/bare/.git"
   git -C "$t/bare" config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*"
   git -C "$t/bare" fetch -q origin
   git -C "$t/bare" worktree add -q "$t/bare/main" main
   # normal clone layout: <root> is the main worktree
-  git clone -q "$t/origin" "$t/normal"
+  git clone -q --template= "$t/origin" "$t/normal"
   ln -sn "$t" "$TPL" 2>/dev/null || true
 }
 
