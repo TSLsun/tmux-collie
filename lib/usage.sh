@@ -287,6 +287,8 @@ usage: collie gc [-n]
 Run `done` on every live task whose branches all moved past their start and
 are merged into base (squash merges count with git >= 2.38); skip the rest.
 Fetches origin first. -n lists them without finishing (still fetches).
+Each worktree is shown with a bucket (wip:N, scratch:N, unmerged, clean)
+and its size, then the total reclaimed (-n: what clean ones would free).
 EOF
       ;;
     sync)
