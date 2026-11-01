@@ -120,10 +120,15 @@ squash_upstream() {
   merge_upstream feat/m
   run --separate-stderr collie gc -n
   [ "$status" -eq 0 ]
-  [ "$output" = m ]
+  [ "${#lines[@]}" -eq 3 ] && [ "${lines[0]}" = m ]
+  [[ "${lines[1]}" =~ ^"  A  clean  "[0-9]+K$ ]]
+  [[ "${lines[2]}" =~ ^"would reclaim "[0-9]+K" (wip/scratch are skipped)"$ ]]
   [ -z "$(fm m status)" ]
-  run collie gc
+  run --separate-stderr collie gc
   [ "$status" -eq 0 ]
+  [ "${#lines[@]}" -eq 3 ] && [ "${lines[0]}" = "done m" ]
+  [[ "${lines[1]}" =~ ^"  A  clean  "[0-9]+K$ ]]
+  [[ "${lines[2]}" =~ ^"reclaimed "[1-9][0-9]*K$ ]]
   [ "$(fm m status)" = done ]
   [ ! -d "$TMP/repos/A/feat-m" ]
   [ -z "$(fm u status)" ]
@@ -166,7 +171,7 @@ squash_upstream() {
   commit_in "$TMP/repos/A/feat-m" m2
   merge_upstream feat/m
   run --separate-stderr collie gc -n
-  [ "$output" = m ]
+  [ "${lines[0]}" = m ]
 }
 
 @test "gc: skips a merged task with uncommitted changes" {
@@ -175,7 +180,9 @@ squash_upstream() {
   merge_upstream feat/m
   echo dirty >"$TMP/repos/A/feat-m/d"
   run --separate-stderr collie gc
-  [ "$output" = "skipped m: dirty: A ($TMP/repos/A/feat-m) (see: collie done m)" ]
+  [ "${lines[0]}" = "skipped m: dirty: A ($TMP/repos/A/feat-m) (see: collie done m)" ]
+  [[ "${lines[1]}" =~ ^"  A  scratch:1  "[0-9]+K$ ]]
+  [ "${lines[2]}" = "reclaimed 0K" ]
   [ -z "$(fm m status)" ]
 }
 
@@ -185,7 +192,7 @@ squash_upstream() {
   merge_upstream feat/m
   cd "$TMP/repos/A/feat-m"
   run --separate-stderr collie gc
-  [ "$output" = "skipped m: currently inside $TMP/repos/A/feat-m; cd elsewhere first (see: collie done m)" ]
+  [ "${lines[0]}" = "skipped m: currently inside $TMP/repos/A/feat-m; cd elsewhere first (see: collie done m)" ]
   [ -z "$(fm m status)" ]
 }
 
@@ -196,7 +203,7 @@ squash_upstream() {
   squash_upstream feat/m
   run --separate-stderr collie gc
   [ "$status" -eq 0 ]
-  [ "$output" = "done m" ]
+  [ "${lines[0]}" = "done m" ]
   [ "$stderr" = "collie: A: fetching origin…"$'\n'"collie: A: fetched (base origin/HEAD @ $(git -C "$REPO" rev-parse --short origin/HEAD))" ]
   [ "$(fm m status)" = done ]
 }
