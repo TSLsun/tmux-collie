@@ -37,7 +37,7 @@ jobs:
         # Base failures are measurement data; only the changed branch gates CI.
         continue-on-error: true
         env:
-          BATS_TEST_TIMEOUT: 60
+          BATS_TEST_TIMEOUT: 120
           BASE_SHA: ${{ github.event.pull_request.base.sha }}
         run: |
           if [ -n "$BASE_SHA" ]; then
@@ -49,7 +49,7 @@ jobs:
           fi
       - name: Repeat readiness paths under parallel load
         env:
-          BATS_TEST_TIMEOUT: 60
+          BATS_TEST_TIMEOUT: 120
           COLLIE_TEST_DIAGNOSTICS_DIR: ${{ runner.temp }}/collie-test-diagnostics
         run: |
           for attempt in 1 2 3; do

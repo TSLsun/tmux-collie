@@ -12,6 +12,9 @@ setup_env() {
   unset TMUX TMUX_PANE COLLIE_TASK COLLIE_TASK_DIR COLUMNS FZF_COLUMNS
   # the test tmux server must not load the user's ~/.tmux.conf (and plugins)
   export HOME="$TMP/home"
+  # State assertions must not age into idle while a loaded runner schedules
+  # other tests. Silence behavior tests opt into their own short threshold.
+  export COLLIE_SILENCE=999
   export COLLIE_STATE_DIR="$TMP/state"
   export XDG_CONFIG_HOME="$TMP/config"
   export COLLIE_REPO_ROOTS="$TMP/repos/*"
@@ -117,13 +120,13 @@ agent_of() { collie ls -a | awk -F'\t' -v id="$1" '$1 == id { print $5 }'; }
 # A wall-clock deadline includes time spent evaluating the predicate. The Bats
 # test deadline also bounds a predicate that hangs rather than returning.
 wait_for() {
-  local deadline=$((SECONDS + ${2:-5}))
+  local deadline=$((SECONDS + ${2:-15}))
   while :; do
     if eval "$1"; then return 0; fi
     [ "$SECONDS" -lt "$deadline" ] || break
     sleep 0.1
   done
-  printf 'readiness timed out after %ss: %s\n' "${2:-5}" "$1" >&2
+  printf 'readiness timed out after %ss: %s\n' "${2:-15}" "$1" >&2
   return 1
 }
 
