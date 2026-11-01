@@ -74,6 +74,7 @@ working_then_idle() {
 printf '%s\n' "$@" >"$ARGS"
 hook() { sh -c "$(sed -n "s/^hooks\.$1=.*command=\"\(.*\)\"}\]}\]$/\1/p" "$ARGS")"; }
 hook UserPromptSubmit
+sleep 0.3
 hook Stop
 exec sleep 300
 EOF
@@ -99,6 +100,7 @@ hook() {
   env -u TMUX_PANE sh -c "$c" >>"$ARGS.out"
 }
 hook BeforeAgent
+sleep 0.3
 hook AfterAgent
 exec sleep 300
 EOF
@@ -163,8 +165,7 @@ node --experimental-strip-types --no-warnings --input-type=module -e '
 const h = {};
 const { default: ext } = await import(process.argv[1]);
 ext({ on: (e, f) => (h[e] = f) });
-// The extension uses execFileSync: returning is the completion signal.
-const step = async (e, a) => h[e](a);
+const step = async (e, a) => (h[e](a), await new Promise((r) => setTimeout(r, 300)));
 await step("agent_start");
 await step("tool_approval_requested");
 await step("tool_approval_resolved");

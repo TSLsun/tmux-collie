@@ -178,7 +178,7 @@ EOF
   server_dies
   tmux_with_diagnostics new-session -d -s t
   tmux run-shell "$COLLIE_ROOT/collie.tmux"
-  # run-shell without -b returns after plugin loading completes.
+  sleep 0.5
   ! tmux has-session -t =x 2>/dev/null
   tmux set-option -g @collie-restore on
   tmux run-shell "$COLLIE_ROOT/collie.tmux"

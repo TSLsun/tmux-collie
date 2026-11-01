@@ -3,8 +3,6 @@
 Diagrams and tables for how a task moves from `collie new` to `done`. The
 [README](https://github.com/TSLsun/tmux-collie#readme) has every flag; [DESIGN.md](DESIGN.md) has the reasons.
 
-The dashboard requires fzf 0.73 or newer: earlier releases can drop background action reloads and leave completed tasks in the list.
-
 ## 1. The everyday loop
 
 ```mermaid
