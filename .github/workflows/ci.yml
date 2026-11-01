@@ -15,20 +15,12 @@ jobs:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-    timeout-minutes: 20
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
       - name: deps (ubuntu)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends bats parallel shellcheck tmux zsh
-      # Ubuntu's packaged fzf predates the bg-transform reload fix (0.73).
-      - name: fzf minimum supported version (ubuntu)
-        if: runner.os == 'Linux'
-        run: |
-          mkdir -p "$RUNNER_TEMP/fzf-bin"
-          curl -fsSL https://github.com/junegunn/fzf/releases/download/v0.73.0/fzf-0.73.0-linux_amd64.tar.gz | tar -xz -C "$RUNNER_TEMP/fzf-bin"
-          echo "$RUNNER_TEMP/fzf-bin" >> "$GITHUB_PATH"
       # lint is OS-independent and runs on ubuntu only, so macOS skips shellcheck
       - name: deps (macos)
         if: runner.os == 'macOS'
@@ -36,33 +28,10 @@ jobs:
           HOMEBREW_NO_AUTO_UPDATE: 1
           HOMEBREW_NO_INSTALL_CLEANUP: 1
           HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: 1
-        run: brew install bats-core parallel tmux fzf
+        run: brew install bats-core parallel tmux
       - run: make ${{ runner.os == 'Linux' && 'check' || 'test' }}
         env:
           COLLIE_TEST_DIAGNOSTICS_DIR: ${{ runner.temp }}/collie-test-diagnostics
-      - name: Measure base readiness paths
-        # Base failures are measurement data; only the changed branch gates CI.
-        continue-on-error: true
-        env:
-          BATS_TEST_TIMEOUT: 120
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: |
-          if [ -n "$BASE_SHA" ]; then
-            git fetch --depth=1 origin "$BASE_SHA"
-            baseline=$(mktemp -d)
-            git archive "$BASE_SHA" | tar -x -C "$baseline"
-            cd "$baseline"
-            time bats --timing --print-output-on-failure --jobs 8 test/agents.bats test/codex.bats test/restore.bats test/dash.bats test/runs.bats
-          fi
-      - name: Repeat readiness paths under parallel load
-        env:
-          BATS_TEST_TIMEOUT: 120
-          COLLIE_TEST_DIAGNOSTICS_DIR: ${{ runner.temp }}/collie-test-diagnostics
-        run: |
-          for attempt in 1 2 3; do
-            echo "readiness repetition $attempt"
-            time bats --timing --print-output-on-failure --jobs 8 test/agents.bats test/codex.bats test/restore.bats test/dash.bats test/runs.bats
-          done
       - name: Preserve tmux diagnostics on failure
         if: failure()
         uses: actions/upload-artifact@v4
