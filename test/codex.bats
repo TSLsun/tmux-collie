@@ -239,7 +239,7 @@ PY
   collie run x --agent codex -p '' -- resume "$sid"
   wait_for 'grep -q "agent_session.*run=2" "$(task_dir x)/events.log"'
   tmux kill-window -t "$(run_pane x 1)"
-  sleep 0.4
+  wait_for '! tmux has-session -t =x 2>/dev/null || [ -z "$(run_pane x 1)" ]'
   kill "$(tmux display -p '#{pid}')"
   wait_for '! tmux list-sessions >/dev/null 2>&1'
   run collie restore -n x

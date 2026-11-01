@@ -7,10 +7,14 @@ COLLIE_ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 setup_env() {
   TMP="$(cd "$BATS_TEST_TMPDIR" && pwd -P)"
   export TMUX_TMPDIR="$TMP/tmux"
+  [ -z "${COLLIE_TEST_DIAGNOSTICS_DIR:-}" ] || mkdir -p "$COLLIE_TEST_DIAGNOSTICS_DIR"
   mkdir -p "$TMUX_TMPDIR" "$TMP/repos" "$TMP/home"
   unset TMUX TMUX_PANE COLLIE_TASK COLLIE_TASK_DIR COLUMNS FZF_COLUMNS
   # the test tmux server must not load the user's ~/.tmux.conf (and plugins)
   export HOME="$TMP/home"
+  # State assertions must not age into idle while a loaded runner schedules
+  # other tests. Silence behavior tests opt into their own short threshold.
+  export COLLIE_SILENCE=999
   export COLLIE_STATE_DIR="$TMP/state"
   export XDG_CONFIG_HOME="$TMP/config"
   export COLLIE_REPO_ROOTS="$TMP/repos/*"
@@ -33,6 +37,9 @@ EOF
 }
 
 teardown_env() {
+  if [ -z "${BATS_TEST_COMPLETED:-}" ]; then
+    capture_test_failure || true
+  fi
   # the fifo writers of attach_client would otherwise keep bats waiting
   # shellcheck disable=SC2086
   [ -z "${CLIENT_PIDS:-}" ] || kill $CLIENT_PIDS 2>/dev/null || true
@@ -44,24 +51,27 @@ collie() {
   "${COLLIE_BASH:-bash}" "$COLLIE_ROOT/bin/collie" "$@"
 }
 
-# Repos are built once per test file and copied per test: git is slow to spawn
-# on macOS. Parallel tests may race to build; `ln -sn` lets exactly one win.
+# Publish one immutable template per suite, then copy it into each test's
+# private directory. Concurrent builders publish only after completion;
+# `ln -sn` lets exactly one win. Unused candidates go with the suite tempdir.
 repo_template() {
-  TPL="$BATS_FILE_TMPDIR/tpl"
+  local cache=${BATS_SUITE_TMPDIR:-$BATS_FILE_TMPDIR}
+  TPL="$cache/tpl"
   [ -e "$TPL" ] && return
   local t
-  t="$(mktemp -d "$BATS_FILE_TMPDIR/tpl.XXXXXX")"
-  # origin repo with one commit on main
-  git init -q "$t/origin"
+  t="$(mktemp -d "$cache/tpl.XXXXXX")"
+  # Sample hooks are inactive and expensive to copy into every fixture.
+  # Tests that exercise hooks explicitly configure core.hooksPath.
+  git init -q --template= "$t/origin"
   git -C "$t/origin" commit -q --allow-empty -m init
   # bare layout: <root>/.bare + .git file + <root>/main worktree
-  git clone -q --bare "$t/origin" "$t/bare/.bare"
+  git clone -q --template= --bare "$t/origin" "$t/bare/.bare"
   echo "gitdir: ./.bare" >"$t/bare/.git"
   git -C "$t/bare" config remote.origin.fetch "+refs/heads/*:refs/remotes/origin/*"
   git -C "$t/bare" fetch -q origin
   git -C "$t/bare" worktree add -q "$t/bare/main" main
   # normal clone layout: <root> is the main worktree
-  git clone -q "$t/origin" "$t/normal"
+  git clone -q --template= "$t/origin" "$t/normal"
   ln -sn "$t" "$TPL" 2>/dev/null || true
 }
 
@@ -107,14 +117,41 @@ fake_agent() { ln -s "$(command -v bash)" "$1"; }
 # aggregated agent column of `collie ls -a`
 agent_of() { collie ls -a | awk -F'\t' -v id="$1" '$1 == id { print $5 }'; }
 
-# retry a condition for up to 5s (`if` keeps bats' ERR trap out of the eval)
+# A wall-clock deadline includes time spent evaluating the predicate. The Bats
+# test deadline also bounds a predicate that hangs rather than returning.
 wait_for() {
-  local i
-  for i in $(seq 1 50); do
+  local deadline=$((SECONDS + ${2:-15}))
+  while :; do
     if eval "$1"; then return 0; fi
+    [ "$SECONDS" -lt "$deadline" ] || break
     sleep 0.1
   done
+  printf 'readiness timed out after %ss: %s\n' "${2:-15}" "$1" >&2
   return 1
+}
+
+# Capture before teardown destroys panes and event logs. Every command names
+# the fixture socket explicitly, including when setup did not start a server.
+capture_test_failure() {
+  local dest socket pane
+  dest=$(mktemp -d "${COLLIE_TEST_DIAGNOSTICS_DIR:-$BATS_TEST_TMPDIR}/failure-${BATS_TEST_NUMBER}.XXXXXX")
+  socket="$TMUX_TMPDIR/tmux-$(id -u)/default"
+  {
+    printf 'test=%s\nsocket=%s\n' "$BATS_TEST_DESCRIPTION" "$socket"
+    tmux -V
+    for pane in $(tmux -S "$socket" list-panes -a -F '#{pane_pid}'); do
+      ps -p "$pane" -o pid=,ppid=,stat=,comm= || true
+    done
+    tmux -S "$socket" list-sessions
+    tmux -S "$socket" list-windows -a
+    tmux -S "$socket" list-panes -a -F '#{pane_id} #{pane_pid} #{pane_current_command} #{@collie_state}'
+    for pane in $(tmux -S "$socket" list-panes -a -F '#{pane_id}'); do
+      printf '\npane %s:\n' "$pane"
+      tmux -S "$socket" capture-pane -p -t "$pane"
+    done
+  } >"$dest/state.log" 2>&1
+  [ ! -d "$COLLIE_STATE_DIR/tasks" ] || cp -R "$COLLIE_STATE_DIR/tasks" "$dest/tasks"
+  printf 'test diagnostics: %s\n' "$dest" >&2
 }
 
 # a control-mode client stands in for a terminal attached to session $1
