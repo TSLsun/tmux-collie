@@ -75,7 +75,8 @@ submitted() { # id text [run]
   [ "$stderr" = "collie: send: no live agent run in task 's'; not sent" ]
   collie run s
   tmux send-keys -t "$(run_pane s)" C-d
-  wait_for "grep -q 'run_exited	run=1' '$(task_dir s)/events.log'"
+  # _exec logs run_exited before it marks the window exited; send reads the window
+  wait_for "[ \"\$(tmux display -p -t '$(run_pane s)' '#{@collie_state}')\" = exited ]"
   run --separate-stderr collie send s hello
   [ "$status" -eq 3 ]
   run --separate-stderr collie send s --run 1 hello
