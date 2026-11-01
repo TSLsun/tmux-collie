@@ -899,6 +899,8 @@ cmd__preview() {
   [ -z "$a" ] || awk -F'\t' -v w="$(cut -f2 <<<"$top")" '
     NR <= 5 { print ($5 == w && w != "-" ? "▸ " : "  ") ($1 == "-" ? "-" : "#" $1) "  " $2 "  " $3 "  " $4 ($7 == "-" ? "" : "  " $7) }' <<<"$a"
   echo
+  a=$(verify_results "$id")
+  [ -z "$a" ] || printf 'verify:\n%s\n\n' "$a"
   echo "repos:"
   case $STATUS in done | archived)
     while IFS=$TAB read -r name c b p; do
