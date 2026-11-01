@@ -36,7 +36,9 @@ metadata = {
 }
 (args.output / 'metadata.json').write_text(json.dumps(metadata, indent=2) + '\n')
 base = ['bats', '--tap', '--timing', '--print-output-on-failure', '--jobs', str(args.jobs)]
-if args.mode == 'files':
+# Bats rejects parallel scheduling flags for a serial run. Both serial
+# cells intentionally execute the same baseline command.
+if args.mode == 'files' and args.jobs > 1:
     base.append('--no-parallelize-within-files')
 env = dict(os.environ, BATS_TEST_TIMEOUT='120')
 results = []
