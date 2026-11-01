@@ -168,6 +168,50 @@ cmd_ls() {
   done
 }
 
+# What waits on you: one line per task that needs you (answer, reply,
+# findings, review, stalled), most urgent first, then by priority and id:
+# what it waits on and the command that acts on it. Reads local state and the
+# cached PRs (pr.tsv) only: never gh or the network.
+cmd_brief() {
+  local rows id pri top needs what act d head pr n=0 _
+  rows=$(cmd_ls | awk -F'\t' '
+    BEGIN { split("answer reply findings review stalled", o, " "); for (i in o) r[o[i]] = i }
+    $7 in r { print r[$7] "\t" $0 }' | sort -t "$TAB" -k1,1n -k4,4 -k2,2)
+  while IFS=$TAB read -r _ id _ pri _ top _ needs; do
+    [ -n "$id" ] || continue
+    d="$TASKS_DIR/$id"
+    case $needs in
+      answer) what="an agent waits for your answer" act="collie go $id" ;;
+      reply) what="an agent finished its turn without a REPORT.md" act="collie go $id" ;;
+      findings) what="the review has open findings" act="collie review $id" ;;
+      review)
+        # the report's first line of prose, then its PR (link from REPORT.md,
+        # state and CI from the cache)
+        head=$(awk -v re="$PR_RE" 'NF && !/^#/ && $0 !~ re { sub(/^[-*>] /, ""); print; exit }' "$d/REPORT.md")
+        [ "${#head}" -le 100 ] || head="${head:0:97}..."
+        pr=$(grep -oE -m1 "$PR_RE" "$d/REPORT.md") || pr=""
+        pr=$(awk -F'\t' -v url="$pr" '
+          NF >= 3 { s = s (s == "" ? "" : "; ") (url == "" ? "#" $2 " " : "") $3 ($4 != "" && $4 != "-" ? ", CI " $4 : "") }
+          END {
+            if (url != "") print "PR " url (s == "" ? "" : " (" s ")")
+            else if (s != "") print "PR " s
+          }' "$d/pr.tsv" 2>/dev/null) || pr=""
+        what="${head:-REPORT.md written}${pr:+ | $pr}" act="collie review $id"
+        ;;
+      stalled)
+        if [ "$top" = unknown ]; then
+          what="its agents were lost with the tmux server" act="collie restore $id"
+        else
+          what="no agent running and no REPORT.md since the last run" act="collie run $id"
+        fi
+        ;;
+    esac
+    printf '%-8s %s (%s): %s  ->  %s\n' "$needs" "$id" "$pri" "$what" "$act"
+    n=$((n + 1))
+  done <<<"$rows"
+  [ "$n" -gt 0 ] || echo "nothing waits on you"
+}
+
 cmd_show() {
   local id d name c b p mark top gone=missing fin=0
   task_id "${1:-}"
