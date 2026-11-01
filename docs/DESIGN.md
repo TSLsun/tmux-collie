@@ -131,6 +131,7 @@ switches to grouping by priority or repo, keeping this order inside a group.
                  # (a folder: name<TAB>-<TAB>-<TAB>folder path; see FOLDER-TASKS.md)
   REPORT.md      # agent's final report (P5)
   events.log     # append-only: ts<TAB>event<TAB>k=v ...
+  decisions.tsv  # append-only, `collie log`: ts run phase decision why evidence result
   commits.txt    # written by done/archive: per repo, branch commits + diff stat
   repos/<repo> -> worktree path (symlink)
 
