@@ -64,6 +64,8 @@ collie run deploy-v2 --agent codex      # also: gemini, omp; state hooks injecte
 collie run --agent aider -- --model x  # any command works (no state hooks)
 collie handoff deploy-v2 --from 1 --agent codex --note handoff.md
                                       # new conversation, preserving run 1's context
+collie run deploy-v2 --model opus --effort high  # per-run model/effort (claude, codex)
+collie wait deploy-v2 --done --timeout 3600     # until the run signals done and stops
 collie doctor                          # deps, agents, task/worktree consistency
 collie ls                              # agent column: waiting/idle/working/exited/unknown
 ```
