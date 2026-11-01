@@ -45,7 +45,7 @@ results = []
 failed = False
 # Whole files keep concurrent allocation, metadata's 80 contenders, restore
 # races and both real-fzf dashboard tests intact and in competition.
-stress = ['test/metadata.bats', 'test/run.bats', 'test/restore.bats',
+stress = ['test/metadata.bats', 'test/agents.bats', 'test/run.bats', 'test/restore.bats',
           'test/dash.bats', 'test/runs.bats']
 for label, files in [('suite', ['test/'])] + [
         (f'stress-{attempt}', stress) for attempt in range(1, 4)]:
