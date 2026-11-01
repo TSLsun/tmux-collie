@@ -319,7 +319,8 @@ start from local refs.
 make check   # shellcheck + bats (uses an isolated tmux server per test)
 ```
 
-Scripts target bash 3.2 (macOS `/bin/bash`).
+Scripts target bash 3.2 (macOS `/bin/bash`). See [test measurements](docs/TESTING.md)
+for worker scheduling, hosted results and reproduction.
 
 `bin/collie` is the entry point; it sources shared helpers from `lib/*.sh`
 and the commands from `lib/cmd/*.sh`. A function `cmd_<name>` is the command

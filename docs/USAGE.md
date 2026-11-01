@@ -227,3 +227,9 @@ keys keep filtering; `?` lists every action.
 | The agent to push, open a PR and watch CI | `collie new --ship` or `set -g @collie-ship on` |
 | Move uncommitted experiments out of the way | `collie spike <id>` inside the worktree (new `exp/<id>` task, tracked changes only) |
 | Keep `exp/*` off the remote | link `hooks/pre-push` (see README) |
+
+## 7. Development tests
+
+Run `make check` for lint and tests, or `make test JOBS=4` to override the worker
+count. Tests use private tmux sockets. [Test measurements](TESTING.md) documents
+the hosted benchmark matrix, scheduling modes and measured limitations.

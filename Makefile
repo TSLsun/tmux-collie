@@ -1,6 +1,7 @@
 .PHONY: test lint check
 
-# tests mostly wait on tmux/git, so run more jobs than cores; needs GNU parallel
+# Retain the existing worker setting; measured tradeoffs are in docs/TESTING.md.
+# Parallel runs require GNU parallel; JOBS remains overridable.
 JOBS ?= $(if $(shell command -v parallel),8,1)
 
 test:

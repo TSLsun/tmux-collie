@@ -15,8 +15,8 @@ nav = [
   { "Design" = "DESIGN.md" },
   { "Unverified" = "UNVERIFIED.md" },
 ]
-# design notes linked from DESIGN.md and README, not part of the reading path
-not_in_nav = "FOLDER-TASKS.md"
+# Supporting docs are linked from the guides, outside the main navigation.
+not_in_nav = "FOLDER-TASKS.md\nTESTING.md"
 
 [project.theme]
 language = "en"
