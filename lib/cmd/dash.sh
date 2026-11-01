@@ -859,7 +859,8 @@ run_preview() { # id run|window
 }
 
 # The task's title, status and priority, its live agents and last event's
-# age, the Objective, runs, and per repo its branch, PRs and progress.
+# age, the Objective, the last decision, runs, and per repo its branch, PRs
+# and progress.
 cmd__preview() {
   local id d name c b p base top title ids line a
   [ -z "${COLLIE_DASH:-}" ] || ! dash_panel "${1:-}" || return 0
@@ -892,6 +893,7 @@ cmd__preview() {
     f && NF && n++ < 5 { print "  " $0 }
     END { if (!n) print "  (empty)" }' "$d/TASK.md"
   echo
+  last_decision "$d"
   # the newest runs; ▸ marks the one enter goes to (see _target)
   a=$(run_history "$id")
   printf 'runs:%s\n' "$([ "$(grep -c . <<<"$a")" -le 5 ] || printf '  (newest 5 of %s; u: all)' "$(grep -c . <<<"$a")")"

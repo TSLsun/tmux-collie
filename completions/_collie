@@ -29,6 +29,7 @@ _collie() {
     'ls:list tasks'
     'show:show a task'
     'history:browse finished tasks'
+    'log:append a row to the decision log'
     'edit:edit TASK.md in $EDITOR'
     'go:switch to a task session'
     'dash:dashboard'

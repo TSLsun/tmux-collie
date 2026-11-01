@@ -16,6 +16,7 @@ tasks:
   ls [-a]             list tasks: id, status, priority, session, agent, needs
   show [<id>]         fields, TASK.md, repos, agent runs, events, REPORT.md
   history [-n] [pat]  finished tasks, newest first; searches TASK.md/REPORT.md
+  log <5 fields>      append a row to the task's decision log (decisions.tsv)
   edit [<id>]         open the task's TASK.md in $EDITOR
   go [<id>]           switch to the task session (fzf picker if omitted)
   dash [-n]           fzf dashboard, most urgent first
@@ -56,10 +57,10 @@ concepts:
 
 task      a slug id ([a-z0-9-], max 40) with a record in
           ~/.local/state/collie/tasks/<id>/ (TASK.md, repos.tsv, events.log,
-          REPORT.md), one git worktree per repo on branch <type>/<id>
-          (default type feat), and one tmux session <id> (a window per repo,
-          plus one per agent run). A non-git directory joins as a folder:
-          used in place, no branch, never removed.
+          REPORT.md, decisions.tsv), one git worktree per repo on branch
+          <type>/<id> (default type feat), and one tmux session <id> (a window
+          per repo, plus one per agent run). A non-git directory joins as a
+          folder: used in place, no branch, never removed.
 
 <id>      every [<id>] may be omitted inside a task session: panes there
           export COLLIE_TASK=<id> and COLLIE_TASK_DIR, and collie falls back
@@ -104,6 +105,7 @@ changes   creates branch + worktree   new, add, spike, reopen (worktree only)
           commits/pushes              sync (merge commit, push if upstream)
           fetches origin              new, add, done, gc, sync
           edits TASK.md               set, edit, done/archive/reopen (status)
+          appends decisions.tsv       log
           never deletes branches or the task record
           read-only                   ls show history review dash status
                                       doctor repos workspaces; -n variants
@@ -204,9 +206,9 @@ EOF
       cat <<'EOF'
 usage: collie show [<id>]
 
-Task fields, the TASK.md body, repos and branches, agent runs and recent
-events; for finished tasks also when, their commits and REPORT.md.
-Read-only.
+Task fields, the TASK.md body, repos and branches, agent runs, the last
+logged decision and recent events; for finished tasks also when, their
+commits and REPORT.md. Read-only.
 EOF
       ;;
     history)
@@ -214,10 +216,25 @@ EOF
 usage: collie history [-n] [pattern]
 
 Finished tasks, newest first: date, status, id, title, branches, PR. pattern
-searches TASK.md and REPORT.md. On a tty an fzf picker (enter: show); -n
-prints the rows. Read-only.
+searches TASK.md, REPORT.md and decisions.tsv. On a tty an fzf picker
+(enter: show); -n prints the rows. Read-only.
 
   collie history -n oauth
+EOF
+      ;;
+    log)
+      cat <<'EOF'
+usage: collie log <phase> <decision> <why> <evidence> <result>
+
+Append a row to the task's decision trail, decisions.tsv in the task record
+(.collie/decisions.tsv): ts, run, phase, decision, why, evidence, result.
+The task is $COLLIE_TASK; ts (UTC) and run (the agent window's run, else -)
+are stamped. The first row brings the header. Tabs and newlines in a cell
+become spaces; a leading = + - or @ gets a ' prefix. Append-only: correct a
+row with a new one. show and the dash preview print the last row; history
+searches it. Never committed.
+
+  collie log build 'header via ln' 'atomic under races' test/log.bats ok
 EOF
       ;;
     edit)
@@ -448,7 +465,7 @@ EOF
 }
 
 # the public commands, in overview order
-HELP_COMMANDS='new add ls show history edit go dash set review spike gc sync done archive reopen run handoff adopt restore state status doctor repos workspaces'
+HELP_COMMANDS='new add ls show history log edit go dash set review spike gc sync done archive reopen run handoff adopt restore state status doctor repos workspaces'
 
 cmd_help() {
   local c
