@@ -2,7 +2,8 @@
 # Sourced by bin/collie: dashboard, menu and popups.
 
 # Each task's PRs, one per repo with one: <task>/pr.tsv holds
-# "repo<TAB>number<TAB>open|draft|merged|closed" lines. gh is slow and needs
+# "repo<TAB>number<TAB>open|draft|merged|closed<TAB>CI" lines, CI being
+# pass, fail, pending or - (no checks; older caches lack the field). gh is slow and needs
 # the network, so the dashboard only reads the file and refreshes it in the
 # background once it is PR_TTL minutes old; sync and gc refresh it inline.
 PR_TTL=5
@@ -17,10 +18,15 @@ cmd__pr() { # id
     [ "$c" != - ] || continue
     [ -d "$p" ] || continue
     # newest first; a draft is open too
-    if ! line=$(cd "$p" && gh pr list --state all --head "$b" --limit 1 --json number,state,isDraft \
-      --jq '.[] | "\(.number)\t\(if .isDraft and .state == "OPEN" then "draft" else .state | ascii_downcase end)"' \
+    if ! line=$(cd "$p" && gh pr list --state all --head "$b" --limit 1 --json number,state,isDraft,statusCheckRollup \
+      --jq '.[] | "\(.number)\t\(if .isDraft and .state == "OPEN" then "draft" else .state | ascii_downcase end)\t\(
+        [.statusCheckRollup[]? | if (.conclusion // "") != "" then .conclusion else (.state // .status) end]
+        | if length == 0 then "-"
+          elif any(. == "FAILURE" or . == "ERROR" or . == "CANCELLED" or . == "TIMED_OUT" or . == "ACTION_REQUIRED" or . == "STARTUP_FAILURE") then "fail"
+          elif all(. == "SUCCESS" or . == "NEUTRAL" or . == "SKIPPED") then "pass"
+          else "pending" end)"' \
       </dev/null 2>/dev/null); then
-      line=$(awk -F'\t' -v n="$name" '$1 == n { print $2 "\t" $3 }' "$d/pr.tsv" 2>/dev/null) || line=""
+      line=$(awk -F'\t' -v n="$name" '$1 == n { sub(/^[^\t]*\t/, ""); print }' "$d/pr.tsv" 2>/dev/null) || line=""
     fi
     [ -z "$line" ] || out="$out$name$TAB$line"$'\n'
   done <"$d/repos.tsv"
@@ -118,7 +124,7 @@ dash_rows() {
       else if ($7 == "stalled") r = 4
       else if ($7 == "-") r = 5
       f = tasks "/" $1 "/pr.tsv"; s = ""
-      while ((getline l <f) > 0) if (split(l, x, "\t") == 3) s = s (s == "" ? "" : " ") "#" x[2] ":" x[3]
+      while ((getline l <f) > 0) if (split(l, x, "\t") >= 3) s = s (s == "" ? "" : " ") "#" x[2] ":" x[3]
       close(f)
       print r "\t" $0 "\t" (s == "" ? "-" : s) "\t" ($1 in cf ? cf[$1] : "-")
     }' <<<"$rows" | sort -t "$TAB" -k1,1n -k4,4 -k2,2 | cut -f2-
@@ -859,7 +865,8 @@ run_preview() { # id run|window
 }
 
 # The task's title, status and priority, its live agents and last event's
-# age, the Objective, runs, and per repo its branch, PRs and progress.
+# age, the Objective, the last decision, runs, and per repo its branch, PRs
+# and progress.
 cmd__preview() {
   local id d name c b p base top title ids line a
   [ -z "${COLLIE_DASH:-}" ] || ! dash_panel "${1:-}" || return 0
@@ -892,6 +899,7 @@ cmd__preview() {
     f && NF && n++ < 5 { print "  " $0 }
     END { if (!n) print "  (empty)" }' "$d/TASK.md"
   echo
+  last_decision "$d"
   # the newest runs; ▸ marks the one enter goes to (see _target)
   a=$(run_history "$id")
   printf 'runs:%s\n' "$([ "$(grep -c . <<<"$a")" -le 5 ] || printf '  (newest 5 of %s; u: all)' "$(grep -c . <<<"$a")")"

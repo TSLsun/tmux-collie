@@ -3,6 +3,8 @@
 Diagrams and tables for how a task moves from `collie new` to `done`. The
 [README](https://github.com/TSLsun/tmux-collie#readme) has every flag; [DESIGN.md](DESIGN.md) has the reasons.
 
+The dashboard requires fzf 0.73 or newer: earlier releases can drop background action reloads and leave completed tasks in the list.
+
 ## 1. The everyday loop
 
 ```mermaid
@@ -40,6 +42,7 @@ flowchart TB
         report["REPORT.md<br/>written by the agent"]
         repos["repos.tsv<br/>repo · git dir · branch · path"]
         events["events.log<br/>append-only history"]
+        decisions["decisions.tsv<br/>append-only decision log"]
     end
     subgraph git["git (one per repo)"]
         wtA["worktree A<br/>branch feat/#lt;id#gt;"]
@@ -61,7 +64,7 @@ flowchart TB
 
 | Piece | One per | Created by | Removed by | Survives `kill-server`? |
 |---|---|---|---|---|
-| Task record (`TASK.md`, `repos.tsv`, `events.log`, `REPORT.md`) | task | `new`, `spike` | never | yes |
+| Task record (`TASK.md`, `repos.tsv`, `events.log`, `REPORT.md`, `decisions.tsv`) | task | `new`, `spike` | never | yes |
 | Commit snapshot (`commits.txt`) | task | `done`, `archive` | never | yes |
 | Handoff packet (`handoffs/`) | handoff attempt | `handoff` | never | yes |
 | Branch `<type>/<id>` | repo in the task | `new`, `add`, `spike` | never (delete it yourself) | yes |
@@ -77,18 +80,17 @@ stored (in TASK.md's frontmatter).
 
 ```mermaid
 stateDiagram-v2
-    [*] --> todo: collie new / spike
-    todo --> active: first collie run
-    active --> review: agents quiet, fresh REPORT.md
-    review --> active: agent works again or new run
-    todo --> done: collie done
-    active --> done: collie done / gc
-    review --> done: collie done / gc
-    todo --> archived: collie archive
-    active --> archived: collie archive
-    review --> archived: collie archive
-    done --> [*]
-    archived --> [*]
+    state "open (derived on every ls / dash)" as open {
+        [*] --> todo
+        todo --> active: collie run (or new --run)
+        active --> review: no agent working or waiting,<br/>REPORT.md written since the last run started
+        review --> active: an agent works or waits again,<br/>or a new run (run, handoff, adopt, restore)
+    }
+    [*] --> open: collie new / spike
+    open --> done: collie done / gc
+    open --> archived: collie archive
+    done --> open: collie reopen
+    archived --> open: collie reopen
 ```
 
 | Status | Means | You usually |
@@ -105,20 +107,48 @@ changes). `gc` runs `done` for every task whose branches all moved past their
 start and are merged into base (squash merges count with git >= 2.38), and
 skips the rest.
 
+Each worktree they remove or skip is listed with a bucket and its size
+(`du -sk`), then the total reclaimed:
+
+| Bucket | Meaning | `done` | `archive` |
+|---|---|---|---|
+| `wip:N` | N tracked files with uncommitted edits | refuses | refuses |
+| `scratch:N` | N untracked files that are not ignored | refuses | refuses |
+| `unmerged` | branch has commits not in base | refuses | removes (branch kept) |
+| `clean` | none of the above | removes | removes |
+
+```text
+$ collie gc -n
+fix-retry
+  A  clean  1.2M
+docs-tweak
+  A  scratch:1  48K
+would reclaim 1.2M (wip/scratch are skipped)
+```
+
+`--force` removes every bucket. The report changes nothing: `gc` removes
+exactly what `done` would.
+
 ## 4. Agent state (per run)
 
 ```mermaid
 stateDiagram-v2
-    [*] --> working: collie run (with prompt)
-    [*] --> idle: collie run -p ''
-    working --> waiting: asks for permission / input
-    waiting --> working: you answer
-    working --> idle: turn finished
-    idle --> working: you send a prompt
-    working --> exited: agent quits
-    waiting --> exited
-    idle --> exited
-    exited --> unknown: session gone
+    [*] --> working: collie run with a prompt,<br/>or any run of an agent without hooks
+    [*] --> idle: collie run -p '', adopt, restore<br/>(agent with hooks)
+    working --> waiting: hook - asks for permission or input
+    waiting --> working: hook - you answer, tool runs
+    working --> idle: hook - turn ends<br/>no hooks - 30s without output
+    waiting --> idle: hook - turn ends or interrupted
+    idle --> working: hook - prompt submitted<br/>no hooks - output again
+    working --> exited: agent quits, or its window closes
+    waiting --> exited: agent quits, or its window closes
+    idle --> exited: agent quits, or its window closes
+    working --> unknown: session gone, no exit logged
+    waiting --> unknown: session gone, no exit logged
+    idle --> unknown: session gone, no exit logged
+    exited --> unknown: session gone, window was closed<br/>before an exit was logged
+    exited --> [*]: exit logged, window closed
+    unknown --> [*]: collie restore (resumes it as a new run)
 ```
 
 | State | Notifies? | Source |
@@ -147,6 +177,16 @@ The dashboard sorts tasks in that urgency (`answer` > `reply` > `review` >
 (needs you, active, todo); `tab` /
 `shift-tab` regroup by priority or repo.
 
+`collie brief` is the short form: one line per task that needs you, in the
+same order, with what it waits on and the command to act. It reads only
+local state and the dashboard's PR cache, so it never touches the network:
+
+```text
+answer   login (P1): an agent waits for your answer  ->  collie go login
+review   deploy-v2 (P2): Added blue/green deploy. | PR https://github.com/o/r/pull/12 (open, CI pass)  ->  collie review deploy-v2
+stalled  cache (P2): its agents were lost with the tmux server  ->  collie restore cache
+```
+
 Agents get hooks per run, nothing installed: claude, codex, gemini, omp.
 Any other command (`--agent aider`) runs without hooks. Agents you start by
 hand in a task's session are detected by process (working/idle only, no
@@ -155,6 +195,28 @@ notifications); `collie adopt` restarts a hand-started claude, codex or omp unde
 runs lost with a dead tmux server (claude and codex by their logged session id, omp by
 the worktree's latest conversation); agents started by hand are not
 recorded, so they are not restored.
+
+`--model` and `--effort` pick a run's model and reasoning effort (claude
+`--model`/`--effort`, codex `-m`/`-c model_reasoning_effort`); other agents
+refuse them.
+
+### Waiting for a run
+
+A script or coordinating agent can block on a run instead of watching it:
+
+```sh
+collie wait fix-retry --state idle               # latest run stopped working
+collie wait fix-retry --run 2 --done --timeout 3600
+```
+
+`--state` waits for `working`, `idle` (default), `waiting` or `exited`.
+`--done` waits for the run's done signal: the agent runs `collie signal done`
+in its window when its turn's work is complete (`$COLLIE_TASK`/`$COLLIE_RUN`
+are set for every run), and `wait` returns once the run has also stopped
+working. A signal counts until `collie send` prompts the run again (its
+`sent` event); a run restarted by `collie restore` keeps its signal and is followed
+by `--run` under its old number. Exit codes: `0` reached, `1` timeout, `2`
+cannot happen any more (the run is gone; for `--done`, without signalling).
 
 For Codex setup and limitations, see [Agent details](https://github.com/TSLsun/tmux-collie#agent-details).
 
@@ -183,6 +245,31 @@ authoritative. No private transcript or resume ID is passed between agents.
 Successful handoffs record a source/destination link in `events.log`; a failed
 launch keeps its packet for diagnosis without recording a successful handoff.
 
+### Decision log
+
+An agent records each decision worth resuming from with `collie log`; the
+task comes from `$COLLIE_TASK`:
+
+```sh
+collie log build 'header via ln' 'atomic under races' test/log.bats ok
+```
+
+The row goes to `decisions.tsv` in the task record (`.collie/decisions.tsv`),
+created with a header on first use:
+
+| Column | Value |
+|---|---|
+| `ts` | UTC time, stamped |
+| `run` | the agent window's run number, stamped (`-` outside one) |
+| `phase` `decision` `why` `evidence` `result` | the five arguments |
+
+Tabs and newlines in a cell become spaces, and a cell starting with `=` `+`
+`-` or `@` gets a `'` prefix so spreadsheets don't run it. The file is
+append-only and never committed: correct a row by logging a new one.
+`collie show` and the dashboard preview print the last row, and
+`collie history` searches the file. The default run prompt points agents at
+`collie log`; when and what to log is up to the team's workflow.
+
 ## 5. Where each action lives
 
 | Action | CLI | `prefix h` menu | Dashboard (`prefix h h`) |
@@ -192,8 +279,10 @@ launch keeps its packet for diagnosis without recording a successful handoff.
 | Edit TASK.md | `collie edit` | `e` | `ctrl-e` or `?` `e` |
 | Run agent | `collie run` | `r` | `ctrl-r` or `?` `r` |
 | Continue with another agent | `collie handoff` | — | `u`, then `h` on the run (note in `$EDITOR`) |
+| Type into an idle agent | `collie send` | — | — |
 | Adopt hand-started agent | `collie adopt` | `a` | `?` `a` |
 | Restore agents after the server died | `collie restore` | — | — |
+| Wait for a run's state or done signal | `collie wait` | — | — |
 | Go to task | `collie go` | — | `enter` (most urgent agent window) |
 | Runs of a task | `collie show` | — | `u` (`enter`: its window, `esc`: back) |
 | Jump to last alert | — | `j` | — |
@@ -205,6 +294,7 @@ launch keeps its packet for diagnosis without recording a successful handoff.
 | Archive | `collie archive` | `x` (confirms) | `?` `x` (confirms) |
 | Finish merged tasks | `collie gc` | `G` (lists them, confirms) | — |
 | Show details | `collie show` | — | preview pane (Objective) |
+| Log a decision | `collie log` | — | preview pane (last decision) |
 | Group by status / priority / repo | — | — | `tab` / `shift-tab` |
 | Priority / title | `collie set` | — | — |
 | Extra repo mid-task | `collie add` | — | — |
@@ -224,6 +314,7 @@ keys keep filtering; `?` lists every action.
 | Add a repo later | `collie add <id> -r infra` |
 | A second agent on the same task | `collie run <id> --agent codex [-r repo]` (one window per run) |
 | Continue another agent's work with explicit context | `collie handoff <id> --from <run> --agent <claude\|codex> --note <file>` |
+| Send a follow-up, fix or pause request to a running agent | `collie send <id> [--run N] [--wait] <text>` or `-f <file>` (refuses while it works: exit 2) |
 | The agent to push, open a PR and watch CI | `collie new --ship` or `set -g @collie-ship on` |
 | Move uncommitted experiments out of the way | `collie spike <id>` inside the worktree (new `exp/<id>` task, tracked changes only) |
 | Keep `exp/*` off the remote | link `hooks/pre-push` (see README) |

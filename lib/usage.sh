@@ -14,8 +14,10 @@ tasks:
   new [<id>]          create a task: branch + worktree per repo, tmux session
   add [<id>] -r repo  attach more repos to an existing task
   ls [-a]             list tasks: id, status, priority, session, agent, needs
+  brief               what waits on you: one line per task, with the command
   show [<id>]         fields, TASK.md, repos, agent runs, events, REPORT.md
   history [-n] [pat]  finished tasks, newest first; searches TASK.md/REPORT.md
+  log <5 fields>      append a row to the task's decision log (decisions.tsv)
   edit [<id>]         open the task's TASK.md in $EDITOR
   go [<id>]           switch to the task session (fzf picker if omitted)
   dash [-n]           fzf dashboard, most urgent first
@@ -32,8 +34,11 @@ tasks:
 agents:
   run [<id>]          start an agent in a new window of the task session
   handoff [<id>]      continue a claude/codex run with the other agent
+  send <id> <text>    type into an idle or waiting agent run and submit
   adopt [<id>] [-y]   restart a hand-started agent under collie run
   restore [<id>] [-n] restart the agents lost with the tmux server
+  wait [<id>]         block until a run reaches a state or signals done
+  signal done         called by an agent: its run's current turn is done
   state <state>       called by agent hooks; no-op outside a collie window
   status              agent counts for the status bar (#{collie_status})
 
@@ -45,7 +50,8 @@ discovery:
   workspaces          named repo sets from ~/.config/collie/workspaces
 
 Omitted <id> falls back to $COLLIE_TASK, set in every pane of a task session.
-Read-only: ls show history review dash status doctor repos workspaces, and -n.
+Read-only: ls brief show history review dash status doctor repos workspaces,
+and -n.
 Status: todo -> active -> review -> done | archived (derived; see concepts).
 Agents: read .collie/TASK.md first, write .collie/REPORT.md when finished.
 EOF
@@ -57,10 +63,10 @@ concepts:
 
 task      a slug id ([a-z0-9-], max 40) with a record in
           ~/.local/state/collie/tasks/<id>/ (TASK.md, repos.tsv, events.log,
-          REPORT.md), one git worktree per repo on branch <type>/<id>
-          (default type feat), and one tmux session <id> (a window per repo,
-          plus one per agent run). A non-git directory joins as a folder:
-          used in place, no branch, never removed.
+          REPORT.md, decisions.tsv), one git worktree per repo on branch
+          <type>/<id> (default type feat), and one tmux session <id> (a window
+          per repo, plus one per agent run). A non-git directory joins as a
+          folder: used in place, no branch, never removed.
 
 <id>      every [<id>] may be omitted inside a task session: panes there
           export COLLIE_TASK=<id> and COLLIE_TASK_DIR, and collie falls back
@@ -102,14 +108,16 @@ changes   creates branch + worktree   new, add, spike, reopen (worktree only)
           creates/rebuilds session    new, go, reopen, spike
           starts agent windows        run, handoff, adopt, restore,
                                       new --run
+          types into agent panes      send, sync (conflicts)
           commits/pushes              sync (merge commit, push if upstream)
           fetches origin              new, add, done, gc, sync
           edits TASK.md               set, edit, done/archive/reopen (status)
+          appends decisions.tsv       log
           runs your commands          verify (TASK.md ## Verify blocks)
           never deletes branches or the task record
-          read-only                   ls show history review dash status
-                                      doctor repos workspaces; -n variants
-                                      (gc -n still fetches origin)
+          read-only                   ls brief show history review dash
+                                      status doctor repos workspaces; -n
+                                      variants (gc -n still fetches origin)
 EOF
 }
 
@@ -202,13 +210,24 @@ List live tasks, tab-separated: id, status, priority, session (* exists,
 stalled, start, -). -a includes done and archived. Read-only.
 EOF
       ;;
+    brief)
+      cat <<'EOF'
+usage: collie brief
+
+What waits on you, most urgent first (answer, reply, findings, review,
+stalled; then priority, id): one line per task with what it waits on and
+the command to act. review shows REPORT.md's first line and the PR with its
+state and CI from the cache the dashboard keeps (never calls gh). Prints
+"nothing waits on you" when nothing does. Read-only.
+EOF
+      ;;
     show)
       cat <<'EOF'
 usage: collie show [<id>]
 
-Task fields, the TASK.md body, repos and branches, agent runs and recent
-events; for finished tasks also when, their commits and REPORT.md.
-Read-only.
+Task fields, the TASK.md body, repos and branches, agent runs, the last
+logged decision and recent events; for finished tasks also when, their
+commits and REPORT.md. Read-only.
 EOF
       ;;
     history)
@@ -216,10 +235,25 @@ EOF
 usage: collie history [-n] [pattern]
 
 Finished tasks, newest first: date, status, id, title, branches, PR. pattern
-searches TASK.md and REPORT.md. On a tty an fzf picker (enter: show); -n
-prints the rows. Read-only.
+searches TASK.md, REPORT.md and decisions.tsv. On a tty an fzf picker
+(enter: show); -n prints the rows. Read-only.
 
   collie history -n oauth
+EOF
+      ;;
+    log)
+      cat <<'EOF'
+usage: collie log <phase> <decision> <why> <evidence> <result>
+
+Append a row to the task's decision trail, decisions.tsv in the task record
+(.collie/decisions.tsv): ts, run, phase, decision, why, evidence, result.
+The task is $COLLIE_TASK; ts (UTC) and run (the agent window's run, else -)
+are stamped. The first row brings the header. Tabs and newlines in a cell
+become spaces; a leading = + - or @ gets a ' prefix. Append-only: correct a
+row with a new one. show and the dash preview print the last row; history
+searches it. Never committed.
+
+  collie log build 'header via ln' 'atomic under races' test/log.bats ok
 EOF
       ;;
     edit)
@@ -306,6 +340,8 @@ usage: collie gc [-n]
 Run `done` on every live task whose branches all moved past their start and
 are merged into base (squash merges count with git >= 2.38); skip the rest.
 Fetches origin first. -n lists them without finishing (still fetches).
+Each worktree is shown with a bucket (wip:N, scratch:N, unmerged, clean)
+and its size, then the total reclaimed (-n: what clean ones would free).
 EOF
       ;;
     sync)
@@ -350,8 +386,8 @@ EOF
       ;;
     run)
       cat <<'EOF'
-usage: collie run [<id>] [--agent name] [-r repo] [-p prompt] [-s [-c client]]
-                  [-- args]
+usage: collie run [<id>] [--agent name] [--model m] [--effort e] [-r repo]
+                  [-p prompt] [-s [-c client]] [-- args]
 
 Start an agent in a new window of the task session, in the first repo's
 worktree (-r: that repo's). The default prompt names the task and points the
@@ -360,6 +396,9 @@ omp get state hooks per run; any other command runs without them.
 
   --agent name   agent command (default: $COLLIE_AGENT, @collie-agent, else
                  claude)
+  --model m      model for this run (claude --model, codex -m)
+  --effort e     reasoning effort (claude --effort, codex
+                 model_reasoning_effort); values are the agent's own
   -r repo        which repo's worktree to start in
   -p prompt      first prompt instead of the default; -p '' sends none
   -s             switch the current client (or -c client) to the window
@@ -391,6 +430,29 @@ edits could conflict. No branches are merged.
   collie handoff fix-retry --from 1 --agent codex --note handoff.md
 EOF
       ;;
+    send)
+      cat <<'EOF'
+usage: collie send <id> [-r repo | --run N] [--wait] <text>... | -f file
+
+Type text into the agent of a `collie run` and press Enter, when it is idle
+or waiting. Words are joined with spaces; several lines are pasted as one
+(bracketed when the agent supports it), then submitted. The target is the
+task's only live run; with several, pick one. Never types into an agent
+started by hand or the shell left after a run exits.
+
+  -r repo         the only live run in that repo
+  --run N         run N (numbers from `collie show`)
+  --wait          while the agent is working, wait for its turn to end
+  -f file         send the file's contents (-: stdin)
+
+Logs a `sent` event with the run and the text's first line.
+Exit 0 sent; 2 the agent is working (not sent); 3 no live run (exited or
+gone); 1 other errors, e.g. several live runs without --run.
+
+  collie send fix-retry 'CI fails on macOS: see the log in the PR'
+  collie send fix-retry --run 2 --wait -f review.md
+EOF
+      ;;
     adopt)
       cat <<'EOF'
 usage: collie adopt [<id>] [-y]
@@ -410,6 +472,33 @@ After the tmux server died: restart every agent run that was live (all tasks
 if no id), each resuming its own conversation (claude and codex by logged
 session id, omp by the worktree's latest). Never guesses: runs without a
 known conversation are skipped. -n lists them; read-only.
+EOF
+      ;;
+    wait)
+      cat <<'EOF'
+usage: collie wait [<id>] [--run n] [--done | --state state] [--timeout s]
+
+Block until a run (default: the latest) reaches a state: working, idle
+(the default), waiting or exited. --done waits until the run's current
+turn has signalled done (`collie signal done`) and the run is no longer
+working. A restored run is followed to the run that replaced it. Polls
+events.log and tmux every half second; read-only.
+
+Exit 0 when reached, 1 on timeout (or a usage error), 2 when it cannot
+happen any more (the run is gone; for --done, gone without the signal).
+
+  collie wait fix-x --run 2 --done --timeout 3600
+EOF
+      ;;
+    signal)
+      cat <<'EOF'
+usage: collie signal done
+
+Run by an agent inside its collie run: logs that the run's current turn is
+done (a run_signal event), for `collie wait --done`. The task and run come
+from $COLLIE_TASK and $COLLIE_RUN, set for every collie run. The signal
+counts until `collie send` prompts the run again (a sent event) and carries
+over to the run `collie restore` starts in its place.
 EOF
       ;;
     state)
@@ -467,7 +556,7 @@ EOF
 }
 
 # the public commands, in overview order
-HELP_COMMANDS='new add ls show history edit go dash set review verify spike gc sync done archive reopen run handoff adopt restore state status doctor repos workspaces'
+HELP_COMMANDS='new add ls brief show history log edit go dash set review verify spike gc sync done archive reopen run handoff send adopt restore wait signal state status doctor repos workspaces'
 
 cmd_help() {
   local c

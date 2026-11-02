@@ -14,7 +14,7 @@ finish_task() { # final_status args...
     shift
   done
   task_id "$id"
-  local d name c b p problems="" n base here own=0
+  local d name c b p problems="" n base here own=0 unmerged=""
   d="$TASKS_DIR/$id"
 
   # folders are used in place: nothing to check or remove
@@ -25,14 +25,22 @@ finish_task() { # final_status args...
       die "refusing to $final '$id': $p/.collie is not a symlink to the task dir; move it aside first"
     fi
     [ -z "$(git -C "$p" status --porcelain)" ] || problems="$problems  dirty: $name ($p)"$'\n'
-    # Abandoned work is unmerged by definition and branches are kept anyway.
-    [ "$final" = archived ] && continue
+    # Abandoned work is unmerged by definition and branches are kept anyway:
+    # archive only labels it, against local refs.
+    if [ "$final" = archived ]; then
+      if git --git-dir="$c" show-ref -q --verify "refs/heads/$b" &&
+        ! { default_base "$c" && merged_into "$c" "$b" "$BASE"; }; then
+        unmerged="$unmerged $name"
+      fi
+      continue
+    fi
     fetch_origin "$c" "$name" || true
     default_base "$c"
     base=$BASE
     if git --git-dir="$c" show-ref -q --verify "refs/heads/$b" && ! merged_into "$c" "$b" "$base"; then
       n=$(git --git-dir="$c" rev-list --count "$base..refs/heads/$b")
       problems="$problems  unmerged: $name has $n commit(s) on $b not in ${base#refs/heads/}"$'\n'
+      unmerged="$unmerged $name"
     fi
   done <"$d/repos.tsv"
   if [ -n "$problems" ] && [ "$force" -eq 0 ]; then
@@ -52,6 +60,7 @@ finish_task() { # final_status args...
   while IFS=$TAB read -r name c b p; do
     repo_commits "$d" "$name" "$c" "$b"
   done <"$d/repos.tsv" >"$d/commits.txt"
+  wt_report "$d" "$unmerged"
   while IFS=$TAB read -r name c b p; do
     rm -f "$d/repos/$name"
     [ -d "$p" ] || continue
@@ -66,6 +75,7 @@ finish_task() { # final_status args...
   done <"$d/repos.tsv"
   fm_set "$d/TASK.md" status "$final"
   log_event "$id" "task_$final" "force=$force"
+  [ -z "$WT_REPORT" ] || printf '%sreclaimed %s\n' "$WT_REPORT" "$(human_kb "$WT_KB")"
   if has_session "$id"; then
     leave_session "$id"
     tmux kill-session -t "=$id"
@@ -307,7 +317,7 @@ cmd_spike() {
 # A task is merged when every branch moved past where its worktree started
 # and that tip is merged into the base branch (see merged_into).
 cmd_gc() {
-  local dry=0 d id name c b p start tip merged err
+  local dry=0 d id name c b p start tip merged err total=0 found=0
   [ "${1:-}" != -n ] || dry=1
   for d in "$TASKS_DIR"/*; do
     [ -f "$d/TASK.md" ] || continue
@@ -330,10 +340,17 @@ cmd_gc() {
       fi
     done <"$d/repos.tsv"
     [ "$merged" -eq 1 ] || continue
+    # merged, so only wip/scratch can hold done back: those are skipped
+    found=1
+    wt_report "$d" ""
     if [ "$dry" -eq 1 ]; then
       echo "$id"
+      printf '%s' "$WT_REPORT"
+      total=$((total + WT_CLEAN_KB))
     elif err=$("$BASH" "$PLUGIN_DIR/bin/collie" "done" "$id" 2>&1 >/dev/null); then
       echo "done $id"
+      printf '%s' "$WT_REPORT"
+      total=$((total + WT_KB))
     else
       # First problem under "refusing to …:", else done's last message.
       err=$(printf '%s\n' "$err" | awk '
@@ -341,10 +358,16 @@ cmd_gc() {
         { r = $0; sub(/^collie: /, "", r) }
         END { print r }')
       echo "skipped $id: $err (see: collie done $id)"
+      printf '%s' "$WT_REPORT"
     fi
   done
-  # finished tasks drop out of the prediction; the rest saw base move
-  [ "$dry" -eq 1 ] || conflicts_predict >/dev/null
+  if [ "$dry" -eq 1 ]; then
+    [ "$found" -eq 0 ] || echo "would reclaim $(human_kb "$total") (wip/scratch are skipped)"
+  else
+    [ "$found" -eq 0 ] || echo "reclaimed $(human_kb "$total")"
+    # finished tasks drop out of the prediction; the rest saw base move
+    conflicts_predict >/dev/null
+  fi
 }
 
 # Menu gc (in a popup): list what gc would finish, run it only after y.
@@ -458,10 +481,7 @@ cmd_sync() {
         if [ -n "$win" ]; then
           pane=$(agent_pane "$id" "$win")
           if [ -n "$pane" ]; then
-            # a pause before Enter, so agents that detect pastes still submit
-            tmux send-keys -t "$pane" -l "$msg"
-            sleep 0.3
-            tmux send-keys -t "$pane" Enter
+            type_into "$pane" "$msg"
             out="sent to the agent in $win"
           else
             out="agent pane not found, resolve it in $p"
