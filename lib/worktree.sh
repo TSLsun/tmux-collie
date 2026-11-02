@@ -198,3 +198,38 @@ rollback() {
     [ "$parent" != 1 ] || rmdir "${p%/*}" 2>/dev/null || true
   done <<<"$1"
 }
+
+# --- worktree cleanup report (shared by done/archive/gc) --------------------
+
+# Classifies a task's worktrees and measures them before removal. Sets
+# WT_REPORT to one line per worktree, "  <repo>  <bucket>  <size>", and
+# WT_KB / WT_CLEAN_KB to the total and the clean-only total in KiB.
+# Buckets: wip:N (tracked files with uncommitted edits), scratch:N
+# (untracked files that are not ignored), unmerged (named in the second
+# argument by the caller, which already checked), else clean.
+wt_report() { # task_dir unmerged_names
+  local name c b p bucket kb
+  WT_REPORT="" WT_KB=0 WT_CLEAN_KB=0
+  while IFS=$TAB read -r name c b p; do
+    [ -d "$p" ] || continue
+    [ "$c" != - ] || continue
+    bucket=$(git -C "$p" status --porcelain --untracked-files=all | awk '
+      /^\?\?/ { s++; next } { w++ }
+      END { if (w) printf "wip:%d ", w; if (s) printf "scratch:%d ", s }')
+    case " ${2:-} " in *" $name "*) bucket="${bucket}unmerged " ;; esac
+    bucket=${bucket% }
+    kb=$(du -sk "$p" 2>/dev/null | cut -f1) || true
+    kb=${kb:-0}
+    WT_KB=$((WT_KB + kb))
+    [ -n "$bucket" ] || { bucket=clean; WT_CLEAN_KB=$((WT_CLEAN_KB + kb)); }
+    WT_REPORT="$WT_REPORT  $name  $bucket  $(human_kb "$kb")"$'\n'
+  done <"$1/repos.tsv"
+}
+
+# KiB as a short size: 512K, 3.4M, 1.2G.
+human_kb() {
+  awk -v k="$1" 'BEGIN {
+    if (k < 1024) printf "%dK\n", k
+    else if (k < 1048576) printf "%.1fM\n", k / 1024
+    else printf "%.1fG\n", k / 1048576 }'
+}
