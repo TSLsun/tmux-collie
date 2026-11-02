@@ -3,7 +3,7 @@
 
 # --- agent runtime ----------------------------------------------------------
 
-DEFAULT_PROMPT='Your task contract is .collie/TASK.md. Read it first; if its Objective is empty, ask me what to do. When you finish, write a short report to .collie/REPORT.md.'
+DEFAULT_PROMPT='Your task contract is .collie/TASK.md. Read it first; if its Objective is empty, ask me what to do. Record key decisions with collie log. When you finish, write a short report to .collie/REPORT.md.'
 
 # Agent windows as "session<TAB>window<TAB>run<TAB>agent<TAB>state". Agents
 # without hooks count as idle after @collie-silence seconds (30) of no output.
