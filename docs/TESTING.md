@@ -143,5 +143,78 @@ fails the experiment and remains in its artifacts.
 This is a distinct allocation-fix variant, so its timings must not be pooled
 with the original stock-allocation table above. Repeated measurements on a
 single runner control hardware differences between settings, while host
-contention, thermal effects and cache history can still vary. No 12/16 result
-is claimed before the hosted run completes; shared defaults remain unchanged.
+contention, thermal effects and cache history can still vary. Completed results are reported below; shared defaults remain unchanged.
+
+## Controlled 12/16 results
+
+[Completed hosted experiment](https://github.com/TSLsun/tmux-collie/actions/runs/41376826676),
+harness head `6a50a90`, readiness `fe4fc6c` plus pinned allocation candidate
+`baa40b1`: 40 timed invocations per OS, 80 total; 11,808 test executions,
+11,806 passes, two failures and zero skips. Each setting has two suites and
+three stress repetitions. Linux passed all 40 invocations. macOS completed all
+40 with the two failures described below; its measurement job correctly failed.
+
+All Linux settings shared one four-logical-CPU AMD EPYC 7763 VM. All macOS
+settings shared one three-logical-CPU Apple M1 (Virtual) / VirtualMac2,1 VM
+with 7 GiB reported memory. Hardware and executable/version records are in
+`experiment.json`; host identity, counts and patch hashes were checked across
+all observations. Tool versions match the table above; the native Linux mkdir
+probe additionally resolved uutils coreutils 0.10.0. macOS mkdir has no
+`--version` interface, so its OS image and binary path are retained instead.
+
+Times are seconds, in round order. Brackets show observed sample counts.
+CPU columns are medians of recorded child user+system CPU; raw JSON retains
+user/system separately. This is `RUSAGE_CHILDREN` accounting of waited
+descendants, not whole-host accounting; detached tmux daemon CPU may escape it.
+`*` marks a failed invocation or a stress group containing one. Its time remains
+visible, but failed invocations are excluded from paired speed comparisons.
+
+| OS | Jobs | Mode | Suite walls [observed n] | Stress median (range) [observed n] | Suite child CPU median | Stress child CPU median | Failures/skips |
+|---|---:|---|---|---|---:|---:|---|
+| Linux | 4 | files | 72.88, 72.63 [2] | 58.52 (57.67–58.62) [3] | 225.04 | 159.30 | 0/0 |
+| Linux | 4 | tests | 94.91, 95.94 [2] | 57.51 (57.31–58.32) [3] | 241.20 | 167.09 | 0/0 |
+| Linux | 8 | files | 74.12, 74.21 [2] | 57.84 (56.66–57.85) [3] | 233.95 | 163.86 | 0/0 |
+| Linux | 8 | tests | 77.67, 77.64 [2] | 53.54 (53.44–54.02) [3] | 253.29 | 177.86 | 0/0 |
+| Linux | 12 | files | 76.47, 77.54 [2] | 57.38 (56.32–57.62) [3] | 235.33 | 162.72 | 0/0 |
+| Linux | 12 | tests | 77.15, 76.26 [2] | 52.15 (51.62–52.93) [3] | 260.51 | 176.17 | 0/0 |
+| Linux | 16 | files | 76.38, 77.52 [2] | 56.85 (56.20–57.86) [3] | 233.86 | 162.74 | 0/0 |
+| Linux | 16 | tests | 77.67, 78.88 [2] | 51.65 (51.21–51.88) [3] | 266.79 | 175.72 | 0/0 |
+| macOS | 4 | files | 128.65, 114.95 [2] | 82.43 (78.59–87.72) [3] | 248.03 | 142.50 | 0/0 |
+| macOS | 4 | tests | 142.72, 143.05 [2] | 84.61 (72.24–91.76) [3] | 284.95 | 166.08 | 0/0 |
+| macOS | 8 | files | 87.73, 119.78 [2] | 86.40 (61.29–88.36) [3] | 221.63 | 160.74 | 0/0 |
+| macOS | 8 | tests | 133.70*, 116.05 [2] | 75.84 (70.43–78.58) [3] | 276.02 | 164.25 | 1/0 |
+| macOS | 12 | files | 115.02, 128.32 [2] | 72.33 (69.98–92.28) [3] | 248.41 | 129.07 | 0/0 |
+| macOS | 12 | tests | 125.09, 117.76 [2] | 70.13 (60.42–79.15) [3] | 269.20 | 152.15 | 0/0 |
+| macOS | 16 | files | 137.40, 147.04 [2] | 87.56 (75.70–92.14) [3] | 288.25 | 163.55 | 0/0 |
+| macOS | 16 | tests | 150.83, 121.83 [2] | 75.23 (71.22–76.66) [3]* | 303.36 | 166.73 | 1/0 |
+
+Retain the existing default of eight workers and existing scheduling mode.
+On Linux, within-file JOBS=12 reduced suite wall time only 0.66%/1.77% while
+increasing recorded child CPU 3.15%/2.56%. JOBS=16 was effectively equal/1.60%
+slower, with 4.54%/6.12% more recorded child CPU. Stress medians improved from
+53.54s at eight to 52.15s at twelve and 51.65s at sixteen, a modest workload-
+specific gain rather than a full-suite improvement.
+
+The only clean paired macOS within-file suite round was slower at twelve
+(117.76s versus 116.05s, +1.48%) and sixteen (121.83s, +4.99%). File-only
+JOBS=12/16 suites were slower than file-only eight in both rounds. Stress
+results vary by setting and time; file-only stress has six schedulable files,
+so worker counts above six do not add file concurrency there. One VM controls
+hardware differences between settings, but host contention and runtime timing
+still vary. Two suite samples and three stress samples do not establish a
+universal optimum.
+
+Both macOS failures remain part of the result: JOBS=8 within-file suite round
+one failed the Codex session-identity readiness assertion; JOBS=16 within-file
+stress round three failed Gemini's working-to-idle readiness assertion. Neither
+is a duplicate run-ID failure. No assertion, deadline or stress intensity was
+weakened to obtain passing data, and these measurements were not retried.
+
+Allocation investigation observed 17 native status-0/no-receipt mkdir exits
+in 50 rounds of 32 contenders on Linux, and zero on macOS; both kernel controls
+had exactly one winner each round. Stock held-lock regressions failed as
+expected; the pinned candidate passed them. All 120 real concurrent-ID checks
+passed: 20 preflight repetitions plus 40 timed checks per OS. These are bounded
+correctness observations, not a guarantee that all readiness races are fixed.
+The independent production fix remains draft in PR #81; benchmark/readiness
+PRs remain unmerged pending explicit human authorization.
