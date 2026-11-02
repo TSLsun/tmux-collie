@@ -27,6 +27,7 @@ _collie() {
     'new:create a task'
     'add:attach repos to a task'
     'ls:list tasks'
+    'brief:what waits on you'
     'show:show a task'
     'history:browse finished tasks'
     'log:append a row to the decision log'
