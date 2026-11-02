@@ -1,11 +1,27 @@
 #!/usr/bin/env bats
 
+# Eight-job macOS runs have exceeded 120s with all 80 contenders intact.
+# Keep the stress intensity, with a separate bounded deadline for this file.
+export BATS_TEST_TIMEOUT=300
+
 # These tests source only task helpers: no tmux server or user state is used.
 setup() {
   source "$BATS_TEST_DIRNAME/../lib/tasks.sh"
   f="$BATS_TEST_TMPDIR/TASK.md"
   printf '%s\n' --- 'title: original' 'priority: P2' --- '' 'Body: keep me' >"$f"
   cp "$f" "$BATS_TEST_TMPDIR/original"
+}
+
+# Pure metadata tests do not start tmux or use setup_env. Preserve their own
+# failed input and lock state before Bats removes the temporary directory.
+teardown() {
+  [ -z "${BATS_TEST_COMPLETED:-}" ] || return 0
+  [ -n "${COLLIE_TEST_DIAGNOSTICS_DIR:-}" ] || return 0
+  mkdir -p "$COLLIE_TEST_DIAGNOSTICS_DIR"
+  local dest
+  dest=$(mktemp -d "$COLLIE_TEST_DIAGNOSTICS_DIR/metadata-${BATS_TEST_NUMBER}.XXXXXX")
+  cp -R "$BATS_TEST_TMPDIR/." "$dest/"
+  printf 'metadata diagnostics: %s\n' "$dest" >&2
 }
 
 assert_clean() {

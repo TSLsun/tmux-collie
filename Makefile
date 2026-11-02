@@ -4,7 +4,7 @@
 JOBS ?= $(if $(shell command -v parallel),8,1)
 
 test:
-	bats --timing --print-output-on-failure --jobs $(JOBS) test/
+	BATS_TEST_TIMEOUT=120 bats --timing --print-output-on-failure --jobs $(JOBS) test/
 
 lint:
 	shellcheck -x bin/collie collie.tmux agents/*.sh hooks/pre-push hooks/tmux-guard test/helper.bash test/tmux_diagnostics.bash
