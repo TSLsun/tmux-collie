@@ -4,6 +4,10 @@
 # --- agent runtime ----------------------------------------------------------
 
 DEFAULT_PROMPT='Your task contract is .collie/TASK.md. Read it first; if its Objective is empty, ask me what to do. When you finish, write a short report to .collie/REPORT.md.'
+# what `collie pause` asks for by default, and how run, handoff and adopt
+# point a new agent at the note it leaves (.collie/ rewritten to the task dir)
+PAUSE_PROMPT='Pause: stop at the next safe boundary, save your work in progress and write a resume note to .collie/RESUME.md for whoever picks this task up. Do not push or open a PR. Then stop.'
+RESUME_PROMPT='A paused run left a resume note at .collie/RESUME.md: read it after the task contract and continue from there.'
 
 # Agent windows as "session<TAB>window<TAB>run<TAB>agent<TAB>state". Agents
 # without hooks count as idle after @collie-silence seconds (30) of no output.
