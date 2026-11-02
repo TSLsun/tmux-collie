@@ -13,7 +13,7 @@ See [docs/DESIGN.md](docs/DESIGN.md) for goals, data model and roadmap, and
 ## Install
 
 Requires bash 3.2+ (macOS `/bin/bash` is fine), git and tmux 3.2+.
-Optional: [fzf](https://github.com/junegunn/fzf) 0.63+ (`dash`, `go` without an id),
+Optional: [fzf](https://github.com/junegunn/fzf) 0.73+ (`dash`, `go` without an id),
 [lazygit](https://github.com/jesseduffield/lazygit) (menu entry), and at least
 one coding agent CLI (claude, codex, gemini or omp). `collie doctor` checks
 all of these.

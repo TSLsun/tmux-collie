@@ -188,8 +188,7 @@ new_popup() { # keys...
   export COLLIE_SILENCE=1
   collie new x --no-window
   collie run x -- 300
-  sleep 2
-  [ "$(agent_of x)" = idle ]
+  wait_for '[ "$(agent_of x)" = idle ]'
 }
 
 # --- notify / status --------------------------------------------------------
