@@ -1,23 +1,32 @@
-name: test benchmarks
+name: controlled test benchmarks
 on:
   pull_request:
-    paths:
-      - '.github/workflows/benchmark.yml'
-      - 'scripts/benchmark-tests.py'
+    types: [labeled]
   workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: controlled-benchmarks-${{ github.ref }}
+  cancel-in-progress: false
 
 jobs:
   measure:
-    timeout-minutes: 60
+    if: github.event_name == 'workflow_dispatch' || github.event.label.name == 'run-controlled-benchmarks'
+    timeout-minutes: 180
     strategy:
       fail-fast: false
       matrix:
         os: [ubuntu-latest, macos-latest]
-        jobs: [1, 2, 4, 8]
-        mode: [files, tests]
     runs-on: ${{ matrix.os }}
+    env:
+      ALLOCATION_FIX_SHA: baa40b1dd80918f571bd3e0cc9ef427ca0b03654
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          persist-credentials: false
       - name: Linux dependencies
         if: runner.os == 'Linux'
         run: |
@@ -33,15 +42,83 @@ jobs:
           HOMEBREW_NO_INSTALL_CLEANUP: 1
           HOMEBREW_NO_INSTALLED_DEPENDENTS_CHECK: 1
         run: brew install bats-core parallel tmux fzf
-      - name: Measure suite and repeated stress files
+      - name: Fetch exact allocation candidate
+        run: git fetch --depth=2 origin "$ALLOCATION_FIX_SHA"
+      - name: Gate allocator correctness
+        id: correctness
         env:
           COLLIE_TEST_DIAGNOSTICS_DIR: ${{ runner.temp }}/diagnostics
-        run: python3 scripts/benchmark-tests.py --jobs ${{ matrix.jobs }} --mode ${{ matrix.mode }} --output "$RUNNER_TEMP/measurements"
-      - name: Retain observations and diagnostics
+        run: |
+          python3 scripts/controlled-benchmarks.py --stage prepare \
+            --allocation-fix "$ALLOCATION_FIX_SHA" --output "$RUNNER_TEMP/measurements"
+      - name: Retain correctness proof
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: benchmark-${{ matrix.os }}-${{ matrix.jobs }}-${{ matrix.mode }}-${{ github.run_attempt }}
+          name: controlled-${{ matrix.os }}-correctness-${{ github.run_attempt }}
+          path: ${{ runner.temp }}/measurements
+          retention-days: 14
+      - name: Measure round 1 on this runner
+        if: ${{ !cancelled() && steps.correctness.outcome == 'success' }}
+        continue-on-error: true
+        env:
+          COLLIE_TEST_DIAGNOSTICS_DIR: ${{ runner.temp }}/diagnostics
+        run: |
+          python3 scripts/controlled-benchmarks.py --stage 1 \
+            --allocation-fix "$ALLOCATION_FIX_SHA" --output "$RUNNER_TEMP/measurements"
+      - name: Retain round 1 checkpoint
+        if: ${{ !cancelled() && steps.correctness.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: controlled-${{ matrix.os }}-round-1-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/measurements
+            ${{ runner.temp }}/diagnostics
+          retention-days: 14
+      - name: Measure round 2 on this runner
+        if: ${{ !cancelled() && steps.correctness.outcome == 'success' }}
+        continue-on-error: true
+        env:
+          COLLIE_TEST_DIAGNOSTICS_DIR: ${{ runner.temp }}/diagnostics
+        run: |
+          python3 scripts/controlled-benchmarks.py --stage 2 \
+            --allocation-fix "$ALLOCATION_FIX_SHA" --output "$RUNNER_TEMP/measurements"
+      - name: Retain round 2 checkpoint
+        if: ${{ !cancelled() && steps.correctness.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: controlled-${{ matrix.os }}-round-2-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/measurements
+            ${{ runner.temp }}/diagnostics
+          retention-days: 14
+      - name: Measure round 3 on this runner
+        if: ${{ !cancelled() && steps.correctness.outcome == 'success' }}
+        continue-on-error: true
+        env:
+          COLLIE_TEST_DIAGNOSTICS_DIR: ${{ runner.temp }}/diagnostics
+        run: |
+          python3 scripts/controlled-benchmarks.py --stage 3 \
+            --allocation-fix "$ALLOCATION_FIX_SHA" --output "$RUNNER_TEMP/measurements"
+      - name: Retain round 3 checkpoint
+        if: ${{ !cancelled() && steps.correctness.outcome == 'success' }}
+        uses: actions/upload-artifact@v4
+        with:
+          name: controlled-${{ matrix.os }}-round-3-${{ github.run_attempt }}
+          path: |
+            ${{ runner.temp }}/measurements
+            ${{ runner.temp }}/diagnostics
+          retention-days: 14
+      - name: Require all observations to pass
+        if: ${{ !cancelled() && steps.correctness.outcome == 'success' }}
+        run: |
+          python3 scripts/controlled-benchmarks.py --stage check \
+            --allocation-fix "$ALLOCATION_FIX_SHA" --output "$RUNNER_TEMP/measurements"
+      - name: Retain final observations and diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: controlled-${{ matrix.os }}-final-${{ github.run_attempt }}
           path: |
             ${{ runner.temp }}/measurements
             ${{ runner.temp }}/diagnostics

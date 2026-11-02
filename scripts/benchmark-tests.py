@@ -6,20 +6,24 @@ import os
 from pathlib import Path
 import platform
 import resource
+import shutil
 import subprocess
 import time
 
 parser = argparse.ArgumentParser(description=__doc__)
-parser.add_argument('--jobs', type=int, choices=(1, 2, 4, 8), required=True)
+parser.add_argument('--jobs', type=int, choices=(1, 2, 4, 8, 12, 16), required=True)
 parser.add_argument('--mode', choices=('files', 'tests'), required=True)
 parser.add_argument('--output', type=Path, required=True)
+parser.add_argument('--phase', choices=('all', 'suite', 'stress'), default='all')
+parser.add_argument('--stress-repetitions', type=int, choices=range(1, 11), default=3)
 args = parser.parse_args()
 args.output.mkdir(parents=True, exist_ok=True)
 
 
 def resolved(command):
     result = subprocess.run(command, text=True, stdout=subprocess.PIPE, stderr=subprocess.STDOUT)
-    return {'command': command, 'status': result.returncode, 'output': result.stdout.strip()}
+    return {'command': command, 'path': shutil.which(command[0]),
+            'status': result.returncode, 'output': result.stdout.strip()}
 
 
 metadata = {
@@ -27,12 +31,15 @@ metadata = {
     'platform': platform.platform(), 'cpu_count': os.cpu_count(),
     'runner': {key: os.environ.get(key) for key in
                ('RUNNER_OS', 'RUNNER_ARCH', 'ImageOS', 'ImageVersion',
-                'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT')},
+                'GITHUB_RUN_ID', 'GITHUB_RUN_ATTEMPT', 'RUNNER_NAME',
+                'COLLIE_BENCHMARK_HOST_ID', 'COLLIE_BENCHMARK_VARIANT',
+                'COLLIE_ALLOCATION_FIX_SHA', 'COLLIE_READINESS_SHA',
+                'COLLIE_BENCHMARK_BLOCK')},
     'jobs': args.jobs, 'mode': args.mode,
     'versions': [resolved(command) for command in
                  (['bash', '--version'], ['bats', '--version'], ['parallel', '--version'],
                   ['tmux', '-V'], ['git', '--version'], ['fzf', '--version'],
-                  ['python3', '--version'])],
+                  ['python3', '--version'], ['mkdir', '--version'])],
 }
 (args.output / 'metadata.json').write_text(json.dumps(metadata, indent=2) + '\n')
 base = ['bats', '--tap', '--timing', '--print-output-on-failure', '--jobs', str(args.jobs)]
@@ -47,8 +54,11 @@ failed = False
 # races and both real-fzf dashboard tests intact and in competition.
 stress = ['test/metadata.bats', 'test/agents.bats', 'test/run.bats', 'test/restore.bats',
           'test/dash.bats', 'test/runs.bats']
-for label, files in [('suite', ['test/'])] + [
-        (f'stress-{attempt}', stress) for attempt in range(1, 4)]:
+phases = [('suite', ['test/'])] if args.phase in ('all', 'suite') else []
+if args.phase in ('all', 'stress'):
+    phases += [(f'stress-{attempt}', stress)
+               for attempt in range(1, args.stress_repetitions + 1)]
+for label, files in phases:
     command = base + files
     before = resource.getrusage(resource.RUSAGE_CHILDREN)
     start = time.monotonic()

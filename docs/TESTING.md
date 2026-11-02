@@ -7,13 +7,13 @@ favor different settings, and hosted runners vary substantially.
 
 ## Reproduce
 
-The `test benchmarks` Actions workflow measures JOBS=1,2,4,8 on
+The original `test benchmarks` Actions matrix measured JOBS=1,2,4,8 on
 `ubuntu-latest` and `macos-latest`. `files` passes
 `--no-parallelize-within-files`; `tests` uses Bats' default parallel scheduling.
 At JOBS=1 both modes use the same serial command because Bats rejects parallel
 scheduling switches in serial mode. Workflow dispatch is available after the
 workflow exists on the repository's default branch; this testing-only PR uses
-pull-request runs instead.
+pull-request label runs instead, as described in the controlled follow-up below.
 
 With Python 3, Bats, GNU parallel, tmux, Git, Bash, zsh and fzf installed:
 
@@ -21,7 +21,7 @@ With Python 3, Bats, GNU parallel, tmux, Git, Bash, zsh and fzf installed:
 python3 scripts/benchmark-tests.py --jobs 4 --mode files --output /tmp/collie-benchmark
 ```
 
-Each cell runs 233 suite tests, then three 90-test repetitions of
+Each original matrix cell ran 233 suite tests, then three 90-test repetitions of
 `metadata.bats`, `agents.bats`, `run.bats`, `restore.bats`, `dash.bats` and
 `runs.bats` together. These preserve metadata's 80 simultaneous contenders,
 concurrent run-ID allocation, restore races and real-fzf interactions. Every
@@ -113,3 +113,35 @@ Resolved versions in the retained artifacts:
 OS comparisons therefore include different tool versions as well as hardware.
 Linux fzf is pinned to the supported minimum; macOS uses the resolved Homebrew
 version. The raw metadata is authoritative if future runs resolve differently.
+
+## Controlled 12/16 follow-up
+
+The current `controlled test benchmarks` workflow runs JOBS=4/8/12/16 in both
+scheduling modes sequentially within one Actions job per OS. Four is the earlier
+Linux candidate and eight is the existing default. Apply the
+`run-controlled-benchmarks` PR label to start a run; remove and reapply it for an
+explicit repeat. Documentation pushes do not start another experiment.
+
+Allocation correctness is a prerequisite. The runner records 50 rounds of
+32 native `mkdir -v` contenders and a kernel `os.mkdir` control, then verifies
+that the held-lock regression fails on the stock allocator. It applies only
+the exact candidate patch from draft [PR #81](https://github.com/TSLsun/tmux-collie/pull/81),
+`baa40b1dd80918f571bd3e0cc9ef427ca0b03654`, in its disposable workspace. The fixed
+regression and 20 repetitions of the unchanged real concurrent-ID test must pass
+before timing begins. This does not apply the fix or readiness dependency to main.
+
+Every setting gets two full-suite runs and three unchanged stress runs. A
+recorded seed shuffles the first round; the second reverses both setting order
+and suite/stress order. A third shuffled round provides another stress run.
+The controller verifies test counts, records the exact patch/file hashes and
+uses one host identity across all 40 timed blocks per OS. Runner image, CPU
+model/count, memory where available, executable paths and tool versions are
+retained with the measurements. Expected regression failures are separate from
+measured suite/stress failures. Any measured failure, skip or missing test count
+fails the experiment and remains in its artifacts.
+
+This is a distinct allocation-fix variant, so its timings must not be pooled
+with the original stock-allocation table above. Repeated measurements on a
+single runner control hardware differences between settings, while host
+contention, thermal effects and cache history can still vary. No 12/16 result
+is claimed before the hosted run completes; shared defaults remain unchanged.
