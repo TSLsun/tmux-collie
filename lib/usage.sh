@@ -34,6 +34,8 @@ agents:
   send <id> <text>    type into an idle or waiting agent run and submit
   adopt [<id>] [-y]   restart a hand-started agent under collie run
   restore [<id>] [-n] restart the agents lost with the tmux server
+  wait [<id>]         block until a run reaches a state or signals done
+  signal done         called by an agent: its run's current turn is done
   state <state>       called by agent hooks; no-op outside a collie window
   status              agent counts for the status bar (#{collie_status})
 
@@ -335,8 +337,8 @@ EOF
       ;;
     run)
       cat <<'EOF'
-usage: collie run [<id>] [--agent name] [-r repo] [-p prompt] [-s [-c client]]
-                  [-- args]
+usage: collie run [<id>] [--agent name] [--model m] [--effort e] [-r repo]
+                  [-p prompt] [-s [-c client]] [-- args]
 
 Start an agent in a new window of the task session, in the first repo's
 worktree (-r: that repo's). The default prompt names the task and points the
@@ -345,6 +347,9 @@ omp get state hooks per run; any other command runs without them.
 
   --agent name   agent command (default: $COLLIE_AGENT, @collie-agent, else
                  claude)
+  --model m      model for this run (claude --model, codex -m)
+  --effort e     reasoning effort (claude --effort, codex
+                 model_reasoning_effort); values are the agent's own
   -r repo        which repo's worktree to start in
   -p prompt      first prompt instead of the default; -p '' sends none
   -s             switch the current client (or -c client) to the window
@@ -420,6 +425,33 @@ session id, omp by the worktree's latest). Never guesses: runs without a
 known conversation are skipped. -n lists them; read-only.
 EOF
       ;;
+    wait)
+      cat <<'EOF'
+usage: collie wait [<id>] [--run n] [--done | --state state] [--timeout s]
+
+Block until a run (default: the latest) reaches a state: working, idle
+(the default), waiting or exited. --done waits until the run's current
+turn has signalled done (`collie signal done`) and the run is no longer
+working. A restored run is followed to the run that replaced it. Polls
+events.log and tmux every half second; read-only.
+
+Exit 0 when reached, 1 on timeout (or a usage error), 2 when it cannot
+happen any more (the run is gone; for --done, gone without the signal).
+
+  collie wait fix-x --run 2 --done --timeout 3600
+EOF
+      ;;
+    signal)
+      cat <<'EOF'
+usage: collie signal done
+
+Run by an agent inside its collie run: logs that the run's current turn is
+done (a run_signal event), for `collie wait --done`. The task and run come
+from $COLLIE_TASK and $COLLIE_RUN, set for every collie run. The signal
+counts until `collie send` prompts the run again (a sent event) and carries
+over to the run `collie restore` starts in its place.
+EOF
+      ;;
     state)
       cat <<'EOF'
 usage: collie state <working|waiting|idle|exited>
@@ -475,7 +507,7 @@ EOF
 }
 
 # the public commands, in overview order
-HELP_COMMANDS='new add ls show history edit go dash set review spike gc sync done archive reopen run handoff send adopt restore state status doctor repos workspaces'
+HELP_COMMANDS='new add ls show history edit go dash set review spike gc sync done archive reopen run handoff send adopt restore wait signal state status doctor repos workspaces'
 
 cmd_help() {
   local c

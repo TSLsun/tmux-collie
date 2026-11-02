@@ -184,6 +184,28 @@ runs lost with a dead tmux server (claude and codex by their logged session id, 
 the worktree's latest conversation); agents started by hand are not
 recorded, so they are not restored.
 
+`--model` and `--effort` pick a run's model and reasoning effort (claude
+`--model`/`--effort`, codex `-m`/`-c model_reasoning_effort`); other agents
+refuse them.
+
+### Waiting for a run
+
+A script or coordinating agent can block on a run instead of watching it:
+
+```sh
+collie wait fix-retry --state idle               # latest run stopped working
+collie wait fix-retry --run 2 --done --timeout 3600
+```
+
+`--state` waits for `working`, `idle` (default), `waiting` or `exited`.
+`--done` waits for the run's done signal: the agent runs `collie signal done`
+in its window when its turn's work is complete (`$COLLIE_TASK`/`$COLLIE_RUN`
+are set for every run), and `wait` returns once the run has also stopped
+working. A signal counts until `collie send` prompts the run again (its
+`sent` event); a run restarted by `collie restore` keeps its signal and is followed
+by `--run` under its old number. Exit codes: `0` reached, `1` timeout, `2`
+cannot happen any more (the run is gone; for `--done`, without signalling).
+
 For Codex setup and limitations, see [Agent details](https://github.com/TSLsun/tmux-collie#agent-details).
 
 ### Cross-agent handoff
@@ -223,6 +245,7 @@ launch keeps its packet for diagnosis without recording a successful handoff.
 | Type into an idle agent | `collie send` | — | — |
 | Adopt hand-started agent | `collie adopt` | `a` | `?` `a` |
 | Restore agents after the server died | `collie restore` | — | — |
+| Wait for a run's state or done signal | `collie wait` | — | — |
 | Go to task | `collie go` | — | `enter` (most urgent agent window) |
 | Runs of a task | `collie show` | — | `u` (`enter`: its window, `esc`: back) |
 | Jump to last alert | — | `j` | — |
