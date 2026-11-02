@@ -235,7 +235,7 @@ launch keeps its packet for diagnosis without recording a successful handoff.
 
 ### Leading a task with an agent
 
-The [`collie-lead`](../skills/collie-lead/SKILL.md) skill makes the agent that
+The [`collie-lead`](https://github.com/TSLsun/tmux-collie/blob/main/skills/collie-lead/SKILL.md) skill makes the agent that
 runs it the lead of one task: it does not write the code itself, it drives
 other runs with collie commands and checks their work.
 
