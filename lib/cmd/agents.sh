@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# Sourced by bin/collie: run, adopt, state, status.
+# Sourced by bin/collie: run, handoff, send, adopt, state, status.
 
 # Sets RUN_AGENT, the agent `collie run` starts without --agent.
 run_agent() {
@@ -187,6 +187,97 @@ cmd_handoff() {
   cmd_run "$id" --agent "$agent" -r "$repo" -p "$prompt"
   log_event "$id" run_handoff "from=$from to=$RUN_STARTED source=$source_agent agent=$agent repo=$repo packet=${packet##*/}"
   printf '%s\n' "$packet"
+}
+
+# The collie run of task $1 that send types into, as "run<TAB>agent<TAB>state
+# <TAB>window": run $2 if given, else the one live run (of repo $3 if given).
+# Agents started by hand are never targets. Prints "none", "many <runs>" or
+# "nosuch" instead when there is no such run or no single one.
+send_target() { # id run repo
+  local wins=""
+  ! has_session "$1" || wins=$(win_states -t "=$1" | awk -F'\t' '$3 != "-" { print $3 "\t" $4 "\t" $5 "\t" $2 }')
+  awk -F'\t' -v want="$2" -v repo="$3" '
+    function kv(k,  a, i, n) {
+      n = split($3, a, " ")
+      for (i = 1; i <= n; i++) if (index(a[i], k "=") == 1) return substr(a[i], length(k) + 2)
+    }
+    FNR == NR { if ($1 != "") { line[$1] = $0; st[$1] = $3; order[++m] = $1 }; next }
+    $2 == "run_started" { r = kv("run"); known[r] = 1; rp[r] = kv("repo"); ag[r] = kv("agent") }
+    END {
+      if (want != "") {
+        if (!(want in known)) print "nosuch"
+        else print (want in line ? line[want] : want "\t" ag[want] "\texited\t-")
+        exit
+      }
+      for (i = 1; i <= m; i++) {
+        r = order[i]
+        if (st[r] == "exited" || (repo != "" && rp[r] != repo)) continue
+        c++; pick = line[r]; runs = runs " " r
+      }
+      print (c == 1 ? pick : c ? "many" runs : "none")
+    }' - "$TASKS_DIR/$1/events.log" <<<"$wins"
+}
+
+# Types text into the agent of a collie run while it is idle or waiting, and
+# logs the first line. Exit 2: the agent is working; 3: no live run.
+cmd_send() {
+  local id="" repo="" run="" file="" wait=0 text="" args=() t agent st win pane first
+  while [ $# -gt 0 ]; do
+    case $1 in
+      -r) repo=${2:?-r needs a repo}; shift ;;
+      --run) run=${2:-}; shift ;;
+      -f) file=${2:?-f needs a file}; shift ;;
+      --wait) wait=1 ;;
+      --) shift; args+=("$@"); break ;;
+      -*) die "send: unknown option $1" ;;
+      *) if [ -z "$id" ]; then id=$1; else args+=("$1"); fi ;;
+    esac
+    shift
+  done
+  [ -n "$id" ] || die "usage: collie send <id> [-r repo | --run N] [--wait] <text>... | -f file"
+  task_id "$id"
+  [ -z "$run" ] || [[ $run =~ ^[1-9][0-9]*$ ]] || die "send: --run needs a run number"
+  [ -z "$run" ] || [ -z "$repo" ] || die "send: give -r or --run, not both"
+  if [ -n "$file" ]; then
+    [ ${#args[@]} -eq 0 ] || die "send: give text or -f, not both"
+    if [ "$file" = - ]; then
+      text=$(cat)
+    else
+      [ -f "$file" ] && [ -r "$file" ] || die "send: cannot read $file"
+      text=$(cat -- "$file")
+    fi
+  else
+    text=${args[*]-}
+  fi
+  [[ $text == *[![:space:]]* ]] || die "send: nothing to send"
+  command -v tmux >/dev/null || die "send: tmux required"
+  if [ -n "$repo" ] && ! awk -F'\t' -v r="$repo" '$1 == r { f = 1 } END { exit !f }' "$TASKS_DIR/$id/repos.tsv"; then
+    die "repo '$repo' is not part of task '$id'"
+  fi
+
+  while :; do
+    t=$(send_target "$id" "$run" "$repo")
+    case $t in
+      nosuch) die "send: task '$id' has no run $run" ;;
+      none) warn "send: no live agent run in task '$id'${repo:+ for repo $repo}; not sent"; exit 3 ;;
+      many*) die "send: several live runs in task '$id' (${t#many }); pick one with --run" ;;
+    esac
+    IFS=$TAB read -r run agent st win <<<"$t"
+    [ "$st" = working ] && [ "$wait" = 1 ] || break
+    sleep 1
+  done
+  case $st in
+    idle | waiting) ;;
+    working) warn "send: run $run ($agent) is working; not sent (--wait waits for its turn to end)"; exit 2 ;;
+    *) warn "send: run $run ($agent) has exited; not sent"; exit 3 ;;
+  esac
+  pane=$(agent_pane "$id" "$win")
+  [ -n "$pane" ] || { warn "send: the pane of run $run ($agent) is gone; not sent"; exit 3; }
+  type_into "$pane" "$text"
+  first=${text%%$'\n'*}
+  first=${first//$'\t'/ }
+  log_event "$id" sent "run=$run text=${first:0:80}"
+  echo "$id: sent to run $run ($agent) in $win"
 }
 
 # Restarts an agent started by hand in the task's session as a `collie run`
