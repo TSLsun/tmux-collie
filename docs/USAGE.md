@@ -105,6 +105,28 @@ changes). `gc` runs `done` for every task whose branches all moved past their
 start and are merged into base (squash merges count with git >= 2.38), and
 skips the rest.
 
+Each worktree they remove or skip is listed with a bucket and its size
+(`du -sk`), then the total reclaimed:
+
+| Bucket | Meaning | `done` | `archive` |
+|---|---|---|---|
+| `wip:N` | N tracked files with uncommitted edits | refuses | refuses |
+| `scratch:N` | N untracked files that are not ignored | refuses | refuses |
+| `unmerged` | branch has commits not in base | refuses | removes (branch kept) |
+| `clean` | none of the above | removes | removes |
+
+```text
+$ collie gc -n
+fix-retry
+  A  clean  1.2M
+docs-tweak
+  A  scratch:1  48K
+would reclaim 1.2M (wip/scratch are skipped)
+```
+
+`--force` removes every bucket. The report changes nothing: `gc` removes
+exactly what `done` would.
+
 ## 4. Agent state (per run)
 
 ```mermaid

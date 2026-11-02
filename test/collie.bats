@@ -331,6 +331,7 @@ past_run() {
   [ -z "$(fm x status)" ]
   run collie done x --force
   [ "$status" -eq 0 ]
+  [[ "$output" =~ "  A  unmerged  "[0-9]+K$'\n'"  B  scratch:1  "[0-9]+K$'\n'"reclaimed "[0-9]+K$ ]]
   [ ! -e "$TMP/repos/A/feat-x" ]
 }
 
@@ -358,6 +359,8 @@ past_run() {
   rm "$REPO/feat-x/f"
   run collie archive x
   [ "$status" -eq 0 ]
+  [[ "${lines[0]}" =~ ^"  A  unmerged  "([0-9]+)K$ ]]
+  [ "${lines[1]}" = "reclaimed ${BASH_REMATCH[1]}K" ]
   [ "$(fm x status)" = archived ]
   [ ! -e "$REPO/feat-x" ]
   git -C "$REPO/main" show-ref -q --verify refs/heads/feat/x
