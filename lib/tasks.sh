@@ -107,6 +107,20 @@ log_event() {
   printf '%s\t%s\t%s\n' "$NOW" "$2" "${3:-}" >>"$TASKS_DIR/$1/events.log"
 }
 
+# decisions.tsv (see `collie log`): the newest row, "last decision (of n):"
+# then two indented lines and a blank one; nothing until a row is logged.
+last_decision() { # dir
+  [ -f "$1/decisions.tsv" ] || return 0
+  awk -F'\t' 'NR > 1 && NF { n++; for (i = 1; i <= 7; i++) c[i] = $i }
+    END {
+      if (!n) exit
+      print "last decision (of " n "):"
+      print "  " (c[2] ~ /^[0-9]+$/ ? "#" c[2] : c[2]) "  " c[3] "  " c[4] "  " c[1]
+      print "  why: " c[5] "  ·  evidence: " c[6] "  ·  result: " c[7]
+      print ""
+    }' "$1/decisions.tsv"
+}
+
 write_task_md() { # dir id title [objective] [ship]
   local tmpl="$CONFIG_DIR/TASK.md" ship="$CONFIG_DIR/SHIP.md"
   [ -f "$tmpl" ] || tmpl="$PLUGIN_DIR/templates/TASK.md"
