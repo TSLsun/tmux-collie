@@ -274,9 +274,11 @@ a failure rolls back worktrees and branches it already created.
 Off by default. When on, `collie new` appends a `## Ship` section to TASK.md
 telling the agent (any agent) to finish the delivery loop: logical
 Conventional Commits with fixups squashed, push and `gh pr create` once the
-Acceptance Criteria and Verify checks pass (no `gh`: push and report the
-branch URL), wait for CI, fix a clearly-caused failure at most once, and
-otherwise stop and write the failure analysis to REPORT.md. It never merges.
+Acceptance Criteria (checked on the real artifact, not just green CI) and
+Verify checks pass (no `gh`: push and report the branch URL), wait for CI,
+fix a clearly-caused failure at most once, re-verify after any rebase or
+merge, and otherwise stop and write the failure analysis to REPORT.md. It
+never merges.
 
 ```tmux
 set -g @collie-ship 'on'                       # default for new tasks ($COLLIE_SHIP wins)
