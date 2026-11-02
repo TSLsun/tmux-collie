@@ -92,7 +92,7 @@ run_state() { # id run
 
 # Sets RUN_LIVE (the run, followed through restores) and RUN_DONE (1 when
 # its latest turn signalled done: a run_signal after the run's last
-# run_prompt, carried over by restores).
+# `sent` (collie send), carried over by restores).
 run_resolve() { # id run
   local l
   l=$(awk -F'\t' -v r="$2" '
@@ -101,7 +101,7 @@ run_resolve() { # id run
       for (i = 1; i <= n; i++) if (index(a[i], k "=") == 1) return substr(a[i], length(k) + 2)
     }
     $2 == "run_signal" && kv("signal") == "done" { d[kv("run")] = 1 }
-    $2 == "run_prompt" { d[kv("run")] = 0 }
+    $2 == "sent" { d[kv("run")] = 0 }
     $2 == "run_restored" { as[kv("run")] = kv("as"); if (d[kv("run")]) d[kv("as")] = 1 }
     END { while (r in as) r = as[r]; print r "\t" d[r] + 0 }' "$TASKS_DIR/$1/events.log")
   RUN_LIVE=${l%%"$TAB"*} RUN_DONE=${l#*"$TAB"}

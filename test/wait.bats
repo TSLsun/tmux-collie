@@ -65,14 +65,14 @@ events() { cat "$(task_dir x)/events.log"; }
   hook x idle
   collie wait x --done --timeout 5
   # a new prompt starts a new turn: the old signal no longer counts
-  printf '2026-01-01T00:00:00Z\trun_prompt\trun=1\n' >>"$(task_dir x)/events.log"
+  collie send x --run 1 'next turn'
   run collie wait x --done --timeout 1
   [ "$status" -eq 1 ]
   # without $COLLIE_RUN the pane's run is used
   COLLIE_TASK=x TMUX_PANE=$(run_pane x 1) collie signal done
   collie wait x --done --timeout 5
   # gone without signalling cannot be done any more
-  printf '2026-01-01T00:00:00Z\trun_prompt\trun=1\n' >>"$(task_dir x)/events.log"
+  collie send x --run 1 'next turn'
   tmux kill-window -t "$(run_pane x 1)"
   run collie wait x --done --timeout 5
   [ "$status" -eq 2 ]

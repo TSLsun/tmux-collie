@@ -201,8 +201,8 @@ collie wait fix-retry --run 2 --done --timeout 3600
 `--done` waits for the run's done signal: the agent runs `collie signal done`
 in its window when its turn's work is complete (`$COLLIE_TASK`/`$COLLIE_RUN`
 are set for every run), and `wait` returns once the run has also stopped
-working. A signal counts until the run is prompted again (a `run_prompt`
-event); a run restarted by `collie restore` keeps its signal and is followed
+working. A signal counts until `collie send` prompts the run again (its
+`sent` event); a run restarted by `collie restore` keeps its signal and is followed
 by `--run` under its old number. Exit codes: `0` reached, `1` timeout, `2`
 cannot happen any more (the run is gone; for `--done`, without signalling).
 

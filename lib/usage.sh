@@ -448,7 +448,7 @@ usage: collie signal done
 Run by an agent inside its collie run: logs that the run's current turn is
 done (a run_signal event), for `collie wait --done`. The task and run come
 from $COLLIE_TASK and $COLLIE_RUN, set for every collie run. The signal
-counts until the run is prompted again (a run_prompt event) and carries
+counts until `collie send` prompts the run again (a sent event) and carries
 over to the run `collie restore` starts in its place.
 EOF
       ;;
