@@ -10,10 +10,12 @@ run_agent() {
 # Allocate and record a run in one per-task critical section. A subshell
 # keeps cleanup traps local to this launch, including callers like handoff.
 start_run() ( # task agent repo path argv...
-  local id=$1 agent=$2 repo=$3 path=$4 lock run wid server pane i=0
+  local id=$1 agent=$2 repo=$3 path=$4 lock receipt run wid server pane i=0
   shift 4
   lock="$TASKS_DIR/$id/run.lock"
-  until mkdir "$lock" 2>/dev/null; do
+  # As with metadata locks, require a creation receipt: some mkdir versions
+  # can report success after losing a race to create an existing directory.
+  while ! receipt=$(mkdir -v "$lock" 2>/dev/null) || [ -z "$receipt" ]; do
     i=$((i + 1))
     [ "$i" -lt 200 ] || die "run: timed out waiting for $lock"
     sleep 0.05
