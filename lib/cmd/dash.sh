@@ -760,19 +760,27 @@ cmd__actions() { # id key
 # Menu for prefix <@collie-key>, built per session: task actions only inside a
 # task's session (see collie.tmux).
 cmd__menu() { # session [client]
-  local C="$PLUGIN_DIR/bin/collie" T=$1 popup="display-popup -E -w 90% -h 85%" items
+  local C="$PLUGIN_DIR/bin/collie" T=$1 popup="display-popup -E -w 90% -h 85%" items k l a
   items=(dashboard h "$popup '$C _popup $C dash'"
     lazygit g "$popup -d '#{pane_current_path}' '$C _popup lazygit'"
     terminal t "$popup -d '#{pane_current_path}'"
     "new task" c "display-popup -EE -w 70 -h 15 -d '#{pane_current_path}' '$C new'")
   if valid_id "$T" && [ -f "$TASKS_DIR/$T/TASK.md" ]; then
-    items+=("edit task" e "$popup '$C _popup $C edit $T'"
-      review v "$popup '$C _popup \"$C review $T | less -R\"'"
-      ""
-      "run agent" r "run-shell '$C run $T -s${2:+ -c $2}'"
-      "adopt agent" a "display-popup -E -w 90 -h 12 '$C _popup $C adopt $T'"
-      "done" d "confirm-before -p 'done $T? (y/n)' \"display-popup -E -w 90 -h 12 '$C _popup $C done $T'\""
-      archive x "confirm-before -p 'archive $T? (y/n)' \"display-popup -E -w 90 -h 12 '$C _popup $C archive $T'\"")
+    # the dashboard's task actions (action_items), same keys and labels;
+    # terminal and new task are the global items above
+    items+=("")
+    while read -r k l; do
+      case $k in
+        r) a="run-shell '$C run $T -s${2:+ -c $2}'" ;;
+        a) a="display-popup -E -w 90 -h 12 '$C _popup $C adopt $T'" ;;
+        e) a="$popup '$C _popup $C edit $T'" ;;
+        v) a="$popup '$C _popup \"$C review $T | less -R\"'" ;;
+        d | x) a="confirm-before -p '$l $T? (y/n)' \"display-popup -E -w 90 -h 12 '$C _popup $C $l $T'\"" ;;
+        s) a="confirm-before -p 'sync $T? (y/n)' \"display-popup -E -w 90 -h 20 '$C _popup -w $C sync $T'\"" ;;
+        *) continue ;;
+      esac
+      items+=("$l" "$k" "$a")
+    done < <(action_items "$T")
   else
     items+=("" "-not a collie task — use collie new" "" "")
   fi
@@ -807,10 +815,16 @@ cmd__dev() {
 }
 
 # Run a command line in a popup; on failure keep the popup open until a key.
-cmd__popup() {
-  local rc=0
+cmd__popup() { # [-w] command...
+  local rc=0 w=""
+  [ "${1:-}" != -w ] || { w=1 && shift; }
   (eval "$*") || rc=$?
-  [ "$rc" -eq 0 ] && return 0
+  if [ "$rc" -eq 0 ]; then
+    [ -n "$w" ] || return 0
+    printf '\n[press any key]'
+    read -rsn1 _ || true
+    return 0
+  fi
   printf '\n[collie: exit %s — press any key]' "$rc"
   read -rsn1 _ || true
   return "$rc"
