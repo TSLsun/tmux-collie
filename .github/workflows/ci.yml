@@ -40,21 +40,9 @@ jobs:
       - run: make ${{ runner.os == 'Linux' && 'check' || 'test' }}
         env:
           COLLIE_TEST_DIAGNOSTICS_DIR: ${{ runner.temp }}/collie-test-diagnostics
-      - name: Measure base readiness paths
-        # Base failures are measurement data; only the changed branch gates CI.
-        continue-on-error: true
-        env:
-          BATS_TEST_TIMEOUT: 120
-          BASE_SHA: ${{ github.event.pull_request.base.sha }}
-        run: |
-          if [ -n "$BASE_SHA" ]; then
-            git fetch --depth=1 origin "$BASE_SHA"
-            baseline=$(mktemp -d)
-            git archive "$BASE_SHA" | tar -x -C "$baseline"
-            cd "$baseline"
-            time bats --timing --print-output-on-failure --jobs 8 test/agents.bats test/codex.bats test/restore.bats test/dash.bats test/runs.bats
-          fi
+      # workflow_call (including release) runs only the normal suite.
       - name: Repeat readiness paths under parallel load
+        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.workflow_ref == format('{0}/.github/workflows/ci.yml@refs/heads/main', github.repository)
         env:
           BATS_TEST_TIMEOUT: 120
           COLLIE_TEST_DIAGNOSTICS_DIR: ${{ runner.temp }}/collie-test-diagnostics
