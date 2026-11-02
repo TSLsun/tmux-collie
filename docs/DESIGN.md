@@ -249,10 +249,15 @@ One file per agent, `agents/<name>.sh`, sourced by `collie run`:
 
 ```bash
 AGENT_HOOKS=1         # 1 if the agent reports state through `collie state`
+AGENT_MODELS=1        # 1 if agent_argv maps RUN_MODEL/RUN_EFFORT to flags
 agent_argv            # sets AGENT_ARGV from RUN_PROMPT (initial prompt),
-                      # RUN_NAME (session name, "<id>: <title>") and
+                      # RUN_NAME (session name, "<id>: <title>"),
                       # RUN_DIRS (other worktrees + task dir, one per line)
+                      # and RUN_MODEL/RUN_EFFORT (`collie run --model/--effort`)
 ```
+
+The wrapper exports `COLLIE_TASK` and `COLLIE_RUN` to the agent, so
+`collie signal done` knows which run signals.
 
 An agent name without an adapter file runs as-is (generic adapter):
 `collie run --agent aider -- --model x`. `collie run` checks the command

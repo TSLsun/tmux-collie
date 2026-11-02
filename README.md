@@ -13,7 +13,7 @@ See [docs/DESIGN.md](docs/DESIGN.md) for goals, data model and roadmap, and
 ## Install
 
 Requires bash 3.2+ (macOS `/bin/bash` is fine), git and tmux 3.2+.
-Optional: [fzf](https://github.com/junegunn/fzf) 0.63+ (`dash`, `go` without an id),
+Optional: [fzf](https://github.com/junegunn/fzf) 0.73+ (`dash`, `go` without an id),
 [lazygit](https://github.com/jesseduffield/lazygit) (menu entry), and at least
 one coding agent CLI (claude, codex, gemini or omp). `collie doctor` checks
 all of these.
@@ -65,6 +65,9 @@ collie run deploy-v2 --agent codex      # also: gemini, omp; state hooks injecte
 collie run --agent aider -- --model x  # any command works (no state hooks)
 collie handoff deploy-v2 --from 1 --agent codex --note handoff.md
                                       # new conversation, preserving run 1's context
+collie send deploy-v2 'rerun the tests'  # type into its idle agent (--run N, --wait, -f file)
+collie run deploy-v2 --model opus --effort high  # per-run model/effort (claude, codex)
+collie wait deploy-v2 --done --timeout 3600     # until the run signals done and stops
 collie doctor                          # deps, agents, task/worktree consistency
 collie ls                              # agent column: waiting/idle/working/exited/unknown
 ```
@@ -277,9 +280,11 @@ a failure rolls back worktrees and branches it already created.
 Off by default. When on, `collie new` appends a `## Ship` section to TASK.md
 telling the agent (any agent) to finish the delivery loop: logical
 Conventional Commits with fixups squashed, push and `gh pr create` once the
-Acceptance Criteria and Verify checks pass (no `gh`: push and report the
-branch URL), wait for CI, fix a clearly-caused failure at most once, and
-otherwise stop and write the failure analysis to REPORT.md. It never merges.
+Acceptance Criteria (checked on the real artifact, not just green CI) and
+Verify checks pass (no `gh`: push and report the branch URL), wait for CI,
+fix a clearly-caused failure at most once, re-verify after any rebase or
+merge, and otherwise stop and write the failure analysis to REPORT.md. It
+never merges.
 
 ```tmux
 set -g @collie-ship 'on'                       # default for new tasks ($COLLIE_SHIP wins)

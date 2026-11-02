@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# Sourced by bin/collie: run, adopt, state, status.
+# Sourced by bin/collie: run, handoff, send, adopt, state, status.
 
 # Sets RUN_AGENT, the agent `collie run` starts without --agent.
 run_agent() {
@@ -10,10 +10,12 @@ run_agent() {
 # Allocate and record a run in one per-task critical section. A subshell
 # keeps cleanup traps local to this launch, including callers like handoff.
 start_run() ( # task agent repo path argv...
-  local id=$1 agent=$2 repo=$3 path=$4 lock run wid server pane i=0
+  local id=$1 agent=$2 repo=$3 path=$4 lock receipt run wid server pane i=0
   shift 4
   lock="$TASKS_DIR/$id/run.lock"
-  until mkdir "$lock" 2>/dev/null; do
+  # As with metadata locks, require a creation receipt: some mkdir versions
+  # can report success after losing a race to create an existing directory.
+  while ! receipt=$(mkdir -v "$lock" 2>/dev/null) || [ -z "$receipt" ]; do
     i=$((i + 1))
     [ "$i" -lt 200 ] || die "run: timed out waiting for $lock"
     sleep 0.05
@@ -36,9 +38,12 @@ start_run() ( # task agent repo path argv...
 
 cmd_run() {
   local id="" agent="" repo="" prompt=$DEFAULT_PROMPT custom=0 extra=() switch=0 client=""
+  local RUN_MODEL="" RUN_EFFORT=""
   while [ $# -gt 0 ]; do
     case $1 in
       --agent) agent=${2:?--agent needs a name}; shift ;;
+      --model) RUN_MODEL=${2:?--model needs a name}; shift ;;
+      --effort) RUN_EFFORT=${2:?--effort needs a level}; shift ;;
       -r) repo=${2:?-r needs a repo}; shift ;;
       -s) switch=1 ;;
       -c) client=${2:?-c needs a client}; shift ;;
@@ -52,6 +57,9 @@ cmd_run() {
   task_id "$id"
   command -v tmux >/dev/null || die "run: tmux required"
   [ -n "$agent" ] || { run_agent; agent=$RUN_AGENT; }
+  # passed into agent config (codex -c): no quotes or spaces
+  [[ $RUN_MODEL =~ ^[A-Za-z0-9._:/-]*$ ]] || die "run: invalid model '$RUN_MODEL'"
+  [[ $RUN_EFFORT =~ ^[a-z]*$ ]] || die "run: invalid effort '$RUN_EFFORT'"
 
   local d name c b p rname="" rc="" path=""
   d="$TASKS_DIR/$id"
@@ -75,7 +83,7 @@ cmd_run() {
   RUN_PROMPT=$prompt
   # shellcheck disable=SC2034
   RUN_DIRS=$(awk -F'\t' -v p="$path" '$4 != p { print $4 }' "$d/repos.tsv"; printf '%s\n' "$d")
-  AGENT_HOOKS=0 AGENT_HOOKS_PENDING=0 AGENT_EXTRA_HANDLED=0 AGENT_SESSION_ID=""
+  AGENT_HOOKS=0 AGENT_HOOKS_PENDING=0 AGENT_EXTRA_HANDLED=0 AGENT_SESSION_ID="" AGENT_MODELS=0
   if [[ $agent != */* ]] && [ -f "$PLUGIN_DIR/agents/$agent.sh" ]; then
     # shellcheck source=/dev/null
     . "$PLUGIN_DIR/agents/$agent.sh"
@@ -83,6 +91,7 @@ cmd_run() {
   else
     AGENT_ARGV=("$agent")
   fi
+  [ "$AGENT_MODELS" = 1 ] || [ -z "$RUN_MODEL$RUN_EFFORT" ] || die "run: collie cannot pass --model/--effort to $agent"
   command -v "$agent" >/dev/null || die "agent command '$agent' not found"
   [ "$AGENT_EXTRA_HANDLED" = 1 ] || AGENT_ARGV+=(${extra[@]+"${extra[@]}"})
 
@@ -103,6 +112,7 @@ cmd_run() {
   if [ -n "$AGENT_SESSION_ID" ]; then
     log_agent_session "$id" "$run" "$AGENT_SESSION_ID" || return
   fi
+  [ -z "$RUN_MODEL$RUN_EFFORT" ] || log_event "$id" run_model "run=$run model=${RUN_MODEL:--} effort=${RUN_EFFORT:--}" || return
   # -s: show the new window (menu, dashboard); a script keeps its window
   if [ "$switch" = 1 ] && { [ -n "$client" ] || [ -n "${TMUX:-}" ]; }; then
     tmux switch-client ${client:+-c "$client"} -t "$wid" \; select-window -t "$wid" 2>/dev/null || true
@@ -185,6 +195,97 @@ cmd_handoff() {
   cmd_run "$id" --agent "$agent" -r "$repo" -p "$prompt"
   log_event "$id" run_handoff "from=$from to=$RUN_STARTED source=$source_agent agent=$agent repo=$repo packet=${packet##*/}"
   printf '%s\n' "$packet"
+}
+
+# The collie run of task $1 that send types into, as "run<TAB>agent<TAB>state
+# <TAB>window": run $2 if given, else the one live run (of repo $3 if given).
+# Agents started by hand are never targets. Prints "none", "many <runs>" or
+# "nosuch" instead when there is no such run or no single one.
+send_target() { # id run repo
+  local wins=""
+  ! has_session "$1" || wins=$(win_states -t "=$1" | awk -F'\t' '$3 != "-" { print $3 "\t" $4 "\t" $5 "\t" $2 }')
+  awk -F'\t' -v want="$2" -v repo="$3" '
+    function kv(k,  a, i, n) {
+      n = split($3, a, " ")
+      for (i = 1; i <= n; i++) if (index(a[i], k "=") == 1) return substr(a[i], length(k) + 2)
+    }
+    FNR == NR { if ($1 != "") { line[$1] = $0; st[$1] = $3; order[++m] = $1 }; next }
+    $2 == "run_started" { r = kv("run"); known[r] = 1; rp[r] = kv("repo"); ag[r] = kv("agent") }
+    END {
+      if (want != "") {
+        if (!(want in known)) print "nosuch"
+        else print (want in line ? line[want] : want "\t" ag[want] "\texited\t-")
+        exit
+      }
+      for (i = 1; i <= m; i++) {
+        r = order[i]
+        if (st[r] == "exited" || (repo != "" && rp[r] != repo)) continue
+        c++; pick = line[r]; runs = runs " " r
+      }
+      print (c == 1 ? pick : c ? "many" runs : "none")
+    }' - "$TASKS_DIR/$1/events.log" <<<"$wins"
+}
+
+# Types text into the agent of a collie run while it is idle or waiting, and
+# logs the first line. Exit 2: the agent is working; 3: no live run.
+cmd_send() {
+  local id="" repo="" run="" file="" wait=0 text="" args=() t agent st win pane first
+  while [ $# -gt 0 ]; do
+    case $1 in
+      -r) repo=${2:?-r needs a repo}; shift ;;
+      --run) run=${2:-}; shift ;;
+      -f) file=${2:?-f needs a file}; shift ;;
+      --wait) wait=1 ;;
+      --) shift; args+=("$@"); break ;;
+      -*) die "send: unknown option $1" ;;
+      *) if [ -z "$id" ]; then id=$1; else args+=("$1"); fi ;;
+    esac
+    shift
+  done
+  [ -n "$id" ] || die "usage: collie send <id> [-r repo | --run N] [--wait] <text>... | -f file"
+  task_id "$id"
+  [ -z "$run" ] || [[ $run =~ ^[1-9][0-9]*$ ]] || die "send: --run needs a run number"
+  [ -z "$run" ] || [ -z "$repo" ] || die "send: give -r or --run, not both"
+  if [ -n "$file" ]; then
+    [ ${#args[@]} -eq 0 ] || die "send: give text or -f, not both"
+    if [ "$file" = - ]; then
+      text=$(cat)
+    else
+      [ -f "$file" ] && [ -r "$file" ] || die "send: cannot read $file"
+      text=$(cat -- "$file")
+    fi
+  else
+    text=${args[*]-}
+  fi
+  [[ $text == *[![:space:]]* ]] || die "send: nothing to send"
+  command -v tmux >/dev/null || die "send: tmux required"
+  if [ -n "$repo" ] && ! awk -F'\t' -v r="$repo" '$1 == r { f = 1 } END { exit !f }' "$TASKS_DIR/$id/repos.tsv"; then
+    die "repo '$repo' is not part of task '$id'"
+  fi
+
+  while :; do
+    t=$(send_target "$id" "$run" "$repo")
+    case $t in
+      nosuch) die "send: task '$id' has no run $run" ;;
+      none) warn "send: no live agent run in task '$id'${repo:+ for repo $repo}; not sent"; exit 3 ;;
+      many*) die "send: several live runs in task '$id' (${t#many }); pick one with --run" ;;
+    esac
+    IFS=$TAB read -r run agent st win <<<"$t"
+    [ "$st" = working ] && [ "$wait" = 1 ] || break
+    sleep 1
+  done
+  case $st in
+    idle | waiting) ;;
+    working) warn "send: run $run ($agent) is working; not sent (--wait waits for its turn to end)"; exit 2 ;;
+    *) warn "send: run $run ($agent) has exited; not sent"; exit 3 ;;
+  esac
+  pane=$(agent_pane "$id" "$win")
+  [ -n "$pane" ] || { warn "send: the pane of run $run ($agent) is gone; not sent"; exit 3; }
+  type_into "$pane" "$text"
+  first=${text%%$'\n'*}
+  first=${first//$'\t'/ }
+  log_event "$id" sent "run=$run text=${first:0:80}"
+  echo "$id: sent to run $run ($agent) in $win"
 }
 
 # Restarts an agent started by hand in the task's session as a `collie run`
@@ -348,11 +449,58 @@ cmd__exec() { # id run argv...
     sleep 0.05
   done
   trap : INT
-  "$@" || code=$?
+  # `collie signal done` tells its run by these
+  COLLIE_TASK=$id COLLIE_RUN=$run "$@" || code=$?
   trap - INT
   log_event "$id" run_exited "run=$run code=$code"
   set_state "${TMUX_PANE:-}" exited
   exec "${SHELL:-/bin/sh}"
+}
+
+# Waits until a run reaches a state, or signals done and stops. Follows
+# restores. Exit 0 when reached, 1 on timeout, 2 when it cannot happen any
+# more (the run is gone).
+cmd_wait() {
+  local id="" run="" want=idle timeout=0 start=$SECONDS
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --run) run=${2:?--run needs a number}; shift ;;
+      --state) want=${2:?--state needs a state}; shift ;;
+      --done) want="done" ;;
+      --timeout) timeout=${2:?--timeout needs seconds}; shift ;;
+      -*) die "wait: unknown option $1" ;;
+      *) [ -z "$id" ] || die "wait: too many arguments"; id=$1 ;;
+    esac
+    shift
+  done
+  task_id "$id"
+  [[ $timeout =~ ^[0-9]+$ ]] || die "wait: --timeout needs seconds"
+  case $want in "done" | working | idle | waiting | exited) ;; *) die "wait: --state working|idle|waiting|exited" ;; esac
+  [ -n "$run" ] || run=$(awk -F'\t' '$2 == "run_started" { n++ } END { print n + 0 }' "$TASKS_DIR/$id/events.log")
+  [[ $run =~ ^[1-9][0-9]*$ ]] || die "wait: no run to wait for"
+  while :; do
+    run_resolve "$id" "$run"
+    run_state "$id" "$RUN_LIVE"
+    case $want in
+      "done") [ "$RUN_DONE" = 0 ] || [ "$RUN_STATE" = working ] || return 0 ;;
+      exited) [ "$RUN_STATE" != gone ] || return 0 ;;
+      *) [ "$RUN_STATE" != "$want" ] || return 0 ;;
+    esac
+    [ "$RUN_STATE" != gone ] || exit 2
+    [ "$timeout" = 0 ] || [ $((SECONDS - start)) -lt "$timeout" ] || exit 1
+    sleep 0.5
+  done
+}
+
+# Run by an agent in its run's window: logs that its turn is done.
+cmd_signal() {
+  local id run=${COLLIE_RUN:-}
+  [ $# -eq 1 ] && [ "$1" = "done" ] || die "usage: collie signal done"
+  task_id ""
+  [ -n "$run" ] || [ -z "${TMUX_PANE:-}" ] ||
+    run=$(tmux display-message -p -t "$TMUX_PANE" '#{@collie_run}' 2>/dev/null || true)
+  [[ $run =~ ^[1-9][0-9]*$ ]] || die "signal: not inside a collie run"
+  log_event "$id" run_signal "run=$run signal=done"
 }
 
 cmd_state() {
