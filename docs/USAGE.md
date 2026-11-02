@@ -76,18 +76,17 @@ stored (in TASK.md's frontmatter).
 
 ```mermaid
 stateDiagram-v2
-    [*] --> todo: collie new / spike
-    todo --> active: first collie run
-    active --> review: agents quiet, fresh REPORT.md
-    review --> active: agent works again or new run
-    todo --> done: collie done
-    active --> done: collie done / gc
-    review --> done: collie done / gc
-    todo --> archived: collie archive
-    active --> archived: collie archive
-    review --> archived: collie archive
-    done --> [*]
-    archived --> [*]
+    state "open (derived on every ls / dash)" as open {
+        [*] --> todo
+        todo --> active: collie run (or new --run)
+        active --> review: no agent working or waiting,<br/>REPORT.md written since the last run started
+        review --> active: an agent works or waits again,<br/>or a new run (run, handoff, adopt, restore)
+    }
+    [*] --> open: collie new / spike
+    open --> done: collie done / gc
+    open --> archived: collie archive
+    done --> open: collie reopen
+    archived --> open: collie reopen
 ```
 
 | Status | Means | You usually |
@@ -108,16 +107,22 @@ skips the rest.
 
 ```mermaid
 stateDiagram-v2
-    [*] --> working: collie run (with prompt)
-    [*] --> idle: collie run -p ''
-    working --> waiting: asks for permission / input
-    waiting --> working: you answer
-    working --> idle: turn finished
-    idle --> working: you send a prompt
-    working --> exited: agent quits
-    waiting --> exited
-    idle --> exited
-    exited --> unknown: session gone
+    [*] --> working: collie run with a prompt,<br/>or any run of an agent without hooks
+    [*] --> idle: collie run -p '', adopt, restore<br/>(agent with hooks)
+    working --> waiting: hook - asks for permission or input
+    waiting --> working: hook - you answer, tool runs
+    working --> idle: hook - turn ends<br/>no hooks - 30s without output
+    waiting --> idle: hook - turn ends or interrupted
+    idle --> working: hook - prompt submitted<br/>no hooks - output again
+    working --> exited: agent quits, or its window closes
+    waiting --> exited: agent quits, or its window closes
+    idle --> exited: agent quits, or its window closes
+    working --> unknown: session gone, no exit logged
+    waiting --> unknown: session gone, no exit logged
+    idle --> unknown: session gone, no exit logged
+    exited --> unknown: session gone, window was closed<br/>before an exit was logged
+    exited --> [*]: exit logged, window closed
+    unknown --> [*]: collie restore (resumes it as a new run)
 ```
 
 | State | Notifies? | Source |
