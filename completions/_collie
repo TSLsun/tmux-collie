@@ -35,6 +35,7 @@ _collie() {
     'set:set priority or title'
     'run:start an agent'
     'handoff:continue another agent run with preserved context'
+    'send:type into an idle agent run'
     'adopt:restart an agent started by hand under collie run'
     'restore:restart agents lost with the tmux server'
     'wait:block until a run reaches a state or signals done'
@@ -75,6 +76,7 @@ _collie() {
     reopen) compadd -- --no-window; _collie_tasks -a ;;
     sync | restore) compadd -- -n; _collie_tasks ;;
     handoff) compadd -- --from --agent --note -r; _collie_tasks ;;
+    send) compadd -- -r --run --wait -f; _collie_tasks ;;
     show | review) _collie_tasks -a ;;
     run) compadd -- --agent --model --effort -r -p -s; _collie_tasks ;;
     add | edit | go | adopt | done | archive) _collie_tasks ;;

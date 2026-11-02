@@ -3,6 +3,8 @@
 Diagrams and tables for how a task moves from `collie new` to `done`. The
 [README](https://github.com/TSLsun/tmux-collie#readme) has every flag; [DESIGN.md](DESIGN.md) has the reasons.
 
+The dashboard requires fzf 0.73 or newer: earlier releases can drop background action reloads and leave completed tasks in the list.
+
 ## 1. The everyday loop
 
 ```mermaid
@@ -76,18 +78,17 @@ stored (in TASK.md's frontmatter).
 
 ```mermaid
 stateDiagram-v2
-    [*] --> todo: collie new / spike
-    todo --> active: first collie run
-    active --> review: agents quiet, fresh REPORT.md
-    review --> active: agent works again or new run
-    todo --> done: collie done
-    active --> done: collie done / gc
-    review --> done: collie done / gc
-    todo --> archived: collie archive
-    active --> archived: collie archive
-    review --> archived: collie archive
-    done --> [*]
-    archived --> [*]
+    state "open (derived on every ls / dash)" as open {
+        [*] --> todo
+        todo --> active: collie run (or new --run)
+        active --> review: no agent working or waiting,<br/>REPORT.md written since the last run started
+        review --> active: an agent works or waits again,<br/>or a new run (run, handoff, adopt, restore)
+    }
+    [*] --> open: collie new / spike
+    open --> done: collie done / gc
+    open --> archived: collie archive
+    done --> open: collie reopen
+    archived --> open: collie reopen
 ```
 
 | Status | Means | You usually |
@@ -104,20 +105,48 @@ changes). `gc` runs `done` for every task whose branches all moved past their
 start and are merged into base (squash merges count with git >= 2.38), and
 skips the rest.
 
+Each worktree they remove or skip is listed with a bucket and its size
+(`du -sk`), then the total reclaimed:
+
+| Bucket | Meaning | `done` | `archive` |
+|---|---|---|---|
+| `wip:N` | N tracked files with uncommitted edits | refuses | refuses |
+| `scratch:N` | N untracked files that are not ignored | refuses | refuses |
+| `unmerged` | branch has commits not in base | refuses | removes (branch kept) |
+| `clean` | none of the above | removes | removes |
+
+```text
+$ collie gc -n
+fix-retry
+  A  clean  1.2M
+docs-tweak
+  A  scratch:1  48K
+would reclaim 1.2M (wip/scratch are skipped)
+```
+
+`--force` removes every bucket. The report changes nothing: `gc` removes
+exactly what `done` would.
+
 ## 4. Agent state (per run)
 
 ```mermaid
 stateDiagram-v2
-    [*] --> working: collie run (with prompt)
-    [*] --> idle: collie run -p ''
-    working --> waiting: asks for permission / input
-    waiting --> working: you answer
-    working --> idle: turn finished
-    idle --> working: you send a prompt
-    working --> exited: agent quits
-    waiting --> exited
-    idle --> exited
-    exited --> unknown: session gone
+    [*] --> working: collie run with a prompt,<br/>or any run of an agent without hooks
+    [*] --> idle: collie run -p '', adopt, restore<br/>(agent with hooks)
+    working --> waiting: hook - asks for permission or input
+    waiting --> working: hook - you answer, tool runs
+    working --> idle: hook - turn ends<br/>no hooks - 30s without output
+    waiting --> idle: hook - turn ends or interrupted
+    idle --> working: hook - prompt submitted<br/>no hooks - output again
+    working --> exited: agent quits, or its window closes
+    waiting --> exited: agent quits, or its window closes
+    idle --> exited: agent quits, or its window closes
+    working --> unknown: session gone, no exit logged
+    waiting --> unknown: session gone, no exit logged
+    idle --> unknown: session gone, no exit logged
+    exited --> unknown: session gone, window was closed<br/>before an exit was logged
+    exited --> [*]: exit logged, window closed
+    unknown --> [*]: collie restore (resumes it as a new run)
 ```
 
 | State | Notifies? | Source |
@@ -213,6 +242,7 @@ launch keeps its packet for diagnosis without recording a successful handoff.
 | Edit TASK.md | `collie edit` | `e` | `ctrl-e` or `?` `e` |
 | Run agent | `collie run` | `r` | `ctrl-r` or `?` `r` |
 | Continue with another agent | `collie handoff` | — | `u`, then `h` on the run (note in `$EDITOR`) |
+| Type into an idle agent | `collie send` | — | — |
 | Adopt hand-started agent | `collie adopt` | `a` | `?` `a` |
 | Restore agents after the server died | `collie restore` | — | — |
 | Wait for a run's state or done signal | `collie wait` | — | — |
@@ -245,6 +275,7 @@ keys keep filtering; `?` lists every action.
 | Add a repo later | `collie add <id> -r infra` |
 | A second agent on the same task | `collie run <id> --agent codex [-r repo]` (one window per run) |
 | Continue another agent's work with explicit context | `collie handoff <id> --from <run> --agent <claude\|codex> --note <file>` |
+| Send a follow-up, fix or pause request to a running agent | `collie send <id> [--run N] [--wait] <text>` or `-f <file>` (refuses while it works: exit 2) |
 | The agent to push, open a PR and watch CI | `collie new --ship` or `set -g @collie-ship on` |
 | Move uncommitted experiments out of the way | `collie spike <id>` inside the worktree (new `exp/<id>` task, tracked changes only) |
 | Keep `exp/*` off the remote | link `hooks/pre-push` (see README) |

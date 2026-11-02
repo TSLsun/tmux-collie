@@ -31,6 +31,7 @@ tasks:
 agents:
   run [<id>]          start an agent in a new window of the task session
   handoff [<id>]      continue a claude/codex run with the other agent
+  send <id> <text>    type into an idle or waiting agent run and submit
   adopt [<id>] [-y]   restart a hand-started agent under collie run
   restore [<id>] [-n] restart the agents lost with the tmux server
   wait [<id>]         block until a run reaches a state or signals done
@@ -103,6 +104,7 @@ changes   creates branch + worktree   new, add, spike, reopen (worktree only)
           creates/rebuilds session    new, go, reopen, spike
           starts agent windows        run, handoff, adopt, restore,
                                       new --run
+          types into agent panes      send, sync (conflicts)
           commits/pushes              sync (merge commit, push if upstream)
           fetches origin              new, add, done, gc, sync
           edits TASK.md               set, edit, done/archive/reopen (status)
@@ -289,6 +291,8 @@ usage: collie gc [-n]
 Run `done` on every live task whose branches all moved past their start and
 are merged into base (squash merges count with git >= 2.38); skip the rest.
 Fetches origin first. -n lists them without finishing (still fetches).
+Each worktree is shown with a bucket (wip:N, scratch:N, unmerged, clean)
+and its size, then the total reclaimed (-n: what clean ones would free).
 EOF
       ;;
     sync)
@@ -375,6 +379,29 @@ link between both runs. The source agent keeps running: stop it first if
 edits could conflict. No branches are merged.
 
   collie handoff fix-retry --from 1 --agent codex --note handoff.md
+EOF
+      ;;
+    send)
+      cat <<'EOF'
+usage: collie send <id> [-r repo | --run N] [--wait] <text>... | -f file
+
+Type text into the agent of a `collie run` and press Enter, when it is idle
+or waiting. Words are joined with spaces; several lines are pasted as one
+(bracketed when the agent supports it), then submitted. The target is the
+task's only live run; with several, pick one. Never types into an agent
+started by hand or the shell left after a run exits.
+
+  -r repo         the only live run in that repo
+  --run N         run N (numbers from `collie show`)
+  --wait          while the agent is working, wait for its turn to end
+  -f file         send the file's contents (-: stdin)
+
+Logs a `sent` event with the run and the text's first line.
+Exit 0 sent; 2 the agent is working (not sent); 3 no live run (exited or
+gone); 1 other errors, e.g. several live runs without --run.
+
+  collie send fix-retry 'CI fails on macOS: see the log in the PR'
+  collie send fix-retry --run 2 --wait -f review.md
 EOF
       ;;
     adopt)
@@ -480,7 +507,7 @@ EOF
 }
 
 # the public commands, in overview order
-HELP_COMMANDS='new add ls show history edit go dash set review spike gc sync done archive reopen run handoff adopt restore wait signal state status doctor repos workspaces'
+HELP_COMMANDS='new add ls show history edit go dash set review spike gc sync done archive reopen run handoff send adopt restore wait signal state status doctor repos workspaces'
 
 cmd_help() {
   local c
