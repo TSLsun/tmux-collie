@@ -58,7 +58,7 @@ it by hand. `done` and `archived` come from closing the task.
 ## Install
 
 Requires bash 3.2+ (macOS `/bin/bash` is fine), git and tmux 3.2+. Optional:
-[fzf](https://github.com/junegunn/fzf) 0.63+ for `dash` and the pickers,
+[fzf](https://github.com/junegunn/fzf) 0.73+ for `dash` and the pickers,
 lazygit, and at least one coding agent CLI. With
 [tpm](https://github.com/tmux-plugins/tpm), add to `~/.tmux.conf`:
 
@@ -248,7 +248,7 @@ HANDOFF.md  NOTE.md  TASK.md</pre>
 ### History
 
 Finished tasks, newest first, with their branches and PR. A pattern searches
-their `TASK.md` and `REPORT.md`; on a terminal it is an fzf picker that opens
+their `TASK.md`, `REPORT.md` and decision log; on a terminal it is an fzf picker that opens
 `collie show`.
 
 </div>

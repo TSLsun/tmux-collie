@@ -1,5 +1,5 @@
 # shellcheck shell=bash
-# Sourced by bin/collie: new, add, ls, show, edit, go, set.
+# Sourced by bin/collie: new, add, ls, show, log, edit, go, set.
 
 cmd_new() {
   local id="" specs="" ws="" type=feat title="" from="" edit=0 window=1
@@ -242,6 +242,7 @@ cmd_show() {
   echo "runs:"
   task_runs "$id" | sed 's/^/  /'
   echo
+  last_decision "$d"
   echo "events:"
   tail -n 5 "$d/events.log" | sed 's/^/  /'
   [ "$fin" -eq 1 ] || return 0
@@ -257,7 +258,8 @@ cmd_show() {
 
 # Finished tasks, newest first, tab-separated: finish date, status, id, title,
 # branches, PR (#n of the first pull/merge request URL in REPORT.md). A pattern
-# keeps the tasks whose TASK.md or REPORT.md contains it, ignoring case.
+# keeps the tasks whose TASK.md, REPORT.md or decisions.tsv contains it,
+# ignoring case.
 history_rows() { # [pattern]
   local d st title bs name b rep fin _
   for d in "$TASKS_DIR"/*; do
@@ -265,7 +267,7 @@ history_rows() { # [pattern]
     fm_get "$d/TASK.md" status
     st=$FM
     case $st in done | archived) ;; *) continue ;; esac
-    [ -z "${1:-}" ] || grep -qsiF -- "$1" "$d/TASK.md" "$d/REPORT.md" || continue
+    [ -z "${1:-}" ] || grep -qsiF -- "$1" "$d/TASK.md" "$d/REPORT.md" "$d/decisions.tsv" || continue
     fm_get "$d/TASK.md" title
     title=$FM
     bs=""
@@ -333,6 +335,38 @@ cmd_history() {
   printf '%s\n' "$rows" | fzf --delimiter='\t' --with-nth=2.. --no-sort --prompt='history> ' --header='enter: show' \
     --preview="$self _preview {1}" --preview-window="$PREVIEW" \
     --bind="enter:execute($self show {1} | sh -c \"\${PAGER:-less}\")" >/dev/null || true
+}
+
+# Append a row to the task's decision trail, decisions.tsv in the record:
+# ts, run, phase, decision, why, evidence, result. Never rewritten; a
+# correction is a new row. Cells lose tabs and newlines, and a leading
+# = + - @ gets a ' so spreadsheets don't read a formula.
+cmd_log() {
+  local id f row="" cell info run=- tmp
+  [ $# -eq 5 ] || die "usage: collie log <phase> <decision> <why> <evidence> <result>"
+  task_id ""
+  f="$TASKS_DIR/$id/decisions.tsv"
+  # the run: the agent window's own, if this pane is one of the task's
+  if [ -n "${TMUX_PANE:-}" ]; then
+    info=$(tmux display-message -p -t "$TMUX_PANE" '#{@collie_task}|#{@collie_run}' 2>/dev/null) || info=""
+    [ "${info%%|*}" != "$id" ] || [ -z "${info#*|}" ] || run=${info#*|}
+  fi
+  for cell in "$@"; do
+    cell=${cell//$'\t'/ }
+    cell=${cell//$'\r'/ }
+    cell=${cell//$'\n'/ }
+    case $cell in [-=+@]*) cell="'$cell" ;; esac
+    row="$row$TAB$cell"
+  done
+  # the header lands whole or not at all: ln refuses to replace a racing one
+  if [ ! -e "$f" ]; then
+    tmp="$f.$$"
+    printf 'ts\trun\tphase\tdecision\twhy\tevidence\tresult\n' >"$tmp" &&
+      { ln "$tmp" "$f" 2>/dev/null || true; }
+    rm -f "$tmp"
+  fi
+  stamp_utc %Y-%m-%dT%H:%M:%SZ
+  printf '%s\t%s%s\n' "$NOW" "$run" "$row" >>"$f"
 }
 
 # $EDITOR may carry arguments (EDITOR='code --wait'); like git, let sh split it.
