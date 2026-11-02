@@ -1,28 +1,48 @@
 # shellcheck shell=bash
 # Sourced by bin/collie: dashboard, menu and popups.
 
-# Each task's PRs, one per repo with one: <task>/pr.tsv holds
-# "repo<TAB>number<TAB>open|draft|merged|closed" lines. gh is slow and needs
-# the network, so the dashboard only reads the file and refreshes it in the
-# background once it is PR_TTL minutes old; sync and gc refresh it inline.
+# Each task's PRs: <task>/pr.tsv holds repo<TAB>number<TAB>state lines.
+# gh is slow and needs the network, so the dashboard reads the cache and
+# refreshes it in the background once it is PR_TTL minutes old; sync and gc
+# refresh it inline.
 PR_TTL=5
 
-# Refreshes <task>/pr.tsv; a repo whose lookup fails keeps its last entry.
+# Refreshes <task>/pr.tsv; a failed repository lookup keeps all its old rows.
+# A cross-branch restoration is admitted only when its body explicitly says
+# "restore ... from #N" on one line, referring to a PR on the task branch.
 cmd__pr() { # id
-  local d="$TASKS_DIR/$1" name c b p line out=""
+  local d="$TASKS_DIR/$1" name c b p line related number state out="" failed
   command -v gh >/dev/null || return 0
   [ -f "$d/repos.tsv" ] || return 0
   while IFS=$TAB read -r name c b p; do
-    # folders have no branch
     [ "$c" != - ] || continue
-    [ -d "$p" ] || continue
-    # newest first; a draft is open too
-    if ! line=$(cd "$p" && gh pr list --state all --head "$b" --limit 1 --json number,state,isDraft \
+    failed=0
+    if [ ! -d "$p" ] || ! line=$(cd "$p" && gh pr list --state all --head "$b" --limit 1000 --json number,state,isDraft \
       --jq '.[] | "\(.number)\t\(if .isDraft and .state == "OPEN" then "draft" else .state | ascii_downcase end)"' \
       </dev/null 2>/dev/null); then
+      failed=1
+    else
+      related=""
+      while IFS=$TAB read -r number state; do
+        [ -n "$number" ] || continue
+        if ! state=$(cd "$p" && gh api --paginate -X GET search/issues \
+          -F "q=repo:{owner}/{repo} is:pr \"$number\" in:body" -F per_page=100 \
+          --jq "if .incomplete_results or .total_count > 1000 then error(\"incomplete search\") else .items[] | select((.body // \"\") | test(\"(?i)restore[^\\\\n]* from #$number([^0-9]|$)\")) | \"\\(.number)\\t\\(if .pull_request.merged_at then \"merged\" elif .draft and .state == \"open\" then \"draft\" else .state end)\" end" \
+          </dev/null 2>/dev/null); then
+          failed=1
+          break
+        fi
+        [ -z "$state" ] || related="$related$state"$'\n'
+      done <<<"$line"
+      [ -z "$related" ] || line="$line"$'\n'"${related%$'\n'}"
+    fi
+    if [ "$failed" -eq 1 ]; then
       line=$(awk -F'\t' -v n="$name" '$1 == n { print $2 "\t" $3 }' "$d/pr.tsv" 2>/dev/null) || line=""
     fi
-    [ -z "$line" ] || out="$out$name$TAB$line"$'\n'
+    if [ -n "$line" ]; then
+      line=$(printf '%s\n' "$line" | awk -F'\t' '!seen[$1]++')
+      while IFS= read -r state; do out="$out$name$TAB$state"$'\n'; done <<<"$line"
+    fi
   done <"$d/repos.tsv"
   printf '%s' "$out" >"$d/pr.tsv.$$" && mv "$d/pr.tsv.$$" "$d/pr.tsv"
 }
@@ -229,10 +249,15 @@ cmd__rows() { # [group]
       n++; id[n] = $1; st[n] = $7 == "-" ? "working" : $7; pr[n] = $3
       you = $7 != "-" && $7 != "start"
       gl[n] = you ? e "31m●" : $7 == "-" ? e "33m◐" : e "2m○"
-      k = $8 == "-" ? 0 : split($8, a, " "); b = ""; ql[n] = k ? -1 : 0
+      k = $8 == "-" ? 0 : split($8, a, " "); b = ""; ql[n] = 0; shown = 0
       for (i = 1; i <= k; i++) {
-        split(a[i], x, ":"); b = b (i > 1 ? " " : "") e (x[2] in qc ? qc[x[2]] : "0") "m" x[1] e "0m"; ql[n] += length(x[1]) + 1
+        split(a[i], x, ":")
+        suffix = k > i ? " +" (k - i) : ""
+        if (shown && ql[n] + 1 + length(x[1]) + length(suffix) > 24) break
+        b = b (shown ? " " : "") e (x[2] in qc ? qc[x[2]] : "0") "m" x[1] e "0m"
+        ql[n] += (shown ? 1 : 0) + length(x[1]); shown++
       }
+      if (shown < k) { suffix = " +" (k - shown); b = b suffix; ql[n] += length(suffix) }
       pq[n] = b
       # ⚡ takes two columns
       cf[n] = $9 == "-" || $9 == "" ? "" : e "33m⚡" $9 e "0m"; cl[n] = cf[n] == "" ? 0 : 2 + length($9)
@@ -926,7 +951,12 @@ cmd__preview() {
     fi
     default_base "$c"
     base=$BASE
-    a=$(awk -F'\t' -v n="$name" '$1 == n { print "  #" $2 " " $3 }' "$d/pr.tsv" 2>/dev/null) || a=""
+    a=$(awk -F'\t' -v n="$name" '
+      $1 == n {
+        s = s (s == "" ? "" : ", ") "#" $2 " " $3
+      }
+      END { print s }' "$d/pr.tsv" 2>/dev/null) || a=""
+    [ -z "$a" ] || a="  $a"
     printf '  %s  %s%s  %s ahead, %s dirty  %s\n' "$name" "$b" "$a" \
       "$(git --git-dir="$c" rev-list --count "$base..refs/heads/$b" 2>/dev/null || echo '?')" \
       "$(git -C "$p" status --porcelain | wc -l | tr -d ' ')" \
