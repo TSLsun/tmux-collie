@@ -130,9 +130,12 @@ def correctness_gate(output, fix, env):
     try:
         stock = observe(['bats', '--tap', '--timing', str(regression)],
                         output / 'regression-stock.tap', env, timeout=180)
+        # Bats/Bash versions can report adjacent assertion lines. Require the
+        # exact pinned regression's red/green outcomes, not formatter wording.
         if not (stock['exit_status'] == 1 and stock['tests'] == 1
                 and stock['failures'] == 1 and stock['skips'] == 0
-                and 'timed out waiting for' in (output / 'regression-stock.tap').read_text()):
+                and 'not ok 1 run allocation: false-success mkdir'
+                in (output / 'regression-stock.tap').read_text()):
             raise RuntimeError('stock allocator did not fail the expected regression assertion')
     finally:
         regression.unlink()
