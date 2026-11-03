@@ -27,8 +27,10 @@ _collie() {
     'new:create a task'
     'add:attach repos to a task'
     'ls:list tasks'
+    'brief:what waits on you'
     'show:show a task'
     'history:browse finished tasks'
+    'log:append a row to the decision log'
     'edit:edit TASK.md in $EDITOR'
     'go:switch to a task session'
     'dash:dashboard'
@@ -36,9 +38,13 @@ _collie() {
     'run:start an agent'
     'handoff:continue another agent run with preserved context'
     'send:type into an idle agent run'
+    'pause:ask an idle agent run to pause'
     'adopt:restart an agent started by hand under collie run'
     'restore:restart agents lost with the tmux server'
+    'wait:block until a run reaches a state or signals done'
+    'signal:agent signals its turn is done'
     'review:per-repo commits and diffs'
+    'verify:run TASK.md Verify blocks in each worktree'
     'spike:branch the current worktree into an exp/ task'
     'gc:finish merged tasks'
     'sync:merge base into active task branches'
@@ -61,10 +67,13 @@ _collie() {
     -w) _collie_workspaces; return ;;
     -t) compadd feat fix chore docs refactor test exp; return ;;
     --agent) compadd claude codex gemini omp; return ;;
+    --state) compadd working idle waiting exited; return ;;
     --after) _collie_tasks; return ;;
   esac
   case ${words[2]} in
     state) compadd working waiting idle exited ;;
+    signal) compadd done ;;
+    wait) compadd -- --run --done --state --timeout; _collie_tasks ;;
     set) compadd -S '=' priority title after; _collie_tasks ;;
     ls) compadd -- -a ;;
     new) compadd -- -r -w -t -m --title --from --edit --no-window --ship --no-ship --run --agent -p --after ;;
@@ -73,8 +82,11 @@ _collie() {
     sync | restore) compadd -- -n; _collie_tasks ;;
     handoff) compadd -- --from --agent --note -r; _collie_tasks ;;
     send) compadd -- -r --run --wait -f; _collie_tasks ;;
+    pause) compadd -- -r --run -p -f; _collie_tasks ;;
     show | review) _collie_tasks -a ;;
-    add | edit | go | run | adopt | done | archive) _collie_tasks ;;
+    verify) compadd -- -r; _collie_tasks ;;
+    run) compadd -- --agent --model --effort -r -p -s; _collie_tasks ;;
+    add | edit | go | adopt | done | archive) _collie_tasks ;;
     help) compadd concepts workflows all; _describe command cmds ;;
   esac
 }

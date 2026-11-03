@@ -1,28 +1,63 @@
 # shellcheck shell=bash
 # Sourced by bin/collie: dashboard, menu and popups.
 
-# Each task's PRs, one per repo with one: <task>/pr.tsv holds
-# "repo<TAB>number<TAB>open|draft|merged|closed" lines. gh is slow and needs
-# the network, so the dashboard only reads the file and refreshes it in the
-# background once it is PR_TTL minutes old; sync and gc refresh it inline.
+# Each task's PRs: <task>/pr.tsv holds repo<TAB>number<TAB>state<TAB>CI
+# lines. CI is pass, fail, pending or -; older caches lack the field. gh is
+# slow and needs the network, so the dashboard reads the cache and refreshes it
+# in the background once it is PR_TTL minutes old; sync and gc refresh inline.
 PR_TTL=5
 
-# Refreshes <task>/pr.tsv; a repo whose lookup fails keeps its last entry.
+# Refreshes <task>/pr.tsv; a failed repository lookup keeps all its old rows.
+# A cross-branch restoration is admitted only when its body explicitly says
+# "restore ... from #N" on one line, referring to a PR on the task branch.
 cmd__pr() { # id
-  local d="$TASKS_DIR/$1" name c b p line out=""
+  local d="$TASKS_DIR/$1" name c b p line related number state candidate detail out="" failed filter
+  filter='"\(.number)\t\(if .isDraft and .state == "OPEN" then "draft" else .state | ascii_downcase end)\t\(
+    [.statusCheckRollup[]? | if (.conclusion // "") != "" then .conclusion else (.state // .status) end]
+    | if length == 0 then "-"
+      elif any(. == "FAILURE" or . == "ERROR" or . == "CANCELLED" or . == "TIMED_OUT" or . == "ACTION_REQUIRED" or . == "STARTUP_FAILURE") then "fail"
+      elif all(. == "SUCCESS" or . == "NEUTRAL" or . == "SKIPPED") then "pass"
+      else "pending" end)"'
   command -v gh >/dev/null || return 0
   [ -f "$d/repos.tsv" ] || return 0
   while IFS=$TAB read -r name c b p; do
-    # folders have no branch
     [ "$c" != - ] || continue
-    [ -d "$p" ] || continue
-    # newest first; a draft is open too
-    if ! line=$(cd "$p" && gh pr list --state all --head "$b" --limit 1 --json number,state,isDraft \
-      --jq '.[] | "\(.number)\t\(if .isDraft and .state == "OPEN" then "draft" else .state | ascii_downcase end)"' \
+    failed=0
+    if [ ! -d "$p" ] || ! line=$(cd "$p" && gh pr list --state all --head "$b" --limit 1000 --json number,state,isDraft,statusCheckRollup \
+      --jq ".[] | $filter" \
       </dev/null 2>/dev/null); then
-      line=$(awk -F'\t' -v n="$name" '$1 == n { print $2 "\t" $3 }' "$d/pr.tsv" 2>/dev/null) || line=""
+      failed=1
+    else
+      related=""
+      while IFS=$TAB read -r number state; do
+        [ -n "$number" ] || continue
+        if ! state=$(cd "$p" && gh api --paginate -X GET search/issues \
+          -F "q=repo:{owner}/{repo} is:pr \"$number\" in:body" -F per_page=100 \
+          --jq "if .incomplete_results or .total_count > 1000 then error(\"incomplete search\") else .items[] | select((.body // \"\") | test(\"(?i)restore[^\\\\n]* from #$number([^0-9]|$)\")) | .number end" \
+          </dev/null 2>/dev/null); then
+          failed=1
+          break
+        fi
+        while IFS= read -r candidate; do
+          [ -n "$candidate" ] || continue
+          if ! detail=$(cd "$p" && gh pr view "$candidate" --json number,state,isDraft,statusCheckRollup \
+            --jq "$filter" </dev/null 2>/dev/null); then
+            failed=1
+            break
+          fi
+          related="$related$detail"$'\n'
+        done <<<"$state"
+        [ "$failed" -eq 0 ] || break
+      done <<<"$line"
+      [ -z "$related" ] || line="$line"$'\n'"${related%$'\n'}"
     fi
-    [ -z "$line" ] || out="$out$name$TAB$line"$'\n'
+    if [ "$failed" -eq 1 ]; then
+      line=$(awk -F'\t' -v n="$name" '$1 == n { sub(/^[^\t]*\t/, ""); print }' "$d/pr.tsv" 2>/dev/null) || line=""
+    fi
+    if [ -n "$line" ]; then
+      line=$(printf '%s\n' "$line" | awk -F'\t' '!seen[$1]++')
+      while IFS= read -r state; do out="$out$name$TAB$state"$'\n'; done <<<"$line"
+    fi
   done <"$d/repos.tsv"
   printf '%s' "$out" >"$d/pr.tsv.$$" && mv "$d/pr.tsv.$$" "$d/pr.tsv"
 }
@@ -119,7 +154,7 @@ dash_rows() {
       else if ($7 == "-") r = 5
       else if ($7 ~ /^blocked/) r = 7
       f = tasks "/" $1 "/pr.tsv"; s = ""
-      while ((getline l <f) > 0) if (split(l, x, "\t") == 3) s = s (s == "" ? "" : " ") "#" x[2] ":" x[3]
+      while ((getline l <f) > 0) if (split(l, x, "\t") >= 3) s = s (s == "" ? "" : " ") "#" x[2] ":" x[3]
       close(f)
       print r "\t" $0 "\t" (s == "" ? "-" : s) "\t" ($1 in cf ? cf[$1] : "-")
     }' <<<"$rows" | sort -t "$TAB" -k1,1n -k4,4 -k2,2 | cut -f2-
@@ -230,10 +265,15 @@ cmd__rows() { # [group]
       n++; id[n] = $1; st[n] = $7 == "-" ? "working" : $7 ~ /^blocked/ ? "blocked" : $7; pr[n] = $3
       you = $7 != "-" && $7 != "start" && st[n] != "blocked"
       gl[n] = you ? e "31m●" : $7 == "-" ? e "33m◐" : e "2m○"
-      k = $8 == "-" ? 0 : split($8, a, " "); b = ""; ql[n] = k ? -1 : 0
+      k = $8 == "-" ? 0 : split($8, a, " "); b = ""; ql[n] = 0; shown = 0
       for (i = 1; i <= k; i++) {
-        split(a[i], x, ":"); b = b (i > 1 ? " " : "") e (x[2] in qc ? qc[x[2]] : "0") "m" x[1] e "0m"; ql[n] += length(x[1]) + 1
+        split(a[i], x, ":")
+        suffix = k > i ? " +" (k - i) : ""
+        if (shown && ql[n] + 1 + length(x[1]) + length(suffix) > 24) break
+        b = b (shown ? " " : "") e (x[2] in qc ? qc[x[2]] : "0") "m" x[1] e "0m"
+        ql[n] += (shown ? 1 : 0) + length(x[1]); shown++
       }
+      if (shown < k) { suffix = " +" (k - shown); b = b suffix; ql[n] += length(suffix) }
       pq[n] = b
       # ⚡ takes two columns
       cf[n] = $9 == "-" || $9 == "" ? "" : e "33m⚡" $9 e "0m"; cl[n] = cf[n] == "" ? 0 : 2 + length($9)
@@ -773,19 +813,27 @@ cmd__actions() { # id key
 # Menu for prefix <@collie-key>, built per session: task actions only inside a
 # task's session (see collie.tmux).
 cmd__menu() { # session [client]
-  local C="$PLUGIN_DIR/bin/collie" T=$1 popup="display-popup -E -w 90% -h 85%" items
+  local C="$PLUGIN_DIR/bin/collie" T=$1 popup="display-popup -E -w 90% -h 85%" items k l a
   items=(dashboard h "$popup '$C _popup $C dash'"
     lazygit g "$popup -d '#{pane_current_path}' '$C _popup lazygit'"
     terminal t "$popup -d '#{pane_current_path}'"
     "new task" c "display-popup -EE -w 70 -h 15 -d '#{pane_current_path}' '$C new'")
   if valid_id "$T" && [ -f "$TASKS_DIR/$T/TASK.md" ]; then
-    items+=("edit task" e "$popup '$C _popup $C edit $T'"
-      review v "$popup '$C _popup \"$C review $T | less -R\"'"
-      ""
-      "run agent" r "run-shell '$C run $T -s${2:+ -c $2}'"
-      "adopt agent" a "display-popup -E -w 90 -h 12 '$C _popup $C adopt $T'"
-      "done" d "confirm-before -p 'done $T? (y/n)' \"display-popup -E -w 90 -h 12 '$C _popup $C done $T'\""
-      archive x "confirm-before -p 'archive $T? (y/n)' \"display-popup -E -w 90 -h 12 '$C _popup $C archive $T'\"")
+    # the dashboard's task actions (action_items), same keys and labels;
+    # terminal and new task are the global items above
+    items+=("")
+    while read -r k l; do
+      case $k in
+        r) a="run-shell '$C run $T -s${2:+ -c $2}'" ;;
+        a) a="display-popup -E -w 90 -h 12 '$C _popup $C adopt $T'" ;;
+        e) a="$popup '$C _popup $C edit $T'" ;;
+        v) a="$popup '$C _popup \"$C review $T | less -R\"'" ;;
+        d | x) a="confirm-before -p '$l $T? (y/n)' \"display-popup -E -w 90 -h 12 '$C _popup $C $l $T'\"" ;;
+        s) a="confirm-before -p 'sync $T? (y/n)' \"display-popup -E -w 90 -h 20 '$C _popup -w $C sync $T'\"" ;;
+        *) continue ;;
+      esac
+      items+=("$l" "$k" "$a")
+    done < <(action_items "$T")
   else
     items+=("" "-not a collie task — use collie new" "" "")
   fi
@@ -820,10 +868,16 @@ cmd__dev() {
 }
 
 # Run a command line in a popup; on failure keep the popup open until a key.
-cmd__popup() {
-  local rc=0
+cmd__popup() { # [-w] command...
+  local rc=0 w=""
+  [ "${1:-}" != -w ] || { w=1 && shift; }
   (eval "$*") || rc=$?
-  [ "$rc" -eq 0 ] && return 0
+  if [ "$rc" -eq 0 ]; then
+    [ -n "$w" ] || return 0
+    printf '\n[press any key]'
+    read -rsn1 _ || true
+    return 0
+  fi
   printf '\n[collie: exit %s — press any key]' "$rc"
   read -rsn1 _ || true
   return "$rc"
@@ -872,7 +926,8 @@ run_preview() { # id run|window
 }
 
 # The task's title, status and priority, its live agents and last event's
-# age, the Objective, runs, and per repo its branch, PRs and progress.
+# age, the Objective, the last decision, runs, and per repo its branch, PRs
+# and progress.
 cmd__preview() {
   local id d name c b p base top title ids line a
   [ -z "${COLLIE_DASH:-}" ] || ! dash_panel "${1:-}" || return 0
@@ -897,6 +952,7 @@ cmd__preview() {
     line="$line${line:+ · }last event $a"
   fi
   [ -z "$line" ] || echo "$line"
+  [ ! -f "$d/RESUME.md" ] || printf 'resume note: %s\n' "$d/RESUME.md"
   case $STATUS in done | archived) printf 'finished %s\n' "$(finished_at "$id")" ;; esac
   echo
   echo "objective:"
@@ -907,6 +963,7 @@ cmd__preview() {
   echo
   a=$(dep_lines "$id")
   [ -z "$a" ] || printf '%s\n\n' "$a"
+  last_decision "$d"
   # the newest runs; ▸ marks the one enter goes to (see _target)
   a=$(run_history "$id")
   printf 'runs:%s\n' "$([ "$(grep -c . <<<"$a")" -le 5 ] || printf '  (newest 5 of %s; u: all)' "$(grep -c . <<<"$a")")"
@@ -914,6 +971,8 @@ cmd__preview() {
   [ -z "$a" ] || awk -F'\t' -v w="$(cut -f2 <<<"$top")" '
     NR <= 5 { print ($5 == w && w != "-" ? "▸ " : "  ") ($1 == "-" ? "-" : "#" $1) "  " $2 "  " $3 "  " $4 ($7 == "-" ? "" : "  " $7) }' <<<"$a"
   echo
+  a=$(verify_results "$id")
+  [ -z "$a" ] || printf 'verify:\n%s\n\n' "$a"
   echo "repos:"
   case $STATUS in done | archived)
     while IFS=$TAB read -r name c b p; do
@@ -941,7 +1000,12 @@ cmd__preview() {
     fi
     default_base "$c"
     base=$BASE
-    a=$(awk -F'\t' -v n="$name" '$1 == n { print "  #" $2 " " $3 }' "$d/pr.tsv" 2>/dev/null) || a=""
+    a=$(awk -F'\t' -v n="$name" '
+      $1 == n {
+        s = s (s == "" ? "" : ", ") "#" $2 " " $3
+      }
+      END { print s }' "$d/pr.tsv" 2>/dev/null) || a=""
+    [ -z "$a" ] || a="  $a"
     printf '  %s  %s%s  %s ahead, %s dirty  %s\n' "$name" "$b" "$a" \
       "$(git --git-dir="$c" rev-list --count "$base..refs/heads/$b" 2>/dev/null || echo '?')" \
       "$(git -C "$p" status --porcelain | wc -l | tr -d ' ')" \

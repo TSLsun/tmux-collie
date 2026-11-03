@@ -69,6 +69,9 @@ needs_of() { collie ls -a | awk -F'\t' -v id="$1" '$1 == id { print $7 }'; }
   # one unmerged PR keeps it blocked
   printf 'A\t76\tmerged\nB\t77\topen\n' >"$(task_dir b)/pr.tsv"
   [ "$(needs_of x)" = "blocked:b" ]
+  # CI field; a superseded closed PR beside the merged one does not block
+  printf 'A\t75\tclosed\t-\nA\t76\tmerged\tpass\n' >"$(task_dir b)/pr.tsv"
+  [ "$(needs_of x)" = start ]
 }
 
 @test "deps: archived, unknown and cyclic deps block without failing ls" {

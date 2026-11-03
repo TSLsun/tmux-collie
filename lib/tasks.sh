@@ -107,6 +107,20 @@ log_event() {
   printf '%s\t%s\t%s\n' "$NOW" "$2" "${3:-}" >>"$TASKS_DIR/$1/events.log"
 }
 
+# decisions.tsv (see `collie log`): the newest row, "last decision (of n):"
+# then two indented lines and a blank one; nothing until a row is logged.
+last_decision() { # dir
+  [ -f "$1/decisions.tsv" ] || return 0
+  awk -F'\t' 'NR > 1 && NF { n++; for (i = 1; i <= 7; i++) c[i] = $i }
+    END {
+      if (!n) exit
+      print "last decision (of " n "):"
+      print "  " (c[2] ~ /^[0-9]+$/ ? "#" c[2] : c[2]) "  " c[3] "  " c[4] "  " c[1]
+      print "  why: " c[5] "  ·  evidence: " c[6] "  ·  result: " c[7]
+      print ""
+    }' "$1/decisions.tsv"
+}
+
 write_task_md() { # dir id title [objective] [ship]
   local tmpl="$CONFIG_DIR/TASK.md" ship="$CONFIG_DIR/SHIP.md"
   [ -f "$tmpl" ] || tmpl="$PLUGIN_DIR/templates/TASK.md"
@@ -145,10 +159,11 @@ task_owning() {
 
 # A task's `after:` ids: the tasks it builds on. Cached data only (no git, no
 # gh), so ls and the dashboard stay fast. Sets DEP for one id: ok (done, or
-# every PR in its pr.tsv merged; squash merges count), unknown (no such task),
-# archived, or waiting; and DEP_PRS ("#76:open ...", or "").
+# every repo with a PR in its pr.tsv has a merged one, so a superseded closed
+# PR does not count; squash merges count), unknown (no such task), archived,
+# or waiting; and DEP_PRS ("#76:open ...", or "").
 dep_state() { # id
-  local f="$TASKS_DIR/$1" name num st n=0 m=0
+  local f="$TASKS_DIR/$1" name num st repos=" " merged=" " r _
   DEP_PRS=""
   if ! valid_id "$1" || [ ! -f "$f/TASK.md" ]; then
     DEP=unknown
@@ -160,14 +175,20 @@ dep_state() { # id
     archived) DEP=archived; return ;;
   esac
   if [ -f "$f/pr.tsv" ]; then
-    while IFS=$TAB read -r name num st || [ -n "$name" ]; do
+    # repo, number, state, then CI (older caches lack it)
+    while IFS=$TAB read -r name num st _ || [ -n "$name" ]; do
       [ -n "$num" ] || continue
-      n=$((n + 1))
-      [ "$st" != merged ] || m=$((m + 1))
+      case $repos in *" $name "*) ;; *) repos="$repos$name " ;; esac
+      [ "$st" != merged ] || merged="$merged$name "
       DEP_PRS="$DEP_PRS${DEP_PRS:+ }#$num:$st"
     done <"$f/pr.tsv"
   fi
-  if [ "$n" -gt 0 ] && [ "$m" -eq "$n" ]; then DEP=ok; else DEP=waiting; fi
+  DEP=waiting
+  [ "$repos" != " " ] || return 0
+  for r in $repos; do
+    case $merged in *" $r "*) ;; *) return 0 ;; esac
+  done
+  DEP=ok
 }
 
 # Sets BLOCKED to the task's unsatisfied `after:` ids, space-separated ("" when
