@@ -804,7 +804,7 @@ cmd__menu() { # session [client]
   items=(dashboard h "$popup '$C _popup $C dash'"
     lazygit g "$popup -d '#{pane_current_path}' '$C _popup lazygit'"
     terminal t "$popup -d '#{pane_current_path}'"
-    "new task" c "display-popup -EE -w 70 -h 15 -d '#{pane_current_path}' '$C new'")
+    "new task" c "display-popup -EE -w 80% -h 70% -d '#{pane_current_path}' '$C new'")
   if valid_id "$T" && [ -f "$TASKS_DIR/$T/TASK.md" ]; then
     items+=("edit task" e "$popup '$C _popup $C edit $T'"
       review v "$popup '$C _popup \"$C review $T | less -R\"'"
