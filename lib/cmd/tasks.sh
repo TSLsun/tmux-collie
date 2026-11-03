@@ -213,7 +213,7 @@ cmd_brief() {
 }
 
 cmd_show() {
-  local id d name c b p mark top gone=missing fin=0
+  local id d name c b p mark top a gone=missing fin=0
   task_id "${1:-}"
   d="$TASKS_DIR/$id"
   awk 'NR == 1 { next } $0 == "---" { exit } /^(status|next):/ { next } { print }' "$d/TASK.md"
@@ -242,6 +242,8 @@ cmd_show() {
   echo "runs:"
   task_runs "$id" | sed 's/^/  /'
   echo
+  a=$(verify_results "$id")
+  [ -z "$a" ] || printf 'verify:\n%s\n\n' "$a"
   last_decision "$d"
   echo "events:"
   tail -n 5 "$d/events.log" | sed 's/^/  /'
