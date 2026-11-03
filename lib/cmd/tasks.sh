@@ -4,7 +4,7 @@
 cmd_new() {
   local id="" specs="" ws="" type=feat title="" from="" edit=0 window=1
   local goal="" asked=0 t ship=${COLLIE_SHIP-$(tmux_opt @collie-ship)}
-  local run=0 agent="" runargs=()
+  local run=0 agent="" runargs=() after=""
   case $ship in on | 1 | yes | true) ship=1 ;; *) ship=0 ;; esac
   while [ $# -gt 0 ]; do
     case $1 in
@@ -14,6 +14,7 @@ cmd_new() {
       -t) type=${2:?-t needs a type}; shift ;;
       --title) title=${2:?--title needs text}; shift ;;
       --from) from=${2:?--from needs a ref}; shift ;;
+      --after) after="$after ${2:?--after needs task ids}"; shift ;;
       --edit) edit=1 ;;
       --no-window) window=0 ;;
       --ship) ship=1 ;;
@@ -72,6 +73,7 @@ cmd_new() {
   local tdir r
   tdir="$TASKS_DIR/$id"
   [ ! -e "$tdir" ] && [ ! -L "$tdir" ] || die "task '$id' already exists"
+  [ -z "$after" ] || check_after "$id" "$after"
   if [ -n "$ws" ]; then
     r=$(workspace_repos "$ws") || exit 1
     for r in $r; do specs="$specs$r"$'\n'; done
@@ -82,6 +84,10 @@ cmd_new() {
   if ! create_repos "$id" "$type/$id" "$from" "$specs" "${title:-$id}" "$goal" "$ship"; then
     rm -rf "$tdir"
     exit 1
+  fi
+  if [ -n "$after" ]; then
+    fm_set "$tdir/TASK.md" after "$AFTER"
+    log_event "$id" field_set "after=$AFTER"
   fi
   [ "$edit" -eq 0 ] || cmd_edit "$id"
   printf '%s\n' "${NEW_PATHS%%$'\n'*}"
@@ -130,6 +136,8 @@ cmd_add() {
 # permission or input), review (status review), reply (an agent finished its
 # turn without a fresh report), - (an agent is working, or the task is
 # finished), start (todo), else stalled (active, no live agent). Sets NEEDS.
+# ls turns a todo task's start into blocked:<ids> while its after: deps are
+# unsatisfied (see task_blocked).
 task_needs() { # status top_state
   case $1:$2 in
     done:* | archived:*) NEEDS=- ;;
@@ -162,6 +170,10 @@ cmd_ls() {
     while IFS=$TAB read -r name _ || [ -n "$name" ]; do repos="$repos${repos:+,}$name"; done <"$d/repos.tsv"
     task_status "$id" "$top" "$st"
     task_needs "$STATUS" "$top"
+    if [ "$NEEDS" = start ]; then
+      task_blocked "$d"
+      [ -z "$BLOCKED" ] || NEEDS="blocked:${BLOCKED// /,}"
+    fi
     fm_get "$d/TASK.md" priority
     printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$id" "$STATUS" "$FM" "$mark" \
       "$top" "$repos" "$NEEDS"
@@ -223,7 +235,7 @@ cmd_show() {
   local id d name c b p mark top a gone=missing fin=0
   task_id "${1:-}"
   d="$TASKS_DIR/$id"
-  awk 'NR == 1 { next } $0 == "---" { exit } /^(status|next):/ { next } { print }' "$d/TASK.md"
+  awk 'NR == 1 { next } $0 == "---" { exit } /^(status|next|after):/ { next } { print }' "$d/TASK.md"
   top=$(task_top "$id")
   task_status "$id" "${top%%"$TAB"*}"
   printf 'status: %s%s\n' "$STATUS" "${STATUS_NOTE:+ ($STATUS_NOTE)}"
@@ -233,6 +245,8 @@ cmd_show() {
     printf 'finished: %s\n' "$(finished_at "$id")"
     ;;
   esac
+  a=$(dep_lines "$id")
+  [ -z "$a" ] || printf '%s\n' "$a"
   echo
   # the contract: TASK.md after its frontmatter
   awk 'NR == 1 && $0 == "---" { f = 1; next }
@@ -410,18 +424,18 @@ cmd_set() {
   local id="" a keys=() vals=() k v i re='^P[0-3]$'
   for a in "$@"; do
     case $a in
-      *=* | priority | title) keys+=("${a%%=*}") ;;
+      *=* | priority | title | after) keys+=("${a%%=*}") ;;
       *) [ -z "$id" ] || die "set: too many arguments"; id=$a ;;
     esac
   done
   task_id "$id"
-  [ ${#keys[@]} -gt 0 ] || die "usage: collie set [<id>] field=value... (priority, title)"
+  [ ${#keys[@]} -gt 0 ] || die "usage: collie set [<id>] field=value... (priority, title, after)"
   # validate everything before writing anything
   i=0
   for a in "$@"; do
     case $a in
       *=*) v=${a#*=} ;;
-      priority | title)
+      priority | title | after)
         [ ! -t 0 ] || printf '%s: ' "$a" >&2
         IFS= read -r v || true
         ;;
@@ -431,14 +445,20 @@ cmd_set() {
     case $k in
       priority) [[ $v =~ $re ]] || die "priority must be P0..P3" ;;
       title) ;;
-      *) die "set: unknown field '$k' (priority, title)" ;;
+      after) check_after "$id" "$v"; v=$AFTER ;;
+      *) die "set: unknown field '$k' (priority, title, after)" ;;
     esac
     case $v in *$'\n'*) die "set: $k must be a single line" ;; esac
     vals+=("$v")
     i=$((i + 1))
   done
   for i in "${!keys[@]}"; do
-    fm_set "$TASKS_DIR/$id/TASK.md" "${keys[$i]}" "${vals[$i]}"
+    # an empty after clears the field
+    if [ "${keys[$i]}" = after ] && [ -z "${vals[$i]}" ]; then
+      fm_del "$TASKS_DIR/$id/TASK.md" after
+    else
+      fm_set "$TASKS_DIR/$id/TASK.md" "${keys[$i]}" "${vals[$i]}"
+    fi
     log_event "$id" field_set "${keys[$i]}=${vals[$i]}"
   done
 }
