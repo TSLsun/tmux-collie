@@ -334,10 +334,11 @@ the runs a lead starts only need `collie signal done`, which works there.
 | Jump to last alert | — | `j` | — |
 | Review | `collie review` | `v` | `ctrl-v` or `?` `v` |
 | Run TASK.md Verify blocks | `collie verify` | — | — (last result in the preview) |
-| Shell in worktree | — | `t` (popup) | `?` `t` |
+| Shell in worktree | — | `t` (popup at the pane's path) | `?` `t` (task's first worktree) |
 | lazygit | — | `g` | — |
 | Done | `collie done` | `d` (confirms) | `ctrl-d` or `?` `d` (confirms) |
 | Archive | `collie archive` | `x` (confirms) | `?` `x` (confirms) |
+| Sync task branch with base | `collie sync` | `s` (confirms, shows output) | `?` `s` (confirms, `space` marks several) |
 | Finish merged tasks | `collie gc` | `G` (lists them, confirms) | — |
 | Show details | `collie show` | — | preview pane (Objective) |
 | Log a decision | `collie log` | — | preview pane (last decision) |
@@ -346,7 +347,10 @@ the runs a lead starts only need `collie signal done`, which works there.
 | Extra repo mid-task | `collie add` | — | — |
 | Branch off dirty work | `collie spike` | — | — |
 
-The menu's task entries (`e v r a d x`) appear only inside a task's session.
+The menu's task entries (`r a e v d x s`) appear only inside a task's session,
+with the same keys and labels as the dashboard's `?` actions. `t` differs on
+purpose: the menu opens the shell at the current pane's path (it works in any
+session), the dashboard, which has no pane of the task, in its first worktree.
 On the dashboard the `ctrl-` keys act on the selected row at once, so plain
 keys keep filtering; `?` lists every action.
 `<id>` may be omitted anywhere inside a task session (`$COLLIE_TASK`).

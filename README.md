@@ -170,7 +170,7 @@ below it otherwise, and wraps long lines. The header's key hints wrap instead
 of being cut.
 
 `prefix h` opens a menu (dashboard, lazygit, terminal, new
-task, edit task, review, run agent, adopt agent, done, archive, jump to alert, gc merged tasks) for the current session's task; outside a
+task, run agent, adopt agent, edit task, review, done, archive, sync, jump to alert, gc merged tasks) for the current session's task; outside a
 task session it keeps only dashboard, lazygit, terminal, new task, jump to alert and gc merged tasks.
 `run agent` (`r`) switches you to the new agent window;
 plain `collie run` leaves it in the background (`-s` switches). `jump to alert` (`j`) switches to the pane of the last agent that notified. `prefix h h` goes straight to the
