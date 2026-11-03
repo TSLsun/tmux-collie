@@ -38,6 +38,7 @@ _collie() {
     'run:start an agent'
     'handoff:continue another agent run with preserved context'
     'send:type into an idle agent run'
+    'pause:ask an idle agent run to pause'
     'adopt:restart an agent started by hand under collie run'
     'restore:restart agents lost with the tmux server'
     'wait:block until a run reaches a state or signals done'
@@ -80,6 +81,7 @@ _collie() {
     sync | restore) compadd -- -n; _collie_tasks ;;
     handoff) compadd -- --from --agent --note -r; _collie_tasks ;;
     send) compadd -- -r --run --wait -f; _collie_tasks ;;
+    pause) compadd -- -r --run -p -f; _collie_tasks ;;
     show | review) _collie_tasks -a ;;
     verify) compadd -- -r; _collie_tasks ;;
     run) compadd -- --agent --model --effort -r -p -s; _collie_tasks ;;

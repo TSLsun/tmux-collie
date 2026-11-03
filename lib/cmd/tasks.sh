@@ -227,6 +227,7 @@ cmd_show() {
   top=$(task_top "$id")
   task_status "$id" "${top%%"$TAB"*}"
   printf 'status: %s%s\n' "$STATUS" "${STATUS_NOTE:+ ($STATUS_NOTE)}"
+  [ ! -f "$d/RESUME.md" ] || printf 'resume note: %s\n' "$d/RESUME.md"
   case $STATUS in done | archived)
     fin=1 gone=removed
     printf 'finished: %s\n' "$(finished_at "$id")"
