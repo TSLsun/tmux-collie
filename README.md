@@ -46,7 +46,9 @@ collie new deploy-v2 -r A -r B:release/v2   # per-repo branch
 collie new checkout-fix -w shop        # all repos of a workspace
 collie add deploy-v2 -r C              # pull another repo in mid-task
 collie ls                              # id  status  priority  session(*|-)  agent  repos  needs
-collie show deploy-v2                  # fields, TASK.md contract, repos, runs, events
+collie brief                           # what waits on you: one line + the command to act, per task
+collie show deploy-v2                  # fields, TASK.md contract, repos, runs, last decision, events
+collie log build 'use ln' 'atomic' test/log.bats ok   # agent: a row in .collie/decisions.tsv
 collie edit deploy-v2                  # adjust TASK.md in $EDITOR (also: dash e, prefix h e)
 collie go deploy-v2                    # switch/attach (fzf picker if no id)
 collie done deploy-v2                  # accept: remove worktrees + session, keep branches
@@ -64,6 +66,9 @@ collie run deploy-v2 --agent codex      # also: gemini, omp; state hooks injecte
 collie run --agent aider -- --model x  # any command works (no state hooks)
 collie handoff deploy-v2 --from 1 --agent codex --note handoff.md
                                       # new conversation, preserving run 1's context
+collie send deploy-v2 'rerun the tests'  # type into its idle agent (--run N, --wait, -f file)
+collie run deploy-v2 --model opus --effort high  # per-run model/effort (claude, codex)
+collie wait deploy-v2 --done --timeout 3600     # until the run signals done and stops
 collie doctor                          # deps, agents, task/worktree consistency
 collie ls                              # agent column: waiting/idle/working/exited/unknown
 ```
@@ -72,16 +77,19 @@ collie ls                              # agent column: waiting/idle/working/exit
 
 ```sh
 collie review deploy-v2                # commits, diff stat, dirty files, REPORT.md
+collie verify deploy-v2                # run TASK.md's ## Verify sh blocks in each worktree
 collie spike try-cache                 # from a dirty worktree: exp/try-cache task with the same changes
 collie spike try-cache -u              # ...plus untracked (non-ignored) files
 collie gc                              # finish tasks whose branches were merged
 collie history                         # finished tasks, newest first; fzf picker, enter: show
-collie history -n oauth                # rows of finished tasks whose TASK.md/REPORT.md mention oauth
+collie history -n oauth                # rows of finished tasks whose TASK.md/REPORT.md/decisions mention oauth
 collie sync -n                         # after a merge: which task branches would conflict
 collie sync                            # merge base into them; agents resolve conflicts
 ```
 
-`collie run`'s default prompt asks the agent to write `.collie/REPORT.md`.
+`collie run`'s default prompt asks the agent to write `.collie/REPORT.md`
+and to record key decisions with `collie log` (see
+[docs/USAGE.md](docs/USAGE.md#decision-log)).
 Task status is derived, never set by hand: `todo` until the first agent run,
 `active` after it, `review` once no agent is working or waiting and REPORT.md
 was written since the last run started; `done` / `archived` come from
@@ -151,7 +159,8 @@ with ↑↓ and press enter; esc closes it. `sync` (`s`) shows `collie sync -n` 
 tasks (or the selected one when none is marked) in the panel, asks y/n, then syncs only
 those; switching the grouping clears the marks. The header lists the direct keys. The preview shows
 the start of TASK.md's Objective.
-The preview also shows the live agents, the age of the last event, and each
+The preview also shows the live agents, the age of the last event, the last
+logged decision, the last `collie verify` result per repo, and each
 repo's branch and PR. It sits right of the list when the rows fit beside it,
 below it otherwise, and wraps long lines. The header's key hints wrap instead
 of being cut.
@@ -260,7 +269,7 @@ shop: api web infra
 ```
 
 Task data lives in `~/.local/state/collie/tasks/<id>/` (`TASK.md`, `repos.tsv`,
-`events.log`) and survives worktree removal. Each worktree gets a `.collie`
+`events.log`, `decisions.tsv`) and survives worktree removal. Each worktree gets a `.collie`
 symlink to it, excluded via the repo's `info/exclude`.
 
 `done` refuses dirty worktrees or commits not in the base branch; `archive`
@@ -273,9 +282,11 @@ a failure rolls back worktrees and branches it already created.
 Off by default. When on, `collie new` appends a `## Ship` section to TASK.md
 telling the agent (any agent) to finish the delivery loop: logical
 Conventional Commits with fixups squashed, push and `gh pr create` once the
-Acceptance Criteria and Verify checks pass (no `gh`: push and report the
-branch URL), wait for CI, fix a clearly-caused failure at most once, and
-otherwise stop and write the failure analysis to REPORT.md. It never merges.
+Acceptance Criteria (checked on the real artifact, not just green CI) and
+Verify checks pass (no `gh`: push and report the branch URL), wait for CI,
+fix a clearly-caused failure at most once, re-verify after any rebase or
+merge, and otherwise stop and write the failure analysis to REPORT.md. It
+never merges.
 
 ```tmux
 set -g @collie-ship 'on'                       # default for new tasks ($COLLIE_SHIP wins)

@@ -14,7 +14,7 @@ finish_task() { # final_status args...
     shift
   done
   task_id "$id"
-  local d name c b p problems="" n base here own=0
+  local d name c b p problems="" n base here own=0 unmerged=""
   d="$TASKS_DIR/$id"
 
   # folders are used in place: nothing to check or remove
@@ -25,14 +25,22 @@ finish_task() { # final_status args...
       die "refusing to $final '$id': $p/.collie is not a symlink to the task dir; move it aside first"
     fi
     [ -z "$(git -C "$p" status --porcelain)" ] || problems="$problems  dirty: $name ($p)"$'\n'
-    # Abandoned work is unmerged by definition and branches are kept anyway.
-    [ "$final" = archived ] && continue
+    # Abandoned work is unmerged by definition and branches are kept anyway:
+    # archive only labels it, against local refs.
+    if [ "$final" = archived ]; then
+      if git --git-dir="$c" show-ref -q --verify "refs/heads/$b" &&
+        ! { default_base "$c" && merged_into "$c" "$b" "$BASE"; }; then
+        unmerged="$unmerged $name"
+      fi
+      continue
+    fi
     fetch_origin "$c" "$name" || true
     default_base "$c"
     base=$BASE
     if git --git-dir="$c" show-ref -q --verify "refs/heads/$b" && ! merged_into "$c" "$b" "$base"; then
       n=$(git --git-dir="$c" rev-list --count "$base..refs/heads/$b")
       problems="$problems  unmerged: $name has $n commit(s) on $b not in ${base#refs/heads/}"$'\n'
+      unmerged="$unmerged $name"
     fi
   done <"$d/repos.tsv"
   if [ -n "$problems" ] && [ "$force" -eq 0 ]; then
@@ -52,6 +60,7 @@ finish_task() { # final_status args...
   while IFS=$TAB read -r name c b p; do
     repo_commits "$d" "$name" "$c" "$b"
   done <"$d/repos.tsv" >"$d/commits.txt"
+  wt_report "$d" "$unmerged"
   while IFS=$TAB read -r name c b p; do
     rm -f "$d/repos/$name"
     [ -d "$p" ] || continue
@@ -66,6 +75,7 @@ finish_task() { # final_status args...
   done <"$d/repos.tsv"
   fm_set "$d/TASK.md" status "$final"
   log_event "$id" "task_$final" "force=$force"
+  [ -z "$WT_REPORT" ] || printf '%sreclaimed %s\n' "$WT_REPORT" "$(human_kb "$WT_KB")"
   if has_session "$id"; then
     leave_session "$id"
     tmux kill-session -t "=$id"
@@ -190,10 +200,65 @@ cmd_review() {
     if [ -d "$p" ]; then git -C "$p" status --short; else echo "(worktree missing: $p)"; fi
     echo
   done <"$d/repos.tsv"
+  local v
+  v=$(verify_results "$id")
+  [ -z "$v" ] || printf '== verify\n%s\n\n' "$v"
   if [ -f "$d/REPORT.md" ]; then
     echo "== REPORT.md"
     cat "$d/REPORT.md"
   fi
+}
+
+# Run TASK.md's ## Verify sh blocks in each repo's worktree (-r: one repo),
+# in order with sh -e, stopping a repo at its first failing block. Output goes
+# to the terminal and verify/<time>-<repo>.log; a verify event records
+# pass/fail, the exit code and the log. collie never judges the output.
+cmd_verify() {
+  local id="" only="" d tmp n i rc st fail=0 name c b p rel
+  while [ $# -gt 0 ]; do
+    case $1 in
+      -r) only=${2:?-r needs a repo}; shift ;;
+      -*) die "verify: unknown option $1" ;;
+      *) [ -z "$id" ] || die "verify: too many arguments"; id=$1 ;;
+    esac
+    shift
+  done
+  task_id "$id"
+  d="$TASKS_DIR/$id"
+  [ -z "$only" ] || awk -F'\t' -v n="$only" '$1 == n { f = 1 } END { exit !f }' "$d/repos.tsv" ||
+    die "verify: task '$id' has no repo '$only'"
+  tmp=$(mktemp -d) || return 1
+  n=$(verify_blocks "$d/TASK.md" "$tmp")
+  if [ "$n" -eq 0 ]; then
+    rm -rf "$tmp"
+    echo "verify: no \`\`\`sh blocks under ## Verify in $d/TASK.md; nothing run or recorded"
+    return 0
+  fi
+  mkdir -p "$d/verify"
+  while IFS=$TAB read -r name c b p; do
+    [ -z "$only" ] || [ "$name" = "$only" ] || continue
+    if [ ! -d "$p" ]; then
+      warn "verify: $name: worktree missing: $p"
+      fail=1
+      continue
+    fi
+    stamp_utc %Y%m%dT%H%M%SZ
+    rel=verify/$NOW-$name.log
+    : >"$d/$rel"
+    printf '== %s  %s\n' "$name" "$p"
+    rc=0
+    for ((i = 1; i <= n; i++)); do
+      printf -- '--- block %s of %s\n' "$i" "$n" | tee -a "$d/$rel"
+      (cd "$p" && sh -e "$tmp/$i.sh") </dev/null 2>&1 | tee -a "$d/$rel" || rc=$?
+      [ "$rc" -eq 0 ] || break
+    done
+    st=pass
+    [ "$rc" -eq 0 ] || { st=fail; fail=1; }
+    log_event "$id" verify "repo=$name result=$st exit=$rc blocks=$n log=$rel"
+    printf '== %s  %s  exit %s  %s\n\n' "$name" "$st" "$rc" "$d/$rel"
+  done <"$d/repos.tsv"
+  rm -rf "$tmp"
+  [ "$fail" -eq 0 ]
 }
 
 # A folder has no history: list the files modified since the task's first run.
@@ -252,7 +317,7 @@ cmd_spike() {
 # A task is merged when every branch moved past where its worktree started
 # and that tip is merged into the base branch (see merged_into).
 cmd_gc() {
-  local dry=0 d id name c b p start tip merged err
+  local dry=0 d id name c b p start tip merged err total=0 found=0
   [ "${1:-}" != -n ] || dry=1
   for d in "$TASKS_DIR"/*; do
     [ -f "$d/TASK.md" ] || continue
@@ -275,10 +340,17 @@ cmd_gc() {
       fi
     done <"$d/repos.tsv"
     [ "$merged" -eq 1 ] || continue
+    # merged, so only wip/scratch can hold done back: those are skipped
+    found=1
+    wt_report "$d" ""
     if [ "$dry" -eq 1 ]; then
       echo "$id"
+      printf '%s' "$WT_REPORT"
+      total=$((total + WT_CLEAN_KB))
     elif err=$("$BASH" "$PLUGIN_DIR/bin/collie" "done" "$id" 2>&1 >/dev/null); then
       echo "done $id"
+      printf '%s' "$WT_REPORT"
+      total=$((total + WT_KB))
     else
       # First problem under "refusing to …:", else done's last message.
       err=$(printf '%s\n' "$err" | awk '
@@ -286,10 +358,16 @@ cmd_gc() {
         { r = $0; sub(/^collie: /, "", r) }
         END { print r }')
       echo "skipped $id: $err (see: collie done $id)"
+      printf '%s' "$WT_REPORT"
     fi
   done
-  # finished tasks drop out of the prediction; the rest saw base move
-  [ "$dry" -eq 1 ] || conflicts_predict >/dev/null
+  if [ "$dry" -eq 1 ]; then
+    [ "$found" -eq 0 ] || echo "would reclaim $(human_kb "$total") (wip/scratch are skipped)"
+  else
+    [ "$found" -eq 0 ] || echo "reclaimed $(human_kb "$total")"
+    # finished tasks drop out of the prediction; the rest saw base move
+    conflicts_predict >/dev/null
+  fi
 }
 
 # Menu gc (in a popup): list what gc would finish, run it only after y.
@@ -403,10 +481,7 @@ cmd_sync() {
         if [ -n "$win" ]; then
           pane=$(agent_pane "$id" "$win")
           if [ -n "$pane" ]; then
-            # a pause before Enter, so agents that detect pastes still submit
-            tmux send-keys -t "$pane" -l "$msg"
-            sleep 0.3
-            tmux send-keys -t "$pane" Enter
+            type_into "$pane" "$msg"
             out="sent to the agent in $win"
           else
             out="agent pane not found, resolve it in $p"

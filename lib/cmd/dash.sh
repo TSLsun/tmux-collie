@@ -1,24 +1,30 @@
 # shellcheck shell=bash
 # Sourced by bin/collie: dashboard, menu and popups.
 
-# Each task's PRs: <task>/pr.tsv holds repo<TAB>number<TAB>state lines.
-# gh is slow and needs the network, so the dashboard reads the cache and
-# refreshes it in the background once it is PR_TTL minutes old; sync and gc
-# refresh it inline.
+# Each task's PRs: <task>/pr.tsv holds repo<TAB>number<TAB>state<TAB>CI
+# lines. CI is pass, fail, pending or -; older caches lack the field. gh is
+# slow and needs the network, so the dashboard reads the cache and refreshes it
+# in the background once it is PR_TTL minutes old; sync and gc refresh inline.
 PR_TTL=5
 
 # Refreshes <task>/pr.tsv; a failed repository lookup keeps all its old rows.
 # A cross-branch restoration is admitted only when its body explicitly says
 # "restore ... from #N" on one line, referring to a PR on the task branch.
 cmd__pr() { # id
-  local d="$TASKS_DIR/$1" name c b p line related number state out="" failed
+  local d="$TASKS_DIR/$1" name c b p line related number state candidate detail out="" failed filter
+  filter='"\(.number)\t\(if .isDraft and .state == "OPEN" then "draft" else .state | ascii_downcase end)\t\(
+    [.statusCheckRollup[]? | if (.conclusion // "") != "" then .conclusion else (.state // .status) end]
+    | if length == 0 then "-"
+      elif any(. == "FAILURE" or . == "ERROR" or . == "CANCELLED" or . == "TIMED_OUT" or . == "ACTION_REQUIRED" or . == "STARTUP_FAILURE") then "fail"
+      elif all(. == "SUCCESS" or . == "NEUTRAL" or . == "SKIPPED") then "pass"
+      else "pending" end)"'
   command -v gh >/dev/null || return 0
   [ -f "$d/repos.tsv" ] || return 0
   while IFS=$TAB read -r name c b p; do
     [ "$c" != - ] || continue
     failed=0
-    if [ ! -d "$p" ] || ! line=$(cd "$p" && gh pr list --state all --head "$b" --limit 1000 --json number,state,isDraft \
-      --jq '.[] | "\(.number)\t\(if .isDraft and .state == "OPEN" then "draft" else .state | ascii_downcase end)"' \
+    if [ ! -d "$p" ] || ! line=$(cd "$p" && gh pr list --state all --head "$b" --limit 1000 --json number,state,isDraft,statusCheckRollup \
+      --jq ".[] | $filter" \
       </dev/null 2>/dev/null); then
       failed=1
     else
@@ -27,17 +33,26 @@ cmd__pr() { # id
         [ -n "$number" ] || continue
         if ! state=$(cd "$p" && gh api --paginate -X GET search/issues \
           -F "q=repo:{owner}/{repo} is:pr \"$number\" in:body" -F per_page=100 \
-          --jq "if .incomplete_results or .total_count > 1000 then error(\"incomplete search\") else .items[] | select((.body // \"\") | test(\"(?i)restore[^\\\\n]* from #$number([^0-9]|$)\")) | \"\\(.number)\\t\\(if .pull_request.merged_at then \"merged\" elif .draft and .state == \"open\" then \"draft\" else .state end)\" end" \
+          --jq "if .incomplete_results or .total_count > 1000 then error(\"incomplete search\") else .items[] | select((.body // \"\") | test(\"(?i)restore[^\\\\n]* from #$number([^0-9]|$)\")) | .number end" \
           </dev/null 2>/dev/null); then
           failed=1
           break
         fi
-        [ -z "$state" ] || related="$related$state"$'\n'
+        while IFS= read -r candidate; do
+          [ -n "$candidate" ] || continue
+          if ! detail=$(cd "$p" && gh pr view "$candidate" --json number,state,isDraft,statusCheckRollup \
+            --jq "$filter" </dev/null 2>/dev/null); then
+            failed=1
+            break
+          fi
+          related="$related$detail"$'\n'
+        done <<<"$state"
+        [ "$failed" -eq 0 ] || break
       done <<<"$line"
       [ -z "$related" ] || line="$line"$'\n'"${related%$'\n'}"
     fi
     if [ "$failed" -eq 1 ]; then
-      line=$(awk -F'\t' -v n="$name" '$1 == n { print $2 "\t" $3 }' "$d/pr.tsv" 2>/dev/null) || line=""
+      line=$(awk -F'\t' -v n="$name" '$1 == n { sub(/^[^\t]*\t/, ""); print }' "$d/pr.tsv" 2>/dev/null) || line=""
     fi
     if [ -n "$line" ]; then
       line=$(printf '%s\n' "$line" | awk -F'\t' '!seen[$1]++')
@@ -138,7 +153,7 @@ dash_rows() {
       else if ($7 == "stalled") r = 4
       else if ($7 == "-") r = 5
       f = tasks "/" $1 "/pr.tsv"; s = ""
-      while ((getline l <f) > 0) if (split(l, x, "\t") == 3) s = s (s == "" ? "" : " ") "#" x[2] ":" x[3]
+      while ((getline l <f) > 0) if (split(l, x, "\t") >= 3) s = s (s == "" ? "" : " ") "#" x[2] ":" x[3]
       close(f)
       print r "\t" $0 "\t" (s == "" ? "-" : s) "\t" ($1 in cf ? cf[$1] : "-")
     }' <<<"$rows" | sort -t "$TAB" -k1,1n -k4,4 -k2,2 | cut -f2-
@@ -884,7 +899,8 @@ run_preview() { # id run|window
 }
 
 # The task's title, status and priority, its live agents and last event's
-# age, the Objective, runs, and per repo its branch, PRs and progress.
+# age, the Objective, the last decision, runs, and per repo its branch, PRs
+# and progress.
 cmd__preview() {
   local id d name c b p base top title ids line a
   [ -z "${COLLIE_DASH:-}" ] || ! dash_panel "${1:-}" || return 0
@@ -917,6 +933,7 @@ cmd__preview() {
     f && NF && n++ < 5 { print "  " $0 }
     END { if (!n) print "  (empty)" }' "$d/TASK.md"
   echo
+  last_decision "$d"
   # the newest runs; ▸ marks the one enter goes to (see _target)
   a=$(run_history "$id")
   printf 'runs:%s\n' "$([ "$(grep -c . <<<"$a")" -le 5 ] || printf '  (newest 5 of %s; u: all)' "$(grep -c . <<<"$a")")"
@@ -924,6 +941,8 @@ cmd__preview() {
   [ -z "$a" ] || awk -F'\t' -v w="$(cut -f2 <<<"$top")" '
     NR <= 5 { print ($5 == w && w != "-" ? "▸ " : "  ") ($1 == "-" ? "-" : "#" $1) "  " $2 "  " $3 "  " $4 ($7 == "-" ? "" : "  " $7) }' <<<"$a"
   echo
+  a=$(verify_results "$id")
+  [ -z "$a" ] || printf 'verify:\n%s\n\n' "$a"
   echo "repos:"
   case $STATUS in done | archived)
     while IFS=$TAB read -r name c b p; do

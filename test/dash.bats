@@ -253,7 +253,7 @@ branch_of() { awk -F'\t' -v r="$2" '$1 == r { print $3 }' "$(task_dir "$1")/repo
   touch -t 202001010000 "$(task_dir w)/pr.tsv"
   collie dash -n >/dev/null
   wait_for '[ "$(collie dash -n | awk -F"\t" "\$1 == \"w\" { print \$8 }")" = "#9:open" ]'
-  [ "$(wc -l <"$TMP/gh.log")" -eq 2 ]
+  [ "$(grep -c '^pr list' "$TMP/gh.log")" -eq 1 ]
 }
 
 @test "dash: PR column shows - when gh fails; a failed lookup keeps the last entry" {

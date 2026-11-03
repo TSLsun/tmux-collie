@@ -8,6 +8,8 @@ AGENT_HOOKS=1 AGENT_HOOKS_PENDING=1 AGENT_EXTRA_HANDLED=1 AGENT_REQUIRE_SESSION=
 AGENT_RESUME=(resume --last)
 # shellcheck disable=SC2034
 AGENT_RESUME_ID=(resume)
+# shellcheck disable=SC2034  # RUN_MODEL -> -m, RUN_EFFORT -> model_reasoning_effort
+AGENT_MODELS=1
 
 agent_session() { # pid: exactly one open rollout; shared daemons are ambiguous
   local ids
@@ -38,6 +40,9 @@ agent_argv() { # forwarded CLI arguments; resume must precede the prompt
   while IFS= read -r d; do
     [ -z "$d" ] || AGENT_ARGV+=(--add-dir "$d")
   done <<<"$RUN_DIRS"
+  # top-level options, so they also apply to a forwarded `resume <id>`
+  [ -z "${RUN_MODEL:-}" ] || AGENT_ARGV+=(-m "$RUN_MODEL")
+  [ -z "${RUN_EFFORT:-}" ] || AGENT_ARGV+=(-c "model_reasoning_effort=\"$RUN_EFFORT\"")
   [ $# -eq 0 ] || AGENT_ARGV+=("$@")
   [ -z "$RUN_PROMPT" ] || AGENT_ARGV+=("$RUN_PROMPT")
 }

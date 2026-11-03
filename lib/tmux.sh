@@ -55,3 +55,18 @@ ensure_session() {
 }
 
 tmux_opt() { tmux show-options -gqv "$1" 2>/dev/null || true; }
+
+# Types text into a pane and submits it: a line as keys, several lines as one
+# paste (bracketed when the program asked for it, newlines kept as LF, so they
+# do not submit early). A pause before Enter, so agents that detect pastes
+# still submit.
+type_into() { # pane text
+  if [[ $2 == *$'\n'* ]]; then
+    tmux set-buffer -b "collie-$$" -- "$2" &&
+      tmux paste-buffer -d -p -r -b "collie-$$" -t "$1" || return
+  else
+    tmux send-keys -t "$1" -l -- "$2" || return
+  fi
+  sleep 0.3
+  tmux send-keys -t "$1" Enter
+}
