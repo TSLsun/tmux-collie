@@ -396,7 +396,11 @@ unless marked *manual*.
 ### P6 — Multi-agent collaboration (only once P1–P5 are in daily use)
 - A second run in the same task (e.g. one agent plans, another implements).
 - `review --agent X`: non-interactive review written to REVIEW.md.
-- `race`: one TASK.md handed to N agents, one worktree each.
+- `race`: N child candidate tasks (`<id>-<n>`) from the same task-branch base,
+  one run each; `review <id>` compares candidates and `pick <id> <n>`
+  fast-forwards the task branch to a chosen candidate. Candidate `exp/*`
+  branches are kept. Collie runs and shows candidates; judging belongs in a
+  skill.
 
 ---
 

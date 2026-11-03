@@ -85,6 +85,9 @@ collie review deploy-v2                # commits, diff stat, dirty files, REPORT
 collie verify deploy-v2                # run TASK.md's ## Verify sh blocks in each worktree
 collie spike try-cache                 # from a dirty worktree: exp/try-cache task with the same changes
 collie spike try-cache -u              # ...plus untracked (non-ignored) files
+collie race compare -n 2 --agent claude,codex  # independent candidates from one base
+collie review compare                  # compare candidate diff stats and reports
+collie pick compare 2                  # fast-forward chosen work onto compare's task branch
 collie gc                              # finish tasks whose branches were merged
 collie history                         # finished tasks, newest first; fzf picker, enter: show
 collie history -n oauth                # rows of finished tasks whose TASK.md/REPORT.md/decisions mention oauth
