@@ -56,6 +56,19 @@ cmd_run() {
   done
   task_id "$id"
   command -v tmux >/dev/null || die "run: tmux required"
+  # a todo task whose after: deps are unsatisfied: ask on a terminal, else warn
+  task_status "$id" ""
+  if [ "$STATUS" = todo ]; then
+    task_blocked "$TASKS_DIR/$id"
+    if [ -n "$BLOCKED" ]; then
+      warn "run: $id is blocked on: $BLOCKED (not done or merged)"
+      if [ -t 0 ]; then
+        local yn
+        read -r -p "run anyway? (y/n) " yn || yn=""
+        case $yn in [yY]*) ;; *) die "run: cancelled" ;; esac
+      fi
+    fi
+  fi
   [ -n "$agent" ] || { run_agent; agent=$RUN_AGENT; }
   # passed into agent config (codex -c): no quotes or spaces
   [[ $RUN_MODEL =~ ^[A-Za-z0-9._:/-]*$ ]] || die "run: invalid model '$RUN_MODEL'"
@@ -68,8 +81,10 @@ cmd_run() {
   done <"$d/repos.tsv"
   [ -n "$rname" ] || die "repo '$repo' is not part of task '$id'"
   [ -d "$path" ] || die "missing worktree $path"
+  # a paused run's resume note (collie pause) is for whoever picks the task up
+  [ "$custom" = 1 ] || [ ! -f "$d/RESUME.md" ] || prompt="$prompt $RESUME_PROMPT"
   # a folder has no .collie link
-  [ "$rc" != - ] || [ "$prompt" != "$DEFAULT_PROMPT" ] || prompt=${prompt//.collie\//$d/}
+  [ "$rc" != - ] || [ "$custom" = 1 ] || prompt=${prompt//.collie\//$d/}
 
   # adapter inputs: other worktrees + the task dir, the initial prompt and a
   # session name. The default prompt leads with the task so agents that title
@@ -191,6 +206,7 @@ cmd_handoff() {
   } >"$packet/HANDOFF.md"
   chmod a-w "$packet/"* "$packet"
   prompt="Task $id. Continue $source_agent run $from as $agent. Read the handoff packet at $packet/HANDOFF.md and the current task contract at $d/TASK.md before continuing. If its Objective is empty, ask what to do. When finished, write a short report to $d/REPORT.md."
+  [ ! -f "$d/RESUME.md" ] || prompt="$prompt ${RESUME_PROMPT//.collie\//$d/}"
   # A failed launch leaves the packet for diagnosis, but no success event.
   cmd_run "$id" --agent "$agent" -r "$repo" -p "$prompt"
   log_event "$id" run_handoff "from=$from to=$RUN_STARTED source=$source_agent agent=$agent repo=$repo packet=${packet##*/}"
@@ -288,6 +304,47 @@ cmd_send() {
   echo "$id: sent to run $run ($agent) in $win"
 }
 
+# Asks the idle agent of a collie run to pause, through send. How to pause
+# and pick up (safe boundary, wip commit, note contents) is the collie-lead
+# skill's, not collie's. Exit 2: the agent is working or waiting.
+cmd_pause() {
+  local id="" repo="" run="" text="" file="" t agent st
+  while [ $# -gt 0 ]; do
+    case $1 in
+      -r) repo=${2:?-r needs a repo}; shift ;;
+      --run) run=${2:-}; shift ;;
+      -p) [ $# -ge 2 ] || die "-p needs a request"; text=$2; shift ;;
+      -f) file=${2:?-f needs a file}; shift ;;
+      -*) die "pause: unknown option $1" ;;
+      *) [ -z "$id" ] || die "pause: too many arguments"; id=$1 ;;
+    esac
+    shift
+  done
+  task_id "$id"
+  [ -z "$text" ] || [ -z "$file" ] || die "pause: give -p or -f, not both"
+  [ -n "$text$file" ] || text=${PAUSE_PROMPT//.collie\//$TASKS_DIR/$id/}
+  # send reports a missing, ambiguous or exited run; pause also spares a
+  # waiting one, whose prompt the request would answer
+  t=$(send_target "$id" "$run" "$repo")
+  case $t in
+    nosuch | none | many*) ;;
+    *)
+      IFS=$TAB read -r run agent st _ <<<"$t"
+      case $st in working | waiting)
+        warn "pause: run $run ($agent) is $st, not idle; not sent (collie wait $id --run $run)"
+        exit 2
+        ;;
+      esac
+      repo=""
+      ;;
+  esac
+  if [ -n "$file" ]; then
+    cmd_send "$id" ${repo:+-r "$repo"} ${run:+--run "$run"} -f "$file"
+  else
+    cmd_send "$id" ${repo:+-r "$repo"} ${run:+--run "$run"} -- "$text"
+  fi
+}
+
 # Restarts an agent started by hand in the task's session as a `collie run`
 # that resumes its conversation, so its hooks report state and notify.
 cmd_adopt() {
@@ -333,7 +390,9 @@ cmd_adopt() {
   done
   ! kill -0 "$pid" 2>/dev/null || die "adopt: $agent (pid $pid) did not exit"
   log_event "$id" agent_adopted "agent=$agent pane=$pane window=$wid"
-  cmd_run "$id" -r "$repo" --agent "$agent" -p '' -- "${args[@]}"
+  a=""
+  [ ! -f "$TASKS_DIR/$id/RESUME.md" ] || a="Task $id. ${RESUME_PROMPT//.collie\//$TASKS_DIR/$id/}"
+  cmd_run "$id" -r "$repo" --agent "$agent" -p "$a" -- "${args[@]}"
 }
 
 # Runs of a task lost with their tmux server as "run<TAB>agent<TAB>repo<TAB>

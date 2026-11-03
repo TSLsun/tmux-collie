@@ -21,7 +21,7 @@ tasks:
   edit [<id>]         open the task's TASK.md in $EDITOR
   go [<id>]           switch to the task session (fzf picker if omitted)
   dash [-n]           fzf dashboard, most urgent first
-  set [<id>] f=v...   set priority (P0..P3) or title
+  set [<id>] f=v...   set priority (P0..P3), title or after (task deps)
   review [<id>] [-p]  per-repo commits, diff stat, dirty files, REPORT.md
   verify [<id>]       run TASK.md's ## Verify sh blocks in each worktree
   spike <id> [-u]     new exp/<id> task with this worktree's uncommitted changes
@@ -35,6 +35,7 @@ agents:
   run [<id>]          start an agent in a new window of the task session
   handoff [<id>]      continue a claude/codex run with the other agent
   send <id> <text>    type into an idle or waiting agent run and submit
+  pause <id>          ask an idle agent run to pause and leave RESUME.md
   adopt [<id>] [-y]   restart a hand-started agent under collie run
   restore [<id>] [-n] restart the agents lost with the tmux server
   wait [<id>]         block until a run reaches a state or signals done
@@ -103,12 +104,16 @@ REPORT.md written by the agent to .collie/REPORT.md when it finishes: what
           changed, how it was verified, open questions, the PR URL. Writing
           it moves the task to review; `review` and `show` print it.
 
+RESUME.md written by a paused agent to .collie/RESUME.md (`pause`). `show`
+          and the dashboard preview mention it; `run`, `handoff` and `adopt`
+          point the next agent at it.
+
 changes   creates branch + worktree   new, add, spike, reopen (worktree only)
           removes worktree + session  done, archive, gc
           creates/rebuilds session    new, go, reopen, spike
           starts agent windows        run, handoff, adopt, restore,
                                       new --run
-          types into agent panes      send, sync (conflicts)
+          types into agent panes      send, pause, sync (conflicts)
           commits/pushes              sync (merge commit, push if upstream)
           fetches origin              new, add, done, gc, sync
           edits TASK.md               set, edit, done/archive/reopen (status)
@@ -163,7 +168,7 @@ help_command() {
 usage: collie new [<id>] [-r repo[:branch]]... [-w workspace] [-t type]
                   [--title text] [-m objective] [--from ref] [--edit]
                   [--no-window] [--ship|--no-ship] [--run] [--agent name]
-                  [-p prompt] [-- args]
+                  [-p prompt] [--after ids] [-- args]
 
 Create a task: its record and TASK.md, branch <type>/<id> and a worktree in
 each repo (default: the current repo, or the current directory as a folder
@@ -181,6 +186,8 @@ outside git), and tmux session <id> with a window per repo.
                     $COLLIE_SHIP, @collie-ship, else off)
   --run             start the agent as `collie run` does; --agent, -p and
                     -- are passed to run and imply --run
+  --after ids       tasks this one builds on (as `collie set <id> after=`);
+                    repeatable
 
 No id on a tty prompts for id, type, objective, ship, and (given an
 objective) whether to start the agent. A bad id or type is asked again at
@@ -210,7 +217,7 @@ usage: collie ls [-a]
 
 List live tasks, tab-separated: id, status, priority, session (* exists,
 - none), agent (most urgent run state), repos, needs (answer, review, reply,
-stalled, start, -). -a includes done and archived. Read-only.
+stalled, start, blocked:<ids>, -). -a includes done and archived. Read-only.
 EOF
       ;;
     brief)
@@ -293,10 +300,17 @@ EOF
       cat <<'EOF'
 usage: collie set [<id>] field=value...
 
-Set fields in TASK.md's frontmatter: priority (P0..P3), title. A bare field
+Set fields in TASK.md's frontmatter: priority (P0..P3), title, after (the
+task ids it builds on, space- or comma-separated; empty clears). A bare field
 name reads its value from stdin. Values are single lines.
 
+A todo task is blocked until each after: task is done or has a merged PR in
+every repo (cached by the dashboard; gc marks merged branches done). Unknown and
+archived deps keep it blocked; a cycle only warns. `collie run` on a blocked
+task asks on a terminal, else warns and runs.
+
   collie set login priority=P0 title='OAuth login'
+  collie set lead after='run-primitives collie-send'
 EOF
       ;;
     review)
@@ -394,8 +408,9 @@ usage: collie run [<id>] [--agent name] [--model m] [--effort e] [-r repo]
 
 Start an agent in a new window of the task session, in the first repo's
 worktree (-r: that repo's). The default prompt names the task and points the
-agent at .collie/TASK.md and .collie/REPORT.md. claude, codex, gemini and
-omp get state hooks per run; any other command runs without them.
+agent at .collie/TASK.md and .collie/REPORT.md, and at .collie/RESUME.md
+when a paused run left one. claude, codex, gemini and omp get state hooks
+per run; any other command runs without them.
 
   --agent name   agent command (default: $COLLIE_AGENT, @collie-agent, else
                  claude)
@@ -454,6 +469,28 @@ gone); 1 other errors, e.g. several live runs without --run.
 
   collie send fix-retry 'CI fails on macOS: see the log in the PR'
   collie send fix-retry --run 2 --wait -f review.md
+EOF
+      ;;
+    pause)
+      cat <<'EOF'
+usage: collie pause <id> [-r repo | --run N] [-p request | -f file]
+
+Ask the agent of a `collie run` to pause, through `collie send`: by default
+to stop at a safe boundary, save its work and write a resume note to
+.collie/RESUME.md, without pushing or opening a PR. Only an idle agent is
+asked; a working or waiting one is left alone. The next `run`, `handoff` or
+`adopt` points the new agent at the note.
+
+  -r repo         the only live run in that repo
+  --run N         run N (numbers from `collie show`)
+  -p request      send this instead of the default request
+  -f file         send the file's contents instead (-: stdin)
+
+Exit 0 sent; 2 the agent is working or waiting (not sent); 3 no live run;
+1 other errors.
+
+  collie pause fix-retry
+  collie pause fix-retry --run 2 -p 'Pause after the current test passes.'
 EOF
       ;;
     adopt)
@@ -559,7 +596,7 @@ EOF
 }
 
 # the public commands, in overview order
-HELP_COMMANDS='new add ls brief show history log edit go dash set review verify spike gc sync done archive reopen run handoff send adopt restore wait signal state status doctor repos workspaces'
+HELP_COMMANDS='new add ls brief show history log edit go dash set review verify spike gc sync done archive reopen run handoff send pause adopt restore wait signal state status doctor repos workspaces'
 
 cmd_help() {
   local c

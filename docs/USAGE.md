@@ -138,6 +138,33 @@ would reclaim 1.2M (wip/scratch are skipped)
 `--force` removes every bucket. The report changes nothing: `gc` removes
 exactly what `done` would.
 
+### Task dependencies
+
+A task can name the tasks it builds on in TASK.md's `after:` field:
+
+```sh
+collie new lead --after "run-primitives collie-send"
+collie set lead after="run-primitives collie-send"   # replace; after= clears
+```
+
+While a `todo` task has an unsatisfied dep, `ls` shows `blocked:<ids>` and the
+dashboard `blocked` (sorted after `start`). Only cached data is read (task
+status and the dashboard's PR cache), so rows stay fast:
+
+| Dep | Counts as |
+|---|---|
+| status `done` | satisfied |
+| each repo with a cached PR has a `merged` one (squash merges too) | satisfied |
+| branch merged without a PR | satisfied once `collie gc` marks it done |
+| `archived`, or no such task | broken: blocks (`✗` in the preview) |
+| anything else | waiting: blocks (`·`, with its status and PRs) |
+
+Active and review tasks are never shown as blocked. Cycles and unknown ids
+warn in `set` / `new` and never break `ls` or the dashboard; the preview flags
+a cycle. The preview (and `show`) lists each dep and `blocks:`, the open tasks
+waiting on this one. `collie run` on a blocked task asks `run anyway? (y/n)`
+on a terminal and warns otherwise; dashboard `r` asks y/n first.
+
 ## 4. Agent state (per run)
 
 ```mermaid
@@ -179,10 +206,11 @@ value (`ls`'s last column, the dashboard's STATE), first match:
 | `reply` | an agent is `idle` (turn over, no fresh REPORT.md) | red `●` |
 | `-` | an agent is `working` (dash: `working`), or task finished | yellow `◐` |
 | `start` | task status `todo` | dim `○` |
+| `blocked:<ids>` | task status `todo`, its `after:` tasks unsatisfied (dash: `blocked`) | dim `○` |
 | `stalled` | `active`, but no live agent | red `●` |
 
 The dashboard sorts tasks in that urgency (`answer` > `reply` > `review` >
-`stalled` > `working` > `start`), then priority, and shows them in groups
+`stalled` > `working` > `start` > `blocked`), then priority, and shows them in groups
 (needs you, active, todo); `tab` /
 `shift-tab` regroup by priority or repo.
 
@@ -335,6 +363,7 @@ the runs a lead starts only need `collie signal done`, which works there.
 | Run agent | `collie run` | `r` | `ctrl-r` or `?` `r` |
 | Continue with another agent | `collie handoff` | — | `u`, then `h` on the run (note in `$EDITOR`) |
 | Type into an idle agent | `collie send` | — | — |
+| Pause an idle agent (leaves RESUME.md) | `collie pause` | — | — |
 | Adopt hand-started agent | `collie adopt` | `a` | `?` `a` |
 | Restore agents after the server died | `collie restore` | — | — |
 | Wait for a run's state or done signal | `collie wait` | — | — |
@@ -343,19 +372,24 @@ the runs a lead starts only need `collie signal done`, which works there.
 | Jump to last alert | — | `j` | — |
 | Review | `collie review` | `v` | `ctrl-v` or `?` `v` |
 | Run TASK.md Verify blocks | `collie verify` | — | — (last result in the preview) |
-| Shell in worktree | — | `t` (popup) | `?` `t` |
+| Shell in worktree | — | `t` (popup at the pane's path) | `?` `t` (task's first worktree) |
 | lazygit | — | `g` | — |
 | Done | `collie done` | `d` (confirms) | `ctrl-d` or `?` `d` (confirms) |
 | Archive | `collie archive` | `x` (confirms) | `?` `x` (confirms) |
+| Sync task branch with base | `collie sync` | `s` (confirms, shows output) | `?` `s` (confirms, `space` marks several) |
 | Finish merged tasks | `collie gc` | `G` (lists them, confirms) | — |
 | Show details | `collie show` | — | preview pane (Objective) |
 | Log a decision | `collie log` | — | preview pane (last decision) |
 | Group by status / priority / repo | — | — | `tab` / `shift-tab` |
 | Priority / title | `collie set` | — | — |
+| Task dependencies | `collie set <id> after=…`, `new --after` | — | preview (`after:`, `blocks:`) |
 | Extra repo mid-task | `collie add` | — | — |
 | Branch off dirty work | `collie spike` | — | — |
 
-The menu's task entries (`e v r a d x`) appear only inside a task's session.
+The menu's task entries (`r a e v d x s`) appear only inside a task's session,
+with the same keys and labels as the dashboard's `?` actions. `t` differs on
+purpose: the menu opens the shell at the current pane's path (it works in any
+session), the dashboard, which has no pane of the task, in its first worktree.
 On the dashboard the `ctrl-` keys act on the selected row at once, so plain
 keys keep filtering; `?` lists every action.
 `<id>` may be omitted anywhere inside a task session (`$COLLIE_TASK`).
@@ -370,6 +404,7 @@ keys keep filtering; `?` lists every action.
 | A second agent on the same task | `collie run <id> --agent codex [-r repo]` (one window per run) |
 | Continue another agent's work with explicit context | `collie handoff <id> --from <run> --agent <claude\|codex> --note <file>` |
 | Send a follow-up, fix or pause request to a running agent | `collie send <id> [--run N] [--wait] <text>` or `-f <file>` (refuses while it works: exit 2) |
+| Pause an agent and pick up later | `collie pause <id> [--run N] [-p <request>]`: it writes `.collie/RESUME.md`, which `show` and the preview mention and the next `run`, `handoff` or `adopt` reads |
 | The agent to push, open a PR and watch CI | `collie new --ship` or `set -g @collie-ship on` |
 | Move uncommitted experiments out of the way | `collie spike <id>` inside the worktree (new `exp/<id>` task, tracked changes only) |
 | Keep `exp/*` off the remote | link `hooks/pre-push` (see README) |

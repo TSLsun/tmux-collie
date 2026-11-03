@@ -133,7 +133,7 @@ cmd__conflicts() {
 }
 
 # Active tasks in `ls` format, most urgent first (see DESIGN §3.3: answer >
-# reply > review > stalled > working > start), then by priority and id, plus
+# reply > review > stalled > working > start > blocked), then by priority and id, plus
 # two last fields: the cached PRs ("#<number>:<state> ...", or -) and the
 # number of predicted conflicts (see conflicts_cached, or -).
 dash_rows() {
@@ -152,6 +152,7 @@ dash_rows() {
       else if ($7 == "review") r = 3
       else if ($7 == "stalled") r = 4
       else if ($7 == "-") r = 5
+      else if ($7 ~ /^blocked/) r = 7
       f = tasks "/" $1 "/pr.tsv"; s = ""
       while ((getline l <f) > 0) if (split(l, x, "\t") >= 3) s = s (s == "" ? "" : " ") "#" x[2] ":" x[3]
       close(f)
@@ -261,8 +262,8 @@ cmd__rows() { # [group]
       printf "" >cache; printf "" >width
     }
     {
-      n++; id[n] = $1; st[n] = $7 == "-" ? "working" : $7; pr[n] = $3
-      you = $7 != "-" && $7 != "start"
+      n++; id[n] = $1; st[n] = $7 == "-" ? "working" : $7 ~ /^blocked/ ? "blocked" : $7; pr[n] = $3
+      you = $7 != "-" && $7 != "start" && st[n] != "blocked"
       gl[n] = you ? e "31m●" : $7 == "-" ? e "33m◐" : e "2m○"
       k = $8 == "-" ? 0 : split($8, a, " "); b = ""; ql[n] = 0; shown = 0
       for (i = 1; i <= k; i++) {
@@ -637,7 +638,15 @@ dash_action() { # id key [marked id...]
         echo "change-prompt($DASH_PROMPT)+change-preview-label($REVIEW_LABEL)+refresh-preview"
       fi
       ;;
-    r) dash_bg r "$id" ;;
+    r)
+      # a blocked todo task asks first (see cmd_run)
+      if [ -n "$id" ] && task_status "$id" "" && [ "$STATUS" = todo ] &&
+        task_blocked "$TASKS_DIR/$id" && [ -n "$BLOCKED" ]; then
+        echo "change-prompt($ASK_MARK$k $id )+refresh-preview"
+      else
+        dash_bg r "$id"
+      fi
+      ;;
     s)
       for m in "$@"; do [ -z "$m" ] || ids="$ids $m"; done
       echo "change-prompt($ASK_MARK$k${ids:- $id} )+refresh-preview"
@@ -742,6 +751,10 @@ dash_panel() { # id
           echo "stops the agent started by hand and resumes it under collie run"
           return 0
           ;;
+        r)
+          task_blocked "$TASKS_DIR/$ids"
+          printf 'blocked on: %s (not done or merged)\n\n' "$BLOCKED"
+          ;;
       esac
       return 1
       ;;
@@ -800,19 +813,27 @@ cmd__actions() { # id key
 # Menu for prefix <@collie-key>, built per session: task actions only inside a
 # task's session (see collie.tmux).
 cmd__menu() { # session [client]
-  local C="$PLUGIN_DIR/bin/collie" T=$1 popup="display-popup -E -w 90% -h 85%" items
+  local C="$PLUGIN_DIR/bin/collie" T=$1 popup="display-popup -E -w 90% -h 85%" items k l a
   items=(dashboard h "$popup '$C _popup $C dash'"
     lazygit g "$popup -d '#{pane_current_path}' '$C _popup lazygit'"
     terminal t "$popup -d '#{pane_current_path}'"
     "new task" c "display-popup -EE -w 80% -h 70% -d '#{pane_current_path}' '$C new'")
   if valid_id "$T" && [ -f "$TASKS_DIR/$T/TASK.md" ]; then
-    items+=("edit task" e "$popup '$C _popup $C edit $T'"
-      review v "$popup '$C _popup \"$C review $T | less -R\"'"
-      ""
-      "run agent" r "run-shell '$C run $T -s${2:+ -c $2}'"
-      "adopt agent" a "display-popup -E -w 90 -h 12 '$C _popup $C adopt $T'"
-      "done" d "confirm-before -p 'done $T? (y/n)' \"display-popup -E -w 90 -h 12 '$C _popup $C done $T'\""
-      archive x "confirm-before -p 'archive $T? (y/n)' \"display-popup -E -w 90 -h 12 '$C _popup $C archive $T'\"")
+    # the dashboard's task actions (action_items), same keys and labels;
+    # terminal and new task are the global items above
+    items+=("")
+    while read -r k l; do
+      case $k in
+        r) a="run-shell '$C run $T -s${2:+ -c $2}'" ;;
+        a) a="display-popup -E -w 90 -h 12 '$C _popup $C adopt $T'" ;;
+        e) a="$popup '$C _popup $C edit $T'" ;;
+        v) a="$popup '$C _popup \"$C review $T | less -R\"'" ;;
+        d | x) a="confirm-before -p '$l $T? (y/n)' \"display-popup -E -w 90 -h 12 '$C _popup $C $l $T'\"" ;;
+        s) a="confirm-before -p 'sync $T? (y/n)' \"display-popup -E -w 90 -h 20 '$C _popup -w $C sync $T'\"" ;;
+        *) continue ;;
+      esac
+      items+=("$l" "$k" "$a")
+    done < <(action_items "$T")
   else
     items+=("" "-not a collie task — use collie new" "" "")
   fi
@@ -847,10 +868,16 @@ cmd__dev() {
 }
 
 # Run a command line in a popup; on failure keep the popup open until a key.
-cmd__popup() {
-  local rc=0
+cmd__popup() { # [-w] command...
+  local rc=0 w=""
+  [ "${1:-}" != -w ] || { w=1 && shift; }
   (eval "$*") || rc=$?
-  [ "$rc" -eq 0 ] && return 0
+  if [ "$rc" -eq 0 ]; then
+    [ -n "$w" ] || return 0
+    printf '\n[press any key]'
+    read -rsn1 _ || true
+    return 0
+  fi
   printf '\n[collie: exit %s — press any key]' "$rc"
   read -rsn1 _ || true
   return "$rc"
@@ -925,6 +952,7 @@ cmd__preview() {
     line="$line${line:+ · }last event $a"
   fi
   [ -z "$line" ] || echo "$line"
+  [ ! -f "$d/RESUME.md" ] || printf 'resume note: %s\n' "$d/RESUME.md"
   case $STATUS in done | archived) printf 'finished %s\n' "$(finished_at "$id")" ;; esac
   echo
   echo "objective:"
@@ -933,6 +961,8 @@ cmd__preview() {
     f && NF && n++ < 5 { print "  " $0 }
     END { if (!n) print "  (empty)" }' "$d/TASK.md"
   echo
+  a=$(dep_lines "$id")
+  [ -z "$a" ] || printf '%s\n\n' "$a"
   last_decision "$d"
   # the newest runs; ▸ marks the one enter goes to (see _target)
   a=$(run_history "$id")
