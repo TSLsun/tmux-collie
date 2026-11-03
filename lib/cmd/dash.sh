@@ -133,7 +133,7 @@ cmd__conflicts() {
 }
 
 # Active tasks in `ls` format, most urgent first (see DESIGN §3.3: answer >
-# reply > findings > review > stalled > working > start), then by priority and id, plus
+# reply > findings > review > stalled > working > start > blocked), then by priority and id, plus
 # two last fields: the cached PRs ("#<number>:<state> ...", or -) and the
 # number of predicted conflicts (see conflicts_cached, or -).
 dash_rows() {
@@ -153,6 +153,7 @@ dash_rows() {
       else if ($7 == "review") r = 4
       else if ($7 == "stalled") r = 5
       else if ($7 == "-") r = 6
+      else if ($7 ~ /^blocked/) r = 8
       f = tasks "/" $1 "/pr.tsv"; s = ""
       while ((getline l <f) > 0) if (split(l, x, "\t") >= 3) s = s (s == "" ? "" : " ") "#" x[2] ":" x[3]
       close(f)
@@ -262,8 +263,8 @@ cmd__rows() { # [group]
       printf "" >cache; printf "" >width
     }
     {
-      n++; id[n] = $1; st[n] = $7 == "-" ? "working" : $7; pr[n] = $3
-      you = $7 != "-" && $7 != "start"
+      n++; id[n] = $1; st[n] = $7 == "-" ? "working" : $7 ~ /^blocked/ ? "blocked" : $7; pr[n] = $3
+      you = $7 != "-" && $7 != "start" && st[n] != "blocked"
       gl[n] = you ? e "31m●" : $7 == "-" ? e "33m◐" : e "2m○"
       k = $8 == "-" ? 0 : split($8, a, " "); b = ""; ql[n] = 0; shown = 0
       for (i = 1; i <= k; i++) {
@@ -638,7 +639,15 @@ dash_action() { # id key [marked id...]
         echo "change-prompt($DASH_PROMPT)+change-preview-label($REVIEW_LABEL)+refresh-preview"
       fi
       ;;
-    r) dash_bg r "$id" ;;
+    r)
+      # a blocked todo task asks first (see cmd_run)
+      if [ -n "$id" ] && task_status "$id" "" && [ "$STATUS" = todo ] &&
+        task_blocked "$TASKS_DIR/$id" && [ -n "$BLOCKED" ]; then
+        echo "change-prompt($ASK_MARK$k $id )+refresh-preview"
+      else
+        dash_bg r "$id"
+      fi
+      ;;
     s)
       for m in "$@"; do [ -z "$m" ] || ids="$ids $m"; done
       echo "change-prompt($ASK_MARK$k${ids:- $id} )+refresh-preview"
@@ -742,6 +751,10 @@ dash_panel() { # id
         a)
           echo "stops the agent started by hand and resumes it under collie run"
           return 0
+          ;;
+        r)
+          task_blocked "$TASKS_DIR/$ids"
+          printf 'blocked on: %s (not done or merged)\n\n' "$BLOCKED"
           ;;
       esac
       return 1
@@ -949,6 +962,8 @@ cmd__preview() {
     f && NF && n++ < 5 { print "  " $0 }
     END { if (!n) print "  (empty)" }' "$d/TASK.md"
   echo
+  a=$(dep_lines "$id")
+  [ -z "$a" ] || printf '%s\n\n' "$a"
   last_decision "$d"
   # the newest runs; ▸ marks the one enter goes to (see _target)
   a=$(run_history "$id")

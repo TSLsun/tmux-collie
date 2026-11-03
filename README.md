@@ -129,13 +129,16 @@ or spot tasks to combine.
 ```sh
 collie dash                            # fzf: needs you > active > todo; tab regroups; u: runs
 collie set deploy-v2 priority=P1 "title=Ship v2"
+collie set lead after="api web"        # blocked until api and web are done/merged
 ```
 
 `ls`'s last column says what a task needs from you: `answer` (an agent waits
 for permission or input), `findings` (REVIEW.md has open findings, see
 [the format](docs/USAGE.md#review-findings)), `review` (fresh REPORT.md), `reply` (an agent
 finished its turn without one), `stalled` (active, no live agent), `start`
-(todo), or `-` (an agent is working, or the task is finished).
+(todo), `blocked:<ids>` (todo, waiting on its `after:` tasks; see
+[task dependencies](docs/USAGE.md#task-dependencies)), or `-` (an agent is
+working, or the task is finished).
 
 Dashboard rows start with a glyph (red `●` needs you: answer, findings, review,
 reply, stalled; yellow `◐` working; dim `○` todo), then aligned columns: id, state

@@ -57,6 +57,19 @@ cmd_run() {
   done
   task_id "$id"
   command -v tmux >/dev/null || die "run: tmux required"
+  # a todo task whose after: deps are unsatisfied: ask on a terminal, else warn
+  task_status "$id" ""
+  if [ "$STATUS" = todo ]; then
+    task_blocked "$TASKS_DIR/$id"
+    if [ -n "$BLOCKED" ]; then
+      warn "run: $id is blocked on: $BLOCKED (not done or merged)"
+      if [ -t 0 ]; then
+        local yn
+        read -r -p "run anyway? (y/n) " yn || yn=""
+        case $yn in [yY]*) ;; *) die "run: cancelled" ;; esac
+      fi
+    fi
+  fi
   [ -n "$agent" ] || { run_agent; agent=$RUN_AGENT; }
   # passed into agent config (codex -c): no quotes or spaces
   [[ $RUN_MODEL =~ ^[A-Za-z0-9._:/-]*$ ]] || die "run: invalid model '$RUN_MODEL'"

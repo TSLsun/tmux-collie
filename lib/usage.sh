@@ -21,7 +21,7 @@ tasks:
   edit [<id>]         open the task's TASK.md in $EDITOR
   go [<id>]           switch to the task session (fzf picker if omitted)
   dash [-n]           fzf dashboard, most urgent first
-  set [<id>] f=v...   set priority (P0..P3) or title
+  set [<id>] f=v...   set priority (P0..P3), title or after (task deps)
   review [<id>] [-p]  per-repo commits, diff stat, dirty files, REPORT.md
   verify [<id>]       run TASK.md's ## Verify sh blocks in each worktree
   spike <id> [-u]     new exp/<id> task with this worktree's uncommitted changes
@@ -168,7 +168,7 @@ help_command() {
 usage: collie new [<id>] [-r repo[:branch]]... [-w workspace] [-t type]
                   [--title text] [-m objective] [--from ref] [--edit]
                   [--no-window] [--ship|--no-ship] [--run] [--agent name]
-                  [-p prompt] [-- args]
+                  [-p prompt] [--after ids] [-- args]
 
 Create a task: its record and TASK.md, branch <type>/<id> and a worktree in
 each repo (default: the current repo, or the current directory as a folder
@@ -186,6 +186,8 @@ outside git), and tmux session <id> with a window per repo.
                     $COLLIE_SHIP, @collie-ship, else off)
   --run             start the agent as `collie run` does; --agent, -p and
                     -- are passed to run and imply --run
+  --after ids       tasks this one builds on (as `collie set <id> after=`);
+                    repeatable
 
 No id on a tty prompts for id, type, objective, ship, and (given an
 objective) whether to start the agent. Fetches origin first; prints the
@@ -212,7 +214,8 @@ usage: collie ls [-a]
 
 List live tasks, tab-separated: id, status, priority, session (* exists,
 - none), agent (most urgent run state), repos, needs (answer, findings,
-review, reply, stalled, start, -). -a includes done and archived. Read-only.
+review, reply, stalled, start, blocked:<ids>, -). -a includes done and
+archived. Read-only.
 EOF
       ;;
     brief)
@@ -295,10 +298,17 @@ EOF
       cat <<'EOF'
 usage: collie set [<id>] field=value...
 
-Set fields in TASK.md's frontmatter: priority (P0..P3), title. A bare field
+Set fields in TASK.md's frontmatter: priority (P0..P3), title, after (the
+task ids it builds on, space- or comma-separated; empty clears). A bare field
 name reads its value from stdin. Values are single lines.
 
+A todo task is blocked until each after: task is done or has a merged PR in
+every repo (cached by the dashboard; gc marks merged branches done). Unknown and
+archived deps keep it blocked; a cycle only warns. `collie run` on a blocked
+task asks on a terminal, else warns and runs.
+
   collie set login priority=P0 title='OAuth login'
+  collie set lead after='run-primitives collie-send'
 EOF
       ;;
     review)
