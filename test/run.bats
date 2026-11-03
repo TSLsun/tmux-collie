@@ -207,6 +207,25 @@ new_popup() { # keys...
   grep -qxF "collie: x|sleep is waiting for you" "$TMP/notes"
 }
 
+@test "notify: an idle that ends within @collie-idle-grace does not notify" {
+  export COLLIE_NOTIFY="printf '%s|%s\n' >>'$TMP/notes'" COLLIE_IDLE_GRACE=1
+  collie new x --no-window
+  collie run x -- 300
+  # the agent resumes by itself right after its turn ended
+  hook x idle
+  hook x working
+  sleep 1.5
+  [ ! -e "$TMP/notes" ]
+  # state and log still follow the hooks at once
+  [ "$(grep -c 'run=1 state=idle' "$(task_dir x)/events.log")" -eq 1 ]
+  # an idle that holds notifies once the grace is over
+  hook x idle
+  sleep 0.3
+  [ ! -e "$TMP/notes" ]
+  wait_for '[ "$(wc -l <"$TMP/notes" 2>/dev/null)" -eq 1 ]'
+  grep -qxF "collie: x|sleep finished its turn" "$TMP/notes"
+}
+
 @test "status: counts agents by state for the status bar" {
   run collie status
   [ "$status" -eq 0 ]

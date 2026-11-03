@@ -325,36 +325,46 @@ notify() { # title body [pane]
 
 # Records a state change for the window of a pane; ignores non-collie windows.
 set_state() { # pane state [expected-codex-pending-token]
-  local info id run old wid agent active attached msg applied
+  local info id run old wid agent active attached msg applied grace=0 tok
   info=$(tmux display-message -p -t "$1" '#{@collie_task}|#{@collie_run}|#{@collie_state}|#{window_id}|#{@collie_agent}|#{window_active}|#{session_attached}' 2>/dev/null) || return 0
   IFS='|' read -r id run old wid agent active attached <<<"$info"
   [ -n "$id" ] && [ -f "$TASKS_DIR/$id/TASK.md" ] || return 0
   [ "$2" != "$old" ] || return 0
-  # @collie_state_at: when the state began, for the age in `collie _status-menu`
+  # @collie_state_at: when the state began, for the age in `collie _status-menu`;
+  # @collie_state_tok: which state change this is
   stamp %s
+  tok=$NOW.$$.$RANDOM
   if [ -n "${3:-}" ]; then
     # Compare and update on the tmux server: Stop cannot invalidate an
     # observer between its token check and a stale waiting state write.
     applied=$(tmux if-shell -F -t "$1" "#{==:#{@collie_codex_pending},$3}" \
-      "set-option -w -t $wid @collie_state $2 ; set-option -w -t $wid @collie_state_at $NOW ; display-message -p changed" 2>/dev/null) || return 0
+      "set-option -w -t $wid @collie_state $2 ; set-option -w -t $wid @collie_state_at $NOW ; set-option -w -t $wid @collie_state_tok $tok ; display-message -p changed" 2>/dev/null) || return 0
     [ "$applied" = changed ] || return 0
   else
-    tmux set-option -w -t "$wid" @collie_state "$2" \; set-option -w -t "$wid" @collie_state_at "$NOW" 2>/dev/null || return 0
+    tmux set-option -w -t "$wid" @collie_state "$2" \; set-option -w -t "$wid" @collie_state_at "$NOW" \
+      \; set-option -w -t "$wid" @collie_state_tok "$tok" 2>/dev/null || return 0
   fi
   log_event "$id" agent_state "run=${run:--} state=$2"
   # no popup for the window you are looking at
   [ "$active" = 1 ] && [ "${attached:-0}" -gt 0 ] && return 0
   case $2:$old in
     waiting:*) msg="is waiting for you" ;;
-    idle:working) msg="finished its turn" ;;
+    idle:working)
+      msg="finished its turn"
+      # @collie-idle-grace: seconds an idle must hold before it notifies; an
+      # agent may resume by itself (Claude: a background task's result)
+      grace=${COLLIE_IDLE_GRACE:-$(tmux_opt @collie-idle-grace)}
+      [[ $grace =~ ^[0-9]+([.][0-9]+)?$ ]] || grace=3
+      ;;
     *) return 0 ;;
   esac
-  # target of `collie _jump` (menu: jump to alert)
-  tmux set-option -g @collie-last-pane "$1" 2>/dev/null || true
   (
+    [ "$grace" = 0 ] || sleep "$grace"
     # A hook may have resolved this state before notification delivery.
-    [ "$(tmux show-options -wqv -t "$wid" @collie_state 2>/dev/null)" = "$2" ] || exit 0
+    [ "$(tmux show-options -wqv -t "$wid" @collie_state_tok 2>/dev/null)" = "$tok" ] || exit 0
     [ -z "${3:-}" ] || [ "$(tmux show-options -wqv -t "$wid" @collie_codex_pending 2>/dev/null)" = "$3" ] || exit 0
+    # target of `collie _jump` (menu: jump to alert)
+    tmux set-option -g @collie-last-pane "$1" 2>/dev/null || true
     notify "collie: $id" "${agent:-agent} $msg" "$1"
   ) >/dev/null 2>&1 &
 }
