@@ -67,6 +67,7 @@ collie run --agent aider -- --model x  # any command works (no state hooks)
 collie handoff deploy-v2 --from 1 --agent codex --note handoff.md
                                       # new conversation, preserving run 1's context
 collie send deploy-v2 'rerun the tests'  # type into its idle agent (--run N, --wait, -f file)
+collie pause deploy-v2                 # idle agent saves work, leaves .collie/RESUME.md
 collie run deploy-v2 --model opus --effort high  # per-run model/effort (claude, codex)
 collie run deploy-v2 --agent codex --scratch -p 'review ...'  # own worktree at the branch head
 collie wait deploy-v2 --done --timeout 3600     # until the run signals done and stops
@@ -172,7 +173,7 @@ below it otherwise, and wraps long lines. The header's key hints wrap instead
 of being cut.
 
 `prefix h` opens a menu (dashboard, lazygit, terminal, new
-task, edit task, review, run agent, adopt agent, done, archive, jump to alert, gc merged tasks) for the current session's task; outside a
+task, run agent, adopt agent, edit task, review, done, archive, sync, jump to alert, gc merged tasks) for the current session's task; outside a
 task session it keeps only dashboard, lazygit, terminal, new task, jump to alert and gc merged tasks.
 `run agent` (`r`) switches you to the new agent window;
 plain `collie run` leaves it in the background (`-s` switches). `jump to alert` (`j`) switches to the pane of the last agent that notified. `prefix h h` goes straight to the

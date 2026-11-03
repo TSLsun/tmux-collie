@@ -72,6 +72,28 @@ stub_tmux() {
   [[ "$output" != *"not a collie task"* && "$output" != *notes* && "$output" != *"next action"* && "$output" != *"status="* ]]
 }
 
+@test "_menu: task actions match the dashboard's keys and labels; sync confirms" {
+  make_bare_repo
+  collie new x -r proj --no-window
+  stub_tmux
+  PATH="$TMP/stub:$PATH" run collie _menu x cl
+  [ "$status" -eq 0 ]
+  # every dashboard task action (? menu) is in the prefix menu, same key and
+  # label; terminal (t) and new task (c) are its global items
+  acts=$(bash -c '. "$1" && action_items x' _ "$BATS_TEST_DIRNAME/../lib/cmd/dash.sh" | grep -v '^[tc] ')
+  [ "$(printf '%s\n' "$acts" | wc -l)" -ge 7 ]
+  while read -r k l; do
+    [[ "$output" == *$'\n'"$l"$'\n'"$k"$'\n'* ]] || { echo "missing: $k $l"; false; }
+  done <<<"$acts"
+  [[ "$output" == *"terminal"$'\n'"t"$'\n'* && "$output" == *"new task"$'\n'"c"$'\n'* ]]
+  [[ "$output" == *"sync"$'\n'"s"$'\n'"confirm-before -p 'sync x? (y/n)'"*"_popup -w "*"collie sync x"* ]]
+}
+
+@test "_popup: -w pauses for a key after success too" {
+  run collie _popup -w true </dev/null
+  [ "$status" -eq 0 ] && [[ "$output" == *"[press any key]"* ]]
+}
+
 @test "_menu: non-task session gets a hint instead of task actions" {
   stub_tmux
   PATH="$TMP/stub:$PATH" run collie _menu main cl
