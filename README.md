@@ -46,6 +46,7 @@ collie new deploy-v2 -r A -r B:release/v2   # per-repo branch
 collie new checkout-fix -w shop        # all repos of a workspace
 collie add deploy-v2 -r C              # pull another repo in mid-task
 collie ls                              # id  status  priority  session(*|-)  agent  repos  needs
+collie brief                           # what waits on you: one line + the command to act, per task
 collie show deploy-v2                  # fields, TASK.md contract, repos, runs, last decision, events
 collie log build 'use ln' 'atomic' test/log.bats ok   # agent: a row in .collie/decisions.tsv
 collie edit deploy-v2                  # adjust TASK.md in $EDITOR (also: dash e, prefix h e)
@@ -80,6 +81,7 @@ An agent can lead a task (implement, independent review, fix, verify) with the
 
 ```sh
 collie review deploy-v2                # commits, diff stat, dirty files, REPORT.md
+collie verify deploy-v2                # run TASK.md's ## Verify sh blocks in each worktree
 collie spike try-cache                 # from a dirty worktree: exp/try-cache task with the same changes
 collie spike try-cache -u              # ...plus untracked (non-ignored) files
 collie gc                              # finish tasks whose branches were merged
@@ -162,7 +164,7 @@ tasks (or the selected one when none is marked) in the panel, asks y/n, then syn
 those; switching the grouping clears the marks. The header lists the direct keys. The preview shows
 the start of TASK.md's Objective.
 The preview also shows the live agents, the age of the last event, the last
-logged decision, and each
+logged decision, the last `collie verify` result per repo, and each
 repo's branch and PR. It sits right of the list when the rows fit beside it,
 below it otherwise, and wraps long lines. The header's key hints wrap instead
 of being cut.

@@ -14,6 +14,7 @@ tasks:
   new [<id>]          create a task: branch + worktree per repo, tmux session
   add [<id>] -r repo  attach more repos to an existing task
   ls [-a]             list tasks: id, status, priority, session, agent, needs
+  brief               what waits on you: one line per task, with the command
   show [<id>]         fields, TASK.md, repos, agent runs, events, REPORT.md
   history [-n] [pat]  finished tasks, newest first; searches TASK.md/REPORT.md
   log <5 fields>      append a row to the task's decision log (decisions.tsv)
@@ -22,6 +23,7 @@ tasks:
   dash [-n]           fzf dashboard, most urgent first
   set [<id>] f=v...   set priority (P0..P3) or title
   review [<id>] [-p]  per-repo commits, diff stat, dirty files, REPORT.md
+  verify [<id>]       run TASK.md's ## Verify sh blocks in each worktree
   spike <id> [-u]     new exp/<id> task with this worktree's uncommitted changes
   gc [-n]             finish tasks whose branches are merged into base
   sync [<id>...] [-n] merge base into active task branches and push them
@@ -48,7 +50,8 @@ discovery:
   workspaces          named repo sets from ~/.config/collie/workspaces
 
 Omitted <id> falls back to $COLLIE_TASK, set in every pane of a task session.
-Read-only: ls show history review dash status doctor repos workspaces, and -n.
+Read-only: ls brief show history review dash status doctor repos workspaces,
+and -n.
 Status: todo -> active -> review -> done | archived (derived; see concepts).
 Agents: read .collie/TASK.md first, write .collie/REPORT.md when finished.
 EOF
@@ -110,10 +113,11 @@ changes   creates branch + worktree   new, add, spike, reopen (worktree only)
           fetches origin              new, add, done, gc, sync
           edits TASK.md               set, edit, done/archive/reopen (status)
           appends decisions.tsv       log
+          runs your commands          verify (TASK.md ## Verify blocks)
           never deletes branches or the task record
-          read-only                   ls show history review dash status
-                                      doctor repos workspaces; -n variants
-                                      (gc -n still fetches origin)
+          read-only                   ls brief show history review dash
+                                      status doctor repos workspaces; -n
+                                      variants (gc -n still fetches origin)
 EOF
 }
 
@@ -206,6 +210,17 @@ List live tasks, tab-separated: id, status, priority, session (* exists,
 stalled, start, -). -a includes done and archived. Read-only.
 EOF
       ;;
+    brief)
+      cat <<'EOF'
+usage: collie brief
+
+What waits on you, most urgent first (answer, reply, findings, review,
+stalled; then priority, id): one line per task with what it waits on and
+the command to act. review shows REPORT.md's first line and the PR with its
+state and CI from the cache the dashboard keeps (never calls gh). Prints
+"nothing waits on you" when nothing does. Read-only.
+EOF
+      ;;
     show)
       cat <<'EOF'
 usage: collie show [<id>]
@@ -288,6 +303,23 @@ usage: collie review [<id>] [-p]
 Per repo: commits since the branch started, diff stat (-p: the full patch),
 dirty files; then REPORT.md. Folders list files modified since the first
 run. Read-only.
+EOF
+      ;;
+    verify)
+      cat <<'EOF'
+usage: collie verify [<id>] [-r repo]
+
+Run the fenced ```sh blocks under TASK.md's "## Verify" in each repo's
+worktree (-r: only that repo), in order, each with `sh -e`, stdin from
+/dev/null and your environment. A repo stops at its first failing block.
+Output goes to the terminal and to verify/<time>-<repo>.log in the task
+dir; a verify event records pass/fail, the exit code and the log. show,
+review and the dash preview print the last result per repo; it does not
+change the task's status. Exits non-zero if any repo fails. No blocks:
+says so, exits 0, records nothing.
+
+  collie verify login
+  collie verify login -r api
 EOF
       ;;
     spike)
@@ -524,7 +556,7 @@ EOF
 }
 
 # the public commands, in overview order
-HELP_COMMANDS='new add ls show history log edit go dash set review spike gc sync done archive reopen run handoff send adopt restore wait signal state status doctor repos workspaces'
+HELP_COMMANDS='new add ls brief show history log edit go dash set review verify spike gc sync done archive reopen run handoff send adopt restore wait signal state status doctor repos workspaces'
 
 cmd_help() {
   local c

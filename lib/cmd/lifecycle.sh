@@ -200,10 +200,65 @@ cmd_review() {
     if [ -d "$p" ]; then git -C "$p" status --short; else echo "(worktree missing: $p)"; fi
     echo
   done <"$d/repos.tsv"
+  local v
+  v=$(verify_results "$id")
+  [ -z "$v" ] || printf '== verify\n%s\n\n' "$v"
   if [ -f "$d/REPORT.md" ]; then
     echo "== REPORT.md"
     cat "$d/REPORT.md"
   fi
+}
+
+# Run TASK.md's ## Verify sh blocks in each repo's worktree (-r: one repo),
+# in order with sh -e, stopping a repo at its first failing block. Output goes
+# to the terminal and verify/<time>-<repo>.log; a verify event records
+# pass/fail, the exit code and the log. collie never judges the output.
+cmd_verify() {
+  local id="" only="" d tmp n i rc st fail=0 name c b p rel
+  while [ $# -gt 0 ]; do
+    case $1 in
+      -r) only=${2:?-r needs a repo}; shift ;;
+      -*) die "verify: unknown option $1" ;;
+      *) [ -z "$id" ] || die "verify: too many arguments"; id=$1 ;;
+    esac
+    shift
+  done
+  task_id "$id"
+  d="$TASKS_DIR/$id"
+  [ -z "$only" ] || awk -F'\t' -v n="$only" '$1 == n { f = 1 } END { exit !f }' "$d/repos.tsv" ||
+    die "verify: task '$id' has no repo '$only'"
+  tmp=$(mktemp -d) || return 1
+  n=$(verify_blocks "$d/TASK.md" "$tmp")
+  if [ "$n" -eq 0 ]; then
+    rm -rf "$tmp"
+    echo "verify: no \`\`\`sh blocks under ## Verify in $d/TASK.md; nothing run or recorded"
+    return 0
+  fi
+  mkdir -p "$d/verify"
+  while IFS=$TAB read -r name c b p; do
+    [ -z "$only" ] || [ "$name" = "$only" ] || continue
+    if [ ! -d "$p" ]; then
+      warn "verify: $name: worktree missing: $p"
+      fail=1
+      continue
+    fi
+    stamp_utc %Y%m%dT%H%M%SZ
+    rel=verify/$NOW-$name.log
+    : >"$d/$rel"
+    printf '== %s  %s\n' "$name" "$p"
+    rc=0
+    for ((i = 1; i <= n; i++)); do
+      printf -- '--- block %s of %s\n' "$i" "$n" | tee -a "$d/$rel"
+      (cd "$p" && sh -e "$tmp/$i.sh") </dev/null 2>&1 | tee -a "$d/$rel" || rc=$?
+      [ "$rc" -eq 0 ] || break
+    done
+    st=pass
+    [ "$rc" -eq 0 ] || { st=fail; fail=1; }
+    log_event "$id" verify "repo=$name result=$st exit=$rc blocks=$n log=$rel"
+    printf '== %s  %s  exit %s  %s\n\n' "$name" "$st" "$rc" "$d/$rel"
+  done <"$d/repos.tsv"
+  rm -rf "$tmp"
+  [ "$fail" -eq 0 ]
 }
 
 # A folder has no history: list the files modified since the task's first run.
