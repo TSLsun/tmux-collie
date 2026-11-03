@@ -3,7 +3,7 @@
 
 # --- agent runtime ----------------------------------------------------------
 
-DEFAULT_PROMPT='Your task contract is .collie/TASK.md. Read it first; if its Objective is empty, ask me what to do. When you finish, write a short report to .collie/REPORT.md.'
+DEFAULT_PROMPT='Your task contract is .collie/TASK.md. Read it first; if its Objective is empty, ask me what to do. Record key decisions with collie log. When you finish, write a short report to .collie/REPORT.md.'
 # what `collie pause` asks for by default, and how run, handoff and adopt
 # point a new agent at the note it leaves (.collie/ rewritten to the task dir)
 PAUSE_PROMPT='Pause: stop at the next safe boundary, save your work in progress and write a resume note to .collie/RESUME.md for whoever picks this task up. Do not push or open a PR. Then stop.'
@@ -214,6 +214,42 @@ task_status() { # id top_state [stored_status]
 # task_archived event; "" if never.
 finished_at() { # id
   awk -F'\t' '$2 == "task_done" || $2 == "task_archived" { t = $1 } END { print t }' "$TASKS_DIR/$1/events.log"
+}
+
+# The last `collie verify` result per repo, one line each, indented:
+# repo, pass|fail, exit code, time, log path. Prints nothing if never run.
+verify_results() { # id
+  awk -F'\t' -v d="$TASKS_DIR/$1" '
+    function kv(k,  a, i, n) {
+      n = split($3, a, " ")
+      for (i = 1; i <= n; i++) if (index(a[i], k "=") == 1) return substr(a[i], length(k) + 2)
+    }
+    $2 == "verify" {
+      r = kv("repo"); if (!(r in last)) order[++n] = r
+      last[r] = kv("result") "  exit " kv("exit") "  " $1 "  " d "/" kv("log")
+    }
+    END { for (i = 1; i <= n; i++) print "  " order[i] "  " last[order[i]] }' "$TASKS_DIR/$1/events.log"
+}
+
+# Writes the fenced ```sh blocks under TASK.md's "## Verify" heading to
+# <dir>/1.sh, 2.sh, ... and prints how many. Fences elsewhere, other
+# languages, and "## " lines inside a fence are skipped.
+verify_blocks() { # task.md dir
+  awk -v dir="$2" '
+    /^```/ {
+      if (!fence) {
+        fence = 1
+        if (sec && $0 ~ /^```sh[ \t]*$/) { sh = 1; f = dir "/" ++n ".sh"; printf "" >f }
+      } else if ($0 ~ /^```[ \t]*$/) {
+        fence = 0
+        if (sh) close(f)
+        sh = 0
+      } else if (sh) print >f
+      next
+    }
+    fence { if (sh) print >f; next }
+    /^## / { sec = $0 ~ /^## Verify[ \t]*$/ }
+    END { print n + 0 }' "$1"
 }
 
 # Sets START to the commit a repo's worktree was created at ("" if unknown).

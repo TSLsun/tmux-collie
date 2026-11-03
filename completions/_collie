@@ -27,8 +27,10 @@ _collie() {
     'new:create a task'
     'add:attach repos to a task'
     'ls:list tasks'
+    'brief:what waits on you'
     'show:show a task'
     'history:browse finished tasks'
+    'log:append a row to the decision log'
     'edit:edit TASK.md in $EDITOR'
     'go:switch to a task session'
     'dash:dashboard'
@@ -42,6 +44,7 @@ _collie() {
     'wait:block until a run reaches a state or signals done'
     'signal:agent signals its turn is done'
     'review:per-repo commits and diffs'
+    'verify:run TASK.md Verify blocks in each worktree'
     'spike:branch the current worktree into an exp/ task'
     'gc:finish merged tasks'
     'sync:merge base into active task branches'
@@ -80,6 +83,7 @@ _collie() {
     send) compadd -- -r --run --wait -f; _collie_tasks ;;
     pause) compadd -- -r --run -p -f; _collie_tasks ;;
     show | review) _collie_tasks -a ;;
+    verify) compadd -- -r; _collie_tasks ;;
     run) compadd -- --agent --model --effort -r -p -s; _collie_tasks ;;
     add | edit | go | adopt | done | archive) _collie_tasks ;;
     help) compadd concepts workflows all; _describe command cmds ;;

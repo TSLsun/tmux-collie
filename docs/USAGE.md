@@ -27,6 +27,7 @@ Shortest path for a one-repo change, from inside that repo:
 collie new fix-retry -t fix -m 'retry 5xx on upload'   # worktree + session
 collie run fix-retry                                   # agent reads .collie/TASK.md
 collie review fix-retry                                # commits, diff stat, REPORT.md
+collie verify fix-retry                                # run TASK.md's ## Verify blocks
 # merge fix/fix-retry (PR or locally), then:
 collie gc                                              # or: collie done fix-retry
 collie history                                         # later: finished tasks, their commits and REPORT.md
@@ -41,6 +42,7 @@ flowchart TB
         report["REPORT.md<br/>written by the agent"]
         repos["repos.tsv<br/>repo · git dir · branch · path"]
         events["events.log<br/>append-only history"]
+        decisions["decisions.tsv<br/>append-only decision log"]
     end
     subgraph git["git (one per repo)"]
         wtA["worktree A<br/>branch feat/#lt;id#gt;"]
@@ -62,7 +64,7 @@ flowchart TB
 
 | Piece | One per | Created by | Removed by | Survives `kill-server`? |
 |---|---|---|---|---|
-| Task record (`TASK.md`, `repos.tsv`, `events.log`, `REPORT.md`) | task | `new`, `spike` | never | yes |
+| Task record (`TASK.md`, `repos.tsv`, `events.log`, `REPORT.md`, `decisions.tsv`) | task | `new`, `spike` | never | yes |
 | Commit snapshot (`commits.txt`) | task | `done`, `archive` | never | yes |
 | Handoff packet (`handoffs/`) | handoff attempt | `handoff` | never | yes |
 | Branch `<type>/<id>` | repo in the task | `new`, `add`, `spike` | never (delete it yourself) | yes |
@@ -175,6 +177,23 @@ The dashboard sorts tasks in that urgency (`answer` > `reply` > `review` >
 (needs you, active, todo); `tab` /
 `shift-tab` regroup by priority or repo.
 
+The dashboard caches PRs per repository for five minutes. It lists up to 1,000
+PRs on the task branch and cross-branch PRs whose body explicitly says
+`Restore ... from #N` on one line, where `#N` is a task-branch PR. Other
+references (including reverts and dependencies) are not proof of ownership.
+This conservative rule can miss differently worded restorations. A failed
+repository lookup keeps its previous cached PRs. The row abbreviates long PR
+lists with `+N`; the preview and `dash -n` show the complete cached list.
+
+`collie brief` is the short form: one line per task that needs you, in the
+same order, with what it waits on and the command to act. It reads only
+local state and the dashboard's PR cache, so it never touches the network:
+
+```text
+answer   login (P1): an agent waits for your answer  ->  collie go login
+review   deploy-v2 (P2): Added blue/green deploy. | PR https://github.com/o/r/pull/12 (open, CI pass)  ->  collie review deploy-v2
+stalled  cache (P2): its agents were lost with the tmux server  ->  collie restore cache
+```
 Agents get hooks per run, nothing installed: claude, codex, gemini, omp.
 Any other command (`--agent aider`) runs without hooks. Agents you start by
 hand in a task's session are detected by process (working/idle only, no
@@ -233,6 +252,31 @@ authoritative. No private transcript or resume ID is passed between agents.
 Successful handoffs record a source/destination link in `events.log`; a failed
 launch keeps its packet for diagnosis without recording a successful handoff.
 
+### Decision log
+
+An agent records each decision worth resuming from with `collie log`; the
+task comes from `$COLLIE_TASK`:
+
+```sh
+collie log build 'header via ln' 'atomic under races' test/log.bats ok
+```
+
+The row goes to `decisions.tsv` in the task record (`.collie/decisions.tsv`),
+created with a header on first use:
+
+| Column | Value |
+|---|---|
+| `ts` | UTC time, stamped |
+| `run` | the agent window's run number, stamped (`-` outside one) |
+| `phase` `decision` `why` `evidence` `result` | the five arguments |
+
+Tabs and newlines in a cell become spaces, and a cell starting with `=` `+`
+`-` or `@` gets a `'` prefix so spreadsheets don't run it. The file is
+append-only and never committed: correct a row by logging a new one.
+`collie show` and the dashboard preview print the last row, and
+`collie history` searches the file. The default run prompt points agents at
+`collie log`; when and what to log is up to the team's workflow.
+
 ## 5. Where each action lives
 
 | Action | CLI | `prefix h` menu | Dashboard (`prefix h h`) |
@@ -251,12 +295,14 @@ launch keeps its packet for diagnosis without recording a successful handoff.
 | Runs of a task | `collie show` | — | `u` (`enter`: its window, `esc`: back) |
 | Jump to last alert | — | `j` | — |
 | Review | `collie review` | `v` | `ctrl-v` or `?` `v` |
+| Run TASK.md Verify blocks | `collie verify` | — | — (last result in the preview) |
 | Shell in worktree | — | `t` (popup) | `?` `t` |
 | lazygit | — | `g` | — |
 | Done | `collie done` | `d` (confirms) | `ctrl-d` or `?` `d` (confirms) |
 | Archive | `collie archive` | `x` (confirms) | `?` `x` (confirms) |
 | Finish merged tasks | `collie gc` | `G` (lists them, confirms) | — |
 | Show details | `collie show` | — | preview pane (Objective) |
+| Log a decision | `collie log` | — | preview pane (last decision) |
 | Group by status / priority / repo | — | — | `tab` / `shift-tab` |
 | Priority / title | `collie set` | — | — |
 | Extra repo mid-task | `collie add` | — | — |
