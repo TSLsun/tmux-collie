@@ -551,8 +551,10 @@ EOF
 usage: collie status
 
 Agent counts (waiting, idle, working) for the tmux status bar, as
-#{collie_status}: collie runs and agents started by hand in any tmux
-session (`set -g @collie-status-scope tasks`: only in task sessions).
+#{collie_status}: collie runs; with `set -g @collie-status-manual on`,
+also agents started by hand in any tmux session, whose state is guessed
+from output silence (`set -g @collie-status-scope tasks`: only in task
+sessions). The click menu marks guessed ages with ~.
 Read-only. With the mouse on, click a count to pick one of its agents and
 jump to it (tmux 3.4+).
 EOF

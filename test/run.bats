@@ -263,16 +263,21 @@ EOF
   PATH="$TMP/stub:$PATH" run collie _status-menu collie-working cl 77
   [ "$status" -eq 0 ]
   [[ "$output" == "display-menu"$'\n'"-c"$'\n'"cl"$'\n'*" working "$'\n'"-x"$'\n'"77"$'\n'"-y"$'\n'"S"$'\n'* ]]
-  [[ "$output" == *$'\n'"a:1  sleep     "[0-9]"s  P1 A title too long for a menu…"$'\n'"1"$'\n'"run-shell '"*"collie _jump $wa1 cl'"* ]]
-  [[ "$output" == *$'\n'"a:2  sleep ##2  5m  P1 A title too long for a menu…"$'\n'"2"$'\n'"run-shell '"*"collie _jump $wa2 cl'"* ]]
+  # generic runs have no hooks: their state is a guess, marked ~
+  [[ "$output" == *$'\n'"a:1  sleep     ~"[0-9]"s  P1 A title too long for a menu…"$'\n'"1"$'\n'"run-shell '"*"collie _jump $wa1 cl'"* ]]
+  [[ "$output" == *$'\n'"a:2  sleep ##2  ~5m  P1 A title too long for a menu…"$'\n'"2"$'\n'"run-shell '"*"collie _jump $wa2 cl'"* ]]
   [[ "$output" != *"_jump $wb"* ]]
   PATH="$TMP/stub:$PATH" run collie _status-menu collie-waiting cl
-  [[ "$output" == *$'\n'"-x"$'\n'"R"$'\n'* && "$output" == *$'\n'"b:1  sleep  "[0-9]"s  P2 b"$'\n'"1"$'\n'* ]]
+  [[ "$output" == *$'\n'"-x"$'\n'"R"$'\n'* && "$output" == *$'\n'"b:1  sleep  ~"[0-9]"s  P2 b"$'\n'"1"$'\n'* ]]
+  # a run with hooks shows its age unmarked
+  tmux set-option -w -t "$wb" @collie_hooks 1
+  PATH="$TMP/stub:$PATH" run collie _status-menu collie-waiting cl
+  [[ "$output" == *$'\n'"b:1  sleep  "[0-9]"s  P2 b"$'\n'"1"$'\n'* ]]
   PATH="$TMP/stub:$PATH" run collie _status-menu collie-idle cl
   [[ "$output" == *"collie: no idle agents"* && "$output" != *display-menu* ]]
 }
 
-@test "status: counts agents started by hand, in task sessions or not" {
+@test "status: @collie-status-manual on counts agents started by hand, in task sessions or not" {
   mkdir "$TMP/manual"
   fake_agent "$TMP/manual/claude"
   collie new x --no-window
@@ -280,9 +285,7 @@ EOF
   tmux new-window -d -t '=x:' "$TMP/manual/claude -c 'read -t 300'"
   tmux new-session -d -s own "$TMP/manual/claude -c 'read -t 300'"
   g='#[range=user|collie-working]#[fg=green]'
-  wait_for '[ "$(COLLIE_SILENCE=999 collie status)" = "${g}●2#[norange]#[default]" ]'
-  [ "$(COLLIE_SILENCE=0 collie status)" = "#[range=user|collie-idle]#[fg=yellow]●2#[norange]#[default]" ]
-  # the menu behind a count lists them too, each jumping to its pane
+  # by default only collie runs count: a hand-started state is a guess
   mkdir -p "$TMP/stub"
   cat >"$TMP/stub/tmux" <<EOF
 #!/bin/sh
@@ -290,15 +293,24 @@ case \$1 in display-menu | display-message) printf '%s\n' "\$@"; exit ;; esac
 exec $(command -v tmux) "\$@"
 EOF
   chmod +x "$TMP/stub/tmux"
+  tmux set-option -g @collie-status-manual on
+  wait_for '[ "$(COLLIE_SILENCE=999 collie status)" = "${g}●2#[norange]#[default]" ]'
+  tmux set-option -gu @collie-status-manual
+  [ -z "$(COLLIE_SILENCE=999 collie status)" ]
+  COLLIE_SILENCE=999 PATH="$TMP/stub:$PATH" run collie _status-menu collie-working cl
+  [[ "$output" == *"collie: no working agents"* ]]
+  tmux set-option -g @collie-status-manual on
+  [ "$(COLLIE_SILENCE=0 collie status)" = "#[range=user|collie-idle]#[fg=yellow]●2#[norange]#[default]" ]
+  # the menu behind a count lists them too, each jumping to its pane
   px=$(tmux list-panes -s -t '=x' -F '#{pane_id}' | tail -1)
   po=$(tmux list-panes -t '=own' -F '#{pane_id}')
   COLLIE_SILENCE=999 PATH="$TMP/stub:$PATH" run collie _status-menu collie-working cl
-  # no age while working by hand; outside a task, the directory
-  [[ "$output" == *$'\n'"x:1    claude  P2 x"$'\n'*"collie _jump $px cl'"* && "$output" == *$'\n'"own:0  claude  ${PWD##*/}"$'\n'*"collie _jump $po cl'"* ]]
+  # no age while working by hand, only ~ (a guess); outside a task, the directory
+  [[ "$output" == *$'\n'"x:1    claude  ~  P2 x"$'\n'*"collie _jump $px cl'"* && "$output" == *$'\n'"own:0  claude  ~  ${PWD##*/}"$'\n'*"collie _jump $po cl'"* ]]
   # idle: time without output
   tmux set-option -g @collie-status-scope tasks
   COLLIE_SILENCE=0 PATH="$TMP/stub:$PATH" run collie _status-menu collie-idle cl
-  [[ "$output" == *$'\n'"x:1  claude  "[0-9]"s  P2 x"$'\n'* ]]
+  [[ "$output" == *$'\n'"x:1  claude  ~"[0-9]"s  P2 x"$'\n'* ]]
   tmux set-option -gu @collie-status-scope
   tmux set-option -g @collie-status-scope tasks
   [ "$(COLLIE_SILENCE=999 collie status)" = "${g}●1#[norange]#[default]" ]
