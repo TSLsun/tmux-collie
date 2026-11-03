@@ -73,6 +73,10 @@ collie doctor                          # deps, agents, task/worktree consistency
 collie ls                              # agent column: waiting/idle/working/exited/unknown
 ```
 
+An agent can lead a task (implement, independent review, fix, verify) with the
+`collie-lead` skill: `npx skills add TSLsun/tmux-collie`; see
+[Leading a task with an agent](docs/USAGE.md#leading-a-task-with-an-agent).
+
 ### Review and lifecycle
 
 ```sh
