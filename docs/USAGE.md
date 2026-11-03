@@ -127,6 +127,33 @@ would reclaim 1.2M (wip/scratch are skipped)
 `--force` removes every bucket. The report changes nothing: `gc` removes
 exactly what `done` would.
 
+### Task dependencies
+
+A task can name the tasks it builds on in TASK.md's `after:` field:
+
+```sh
+collie new lead --after "run-primitives collie-send"
+collie set lead after="run-primitives collie-send"   # replace; after= clears
+```
+
+While a `todo` task has an unsatisfied dep, `ls` shows `blocked:<ids>` and the
+dashboard `blocked` (sorted after `start`). Only cached data is read (task
+status and the dashboard's PR cache), so rows stay fast:
+
+| Dep | Counts as |
+|---|---|
+| status `done` | satisfied |
+| every PR in its cache `merged` (squash merges too) | satisfied |
+| branch merged without a PR | satisfied once `collie gc` marks it done |
+| `archived`, or no such task | broken: blocks (`✗` in the preview) |
+| anything else | waiting: blocks (`·`, with its status and PRs) |
+
+Active and review tasks are never shown as blocked. Cycles and unknown ids
+warn in `set` / `new` and never break `ls` or the dashboard; the preview flags
+a cycle. The preview (and `show`) lists each dep and `blocks:`, the open tasks
+waiting on this one. `collie run` on a blocked task asks `run anyway? (y/n)`
+on a terminal and warns otherwise; dashboard `r` asks y/n first.
+
 ## 4. Agent state (per run)
 
 ```mermaid
@@ -168,10 +195,11 @@ value (`ls`'s last column, the dashboard's STATE), first match:
 | `reply` | an agent is `idle` (turn over, no fresh REPORT.md) | red `●` |
 | `-` | an agent is `working` (dash: `working`), or task finished | yellow `◐` |
 | `start` | task status `todo` | dim `○` |
+| `blocked:<ids>` | task status `todo`, its `after:` tasks unsatisfied (dash: `blocked`) | dim `○` |
 | `stalled` | `active`, but no live agent | red `●` |
 
 The dashboard sorts tasks in that urgency (`answer` > `reply` > `review` >
-`stalled` > `working` > `start`), then priority, and shows them in groups
+`stalled` > `working` > `start` > `blocked`), then priority, and shows them in groups
 (needs you, active, todo); `tab` /
 `shift-tab` regroup by priority or repo.
 
@@ -235,6 +263,7 @@ launch keeps its packet for diagnosis without recording a successful handoff.
 | Show details | `collie show` | — | preview pane (Objective) |
 | Group by status / priority / repo | — | — | `tab` / `shift-tab` |
 | Priority / title | `collie set` | — | — |
+| Task dependencies | `collie set <id> after=…`, `new --after` | — | preview (`after:`, `blocks:`) |
 | Extra repo mid-task | `collie add` | — | — |
 | Branch off dirty work | `collie spike` | — | — |
 

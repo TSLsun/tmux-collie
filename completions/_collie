@@ -61,12 +61,13 @@ _collie() {
     -w) _collie_workspaces; return ;;
     -t) compadd feat fix chore docs refactor test exp; return ;;
     --agent) compadd claude codex gemini omp; return ;;
+    --after) _collie_tasks; return ;;
   esac
   case ${words[2]} in
     state) compadd working waiting idle exited ;;
-    set) compadd -S '=' priority title; _collie_tasks ;;
+    set) compadd -S '=' priority title after; _collie_tasks ;;
     ls) compadd -- -a ;;
-    new) compadd -- -r -w -t -m --title --from --edit --no-window --ship --no-ship --run --agent -p ;;
+    new) compadd -- -r -w -t -m --title --from --edit --no-window --ship --no-ship --run --agent -p --after ;;
     gc | history) compadd -- -n ;;
     reopen) compadd -- --no-window; _collie_tasks -a ;;
     sync | restore) compadd -- -n; _collie_tasks ;;
