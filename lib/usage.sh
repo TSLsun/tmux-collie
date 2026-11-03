@@ -89,8 +89,8 @@ status    derived on every ls/dash; only done and archived are stored.
           an agent works again; reopen takes done/archived back to active.
 
 agent     per run: working, waiting (needs an answer), idle (turn over),
-          exited, unknown (window gone). ls's needs column: answer, review,
-          reply, stalled, start, or -.
+          exited, unknown (window gone). ls's needs column: answer,
+          findings, review, reply, stalled, start, or -.
 
 TASK.md   the contract, at .collie/TASK.md in each worktree (a symlink to the
           record): frontmatter (id, title, priority, status) and sections
@@ -206,8 +206,8 @@ EOF
 usage: collie ls [-a]
 
 List live tasks, tab-separated: id, status, priority, session (* exists,
-- none), agent (most urgent run state), repos, needs (answer, review, reply,
-stalled, start, -). -a includes done and archived. Read-only.
+- none), agent (most urgent run state), repos, needs (answer, findings,
+review, reply, stalled, start, -). -a includes done and archived. Read-only.
 EOF
       ;;
     brief)

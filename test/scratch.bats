@@ -3,8 +3,8 @@
 load helper
 bats_require_minimum_version 1.5.0
 
-# Reviewer runs in scratch worktrees (run --scratch). The default agent is
-# `sleep`; a fake reviewer is `sh -c '...'`.
+# Reviewer runs in scratch worktrees (run --scratch) and the findings needs
+# value. The default agent is `sleep`; a fake reviewer is `sh -c '...'`.
 setup() {
   setup_env
   export SHELL=/bin/sh COLLIE_NOTIFY=off COLLIE_AGENT=sleep
@@ -18,6 +18,9 @@ commit_in() { # dir file
   git -C "$1" add "$2"
   git -C "$1" commit -q -m "add $2"
 }
+
+needs_of() { collie ls | awk -F'\t' -v id="$1" '$1 == id { print $7 }'; }
+status_of() { collie ls | awk -F'\t' -v id="$1" '$1 == id { print $2 }'; }
 
 @test "run --scratch: a reviewer that dirties its scratch worktree leaves the task worktree unchanged" {
   collie new x --no-window
@@ -79,4 +82,51 @@ A  junk" ]
   run collie run f --scratch -- 300
   [ "$status" -ne 0 ]
   [[ "$output" == *"--scratch needs a git repo"* ]]
+}
+
+@test "needs: findings while a REVIEW.md newer than REPORT.md has an unticked item" {
+  collie new x --no-window
+  d=$(task_dir x)
+  printf '2020-01-01T00:00:00Z\trun_started\trun=1 agent=sleep repo=A\n' >>"$d/events.log"
+  printf '# x\n\nDone.\n' >"$d/REPORT.md"
+  touch -t 202001020000 "$d/REPORT.md"
+  [ "$(needs_of x)" = review ]
+  printf -- '- [ ] a.sh:1 bad. Proof: sh a.sh -> 1\n- [x] b.sh:2 fixed\n' >"$d/REVIEW.md"
+  touch -t 202001030000 "$d/REVIEW.md"
+  [ "$(needs_of x)" = findings ]
+  [ "$(collie brief)" = "findings x (P2): the review has open findings  ->  collie review x" ]
+  # every item ticked: none open
+  sed -i.bak 's/^- \[ \]/- [x]/' "$d/REVIEW.md"
+  touch -t 202001030000 "$d/REVIEW.md"
+  [ "$(needs_of x)" = review ]
+  printf 'no findings\n' >"$d/REVIEW.md"
+  touch -t 202001030000 "$d/REVIEW.md"
+  [ "$(needs_of x)" = review ]
+  # the implementer's next REPORT.md closes them
+  printf -- '- [ ] a.sh:1 bad\n' >"$d/REVIEW.md"
+  touch -t 202001030000 "$d/REVIEW.md"
+  [ "$(needs_of x)" = findings ]
+  touch -t 202001040000 "$d/REPORT.md"
+  [ "$(needs_of x)" = review ]
+}
+
+@test "needs: a scratch run is not the implementer's last run; a working one hides findings" {
+  collie new x --no-window
+  d=$(task_dir x)
+  printf '2020-01-01T00:00:00Z\trun_started\trun=1 agent=sleep repo=A\n' >>"$d/events.log"
+  printf '# x\n\nDone.\n' >"$d/REPORT.md"
+  printf -- '- [ ] a.sh:1 bad\n' >"$d/REVIEW.md"
+  touch -t 202001020000 "$d/REPORT.md"
+  collie run x --scratch -- 300
+  # a working reviewer: active, nothing for you yet
+  [ "$(status_of x)" = active ]
+  [ "$(needs_of x)" = - ]
+  # its turn over: review again (it writes no REPORT.md), open findings first
+  hook x idle 2
+  [ "$(status_of x)" = review ]
+  [ "$(needs_of x)" = findings ]
+  # a run without --scratch counts again
+  collie run x -- 300
+  hook x idle 3
+  [ "$(status_of x)" = active ]
 }

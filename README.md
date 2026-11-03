@@ -131,12 +131,13 @@ collie set deploy-v2 priority=P1 "title=Ship v2"
 ```
 
 `ls`'s last column says what a task needs from you: `answer` (an agent waits
-for permission or input), `review` (fresh REPORT.md), `reply` (an agent
+for permission or input), `findings` (REVIEW.md has open findings, see
+[the format](docs/USAGE.md#review-findings)), `review` (fresh REPORT.md), `reply` (an agent
 finished its turn without one), `stalled` (active, no live agent), `start`
 (todo), or `-` (an agent is working, or the task is finished).
 
-Dashboard rows start with a glyph (red `●` needs you: answer, review, reply,
-stalled; yellow `◐` working; dim `○` todo), then aligned columns: id, state
+Dashboard rows start with a glyph (red `●` needs you: answer, findings, review,
+reply, stalled; yellow `◐` working; dim `○` todo), then aligned columns: id, state
 (the needs value, or `working`), priority (P0 red, P1 yellow, P3 dim), and the
 task branch's PR per repo (`#N`: open green, draft dim, merged purple, closed
 red; nothing for none), then a yellow `⚡N` when the task is predicted to conflict with N others (base

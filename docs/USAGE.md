@@ -166,14 +166,15 @@ value (`ls`'s last column, the dashboard's STATE), first match:
 | Needs | When | Dash glyph |
 |---|---|---|
 | `answer` | an agent is `waiting` | red `●` |
+| `findings` | REVIEW.md has open findings ([format](#review-findings)), no agent working | red `●` |
 | `review` | task status `review` | red `●` |
 | `reply` | an agent is `idle` (turn over, no fresh REPORT.md) | red `●` |
 | `-` | an agent is `working` (dash: `working`), or task finished | yellow `◐` |
 | `start` | task status `todo` | dim `○` |
 | `stalled` | `active`, but no live agent | red `●` |
 
-The dashboard sorts tasks in that urgency (`answer` > `reply` > `review` >
-`stalled` > `working` > `start`), then priority, and shows them in groups
+The dashboard sorts tasks in that urgency (`answer` > `reply` > `findings` >
+`review` > `stalled` > `working` > `start`), then priority, and shows them in groups
 (needs you, active, todo); `tab` /
 `shift-tab` regroup by priority or repo.
 
@@ -320,6 +321,20 @@ implementer's files. For a re-review it checks out the new head there
 implementer's last run for the task status, and `restore` skips them. `done`
 and `archive` remove scratch worktrees with whatever they hold; `gc -n` lists
 them.
+
+#### Review findings
+
+The needs column shows `findings` while `.collie/REVIEW.md` is newer than
+`.collie/REPORT.md` (the implementer's last turn) and has an open finding: a
+line starting with `- [ ] ` (a Markdown task item). Tick it (`- [x]`) or
+delete it once it is resolved or rejected; a REVIEW.md without unticked
+items (for example "no findings") has none. Collie only reads the marker;
+what counts as a finding is up to the reviewer and the lead.
+
+```markdown
+- [ ] lib/a.sh:12 trim clobbers the caller's `_t`. Proof: `sh probe.sh` -> `_t after trim: [x]`
+- [x] test/a.bats:3 missing check for empty input (fixed in 8391040)
+```
 
 The lead needs the tmux socket, so run it in claude (or any agent without a
 socket-blocking sandbox). Codex's workspace-write sandbox blocks the socket;
