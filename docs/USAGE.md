@@ -277,6 +277,45 @@ append-only and never committed: correct a row by logging a new one.
 `collie history` searches the file. The default run prompt points agents at
 `collie log`; when and what to log is up to the team's workflow.
 
+### Leading a task with an agent
+
+The [`collie-lead`](https://github.com/TSLsun/tmux-collie/blob/main/skills/collie-lead/SKILL.md) skill makes the agent that
+runs it the lead of one task: it does not write the code itself, it drives
+other runs with collie commands and checks their work.
+
+```sh
+npx skills add TSLsun/tmux-collie     # installs skills/collie-lead
+```
+
+```mermaid
+flowchart LR
+  I[run claude: implement] -->|wait --done| C{lead checks REPORT.md,<br/>commits, verify}
+  C --> R[run codex: review<br/>REVIEW.md, worktree untouched]
+  R -->|wait --done| T{lead re-runs<br/>each finding's proof}
+  T -->|reproduced| S[send to run 1:<br/>same conversation]
+  S -->|wait --done| C
+  T -->|none left| V[verify, PR, REPORT.md]
+```
+
+| Step | Commands | The lead checks itself |
+|---|---|---|
+| implement | `run --agent claude -p ...`, `wait --run N --done` | REPORT.md is new, commits in `review`, clean tree, `verify` passes |
+| review | `run --agent codex -p ...`, `wait --run R --done` | REVIEW.md is new; HEAD and `git status` unchanged |
+| fix | `send --run N -f findings.md`, `wait --run N --done` | each sent finding was reproduced by its command; it no longer reproduces |
+| ship | `verify`, then TASK.md `## Ship` | `verify` passes on the final HEAD |
+
+Every prompt tells the agent to finish its turn with `collie signal done`.
+`send` clears that signal, so `wait --done` after a `send` waits for the new
+turn, never for the previous one. Each decision goes to `collie log`
+(`.collie/decisions.tsv`); with `events.log` that is all a fresh lead needs to
+resume. The lead stops for you when the contract is unclear, a decision is
+hard to reverse, two fix rounds do not converge, or CI fails without a proven
+cause; `collie brief` lists it.
+
+The lead needs the tmux socket, so run it in claude (or any agent without a
+socket-blocking sandbox). Codex's workspace-write sandbox blocks the socket;
+the runs a lead starts only need `collie signal done`, which works there.
+
 ## 5. Where each action lives
 
 | Action | CLI | `prefix h` menu | Dashboard (`prefix h h`) |
