@@ -82,7 +82,7 @@ status    derived on every ls/dash; only done and archived are stored.
             active    at least one run; an agent is working or waiting, or
                       the last run left no REPORT.md
             review    agents quiet and REPORT.md written since the last run
-                      started
+                      started (scratch runs, run --scratch, not counted)
             done      accepted (done, gc): worktrees + session removed
             archived  abandoned (archive): same cleanup
           todo -> active -> review -> done | archived; review -> active when
@@ -387,7 +387,7 @@ EOF
     run)
       cat <<'EOF'
 usage: collie run [<id>] [--agent name] [--model m] [--effort e] [-r repo]
-                  [-p prompt] [-s [-c client]] [-- args]
+                  [-p prompt] [-s [-c client]] [--scratch] [-- args]
 
 Start an agent in a new window of the task session, in the first repo's
 worktree (-r: that repo's). The default prompt names the task and points the
@@ -402,6 +402,10 @@ omp get state hooks per run; any other command runs without them.
   -r repo        which repo's worktree to start in
   -p prompt      first prompt instead of the default; -p '' sends none
   -s             switch the current client (or -c client) to the window
+  --scratch      start in a new scratch worktree: detached at the task
+                 branch's head, next to the task worktree, removed with
+                 its uncommitted changes by done/archive (gc lists it); for
+                 reviewers whose repros must not touch the task worktree
   -- args        extra arguments for the agent
 
   collie run deploy-v2 -r B --agent codex -p 'fix CI'

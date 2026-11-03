@@ -212,3 +212,14 @@ EOF
   wait_for 'grep -q "run_restored	run=1 as=2$" "$(task_dir x)/events.log"'
   [ "$(agent_windows x)" -eq 1 ]
 }
+
+@test "restore: skips a scratch run, which would resume in the task worktree" {
+  collie run x --agent claude
+  collie run x --agent claude --scratch
+  wait_for 'sessions_logged 2'
+  id1=$(sed -n 's/.*agent_session	run=1 id=//p' "$(task_dir x)/events.log")
+  server_dies
+  run collie restore -n
+  [ "$status" -eq 0 ]
+  [ "$output" = "x run 1: claude in A: --resume $id1"$'\n'"x run 2: claude in A: skipped: scratch run; start a new one with run --scratch" ]
+}

@@ -312,6 +312,15 @@ resume. The lead stops for you when the contract is unclear, a decision is
 hard to reverse, two fix rounds do not converge, or CI fails without a proven
 cause; `collie brief` lists it.
 
+The reviewer runs with `--scratch`: its own worktree, detached at the task
+branch's head next to the task worktree (`<worktree>.scratch-<n>`, with the
+same `.collie` link), so it can build and run repros without touching the
+implementer's files. For a re-review it checks out the new head there
+(`git checkout --detach <branch>`). Scratch runs do not count as the
+implementer's last run for the task status, and `restore` skips them. `done`
+and `archive` remove scratch worktrees with whatever they hold; `gc -n` lists
+them.
+
 The lead needs the tmux socket, so run it in claude (or any agent without a
 socket-blocking sandbox). Codex's workspace-write sandbox blocks the socket;
 the runs a lead starts only need `collie signal done`, which works there.

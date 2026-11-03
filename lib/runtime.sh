@@ -172,7 +172,7 @@ task_top() {
 
 # Task status: done/archived as written by done/archive/gc, else derived:
 # todo (no run yet), review (no agent working or waiting, and REPORT.md
-# written since the last run started), else active. Other stored values
+# written since the last run that is not a scratch run started), else active. Other stored values
 # (old records: todo, blocked, ...) are ignored. Sets STATUS, LAST_EVENT
 # (the last event's time, empty for done/archived), and STATUS_NOTE when
 # agents are quiet but the last run left no REPORT.md (stays active).
@@ -188,7 +188,18 @@ task_status() { # id top_state [stored_status]
     st=$FM
   fi
   case $st in done | archived) STATUS=$st; return ;; esac
-  last=$(awk -F'\t' '$2 == "run_started" { t = $1; n++ } END { print n + 0 "\t" t "\t" $1 }' "$d/events.log")
+  # scratch runs (run --scratch: reviewers) write no REPORT.md: not counted
+  last=$(awk -F'\t' '
+    function kv(k,  a, i, n) {
+      n = split($3, a, " ")
+      for (i = 1; i <= n; i++) if (index(a[i], k "=") == 1) return substr(a[i], length(k) + 2)
+    }
+    $2 == "run_started" { n++; r[n] = kv("run"); t[n] = $1 }
+    $2 == "scratch_created" { s[kv("run")] = 1 }
+    END {
+      for (i = n; i >= 1; i--) if (!(r[i] in s)) break
+      print (i ? r[i] : 0) "\t" (i ? t[i] : "") "\t" $1
+    }' "$d/events.log")
   runs=${last%%"$TAB"*}
   last=${last#*"$TAB"}
   LAST_EVENT=${last#*"$TAB"}

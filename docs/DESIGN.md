@@ -136,6 +136,8 @@ switches to grouping by priority or repo, keeping this order inside a group.
   repos/<repo> -> worktree path (symlink)
 
 <repo worktree>/.collie -> ~/.local/state/collie/tasks/<id>
+<repo worktree>.scratch-<n>/         # run --scratch: detached at the branch head,
+                                     # same .collie link; removed by done/archive
 ```
 
 - Worktrees stay next to their repo: `<root>/<slug>` for a bare layout
