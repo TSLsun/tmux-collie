@@ -248,7 +248,7 @@ HANDOFF.md  NOTE.md  TASK.md</pre>
 ### History
 
 Finished tasks, newest first, with their branches and PR. A pattern searches
-their `TASK.md` and `REPORT.md`; on a terminal it is an fzf picker that opens
+their `TASK.md`, `REPORT.md` and decision log; on a terminal it is an fzf picker that opens
 `collie show`.
 
 </div>

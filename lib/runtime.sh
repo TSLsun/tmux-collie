@@ -3,7 +3,7 @@
 
 # --- agent runtime ----------------------------------------------------------
 
-DEFAULT_PROMPT='Your task contract is .collie/TASK.md. Read it first; if its Objective is empty, ask me what to do. When you finish, write a short report to .collie/REPORT.md.'
+DEFAULT_PROMPT='Your task contract is .collie/TASK.md. Read it first; if its Objective is empty, ask me what to do. Record key decisions with collie log. When you finish, write a short report to .collie/REPORT.md.'
 
 # Agent windows as "session<TAB>window<TAB>run<TAB>agent<TAB>state". Agents
 # without hooks count as idle after @collie-silence seconds (30) of no output.
@@ -79,6 +79,32 @@ task_runs() {
         if (!(r in ended) && !(r in seen)) print r "\t" agent[r] "\t" fb "\t-"
       }
     }' - "$TASKS_DIR/$id/events.log" <<<"$wins"
+}
+
+# Sets RUN_STATE (working, idle, waiting, else gone) and RUN_WIN of a run.
+run_state() { # id run
+  local l
+  # no early exit: task_runs would die of SIGPIPE under pipefail
+  l=$(task_runs "$1" | awk -F'\t' -v r="$2" '$1 == r && !f { print $3 "\t" $4; f = 1 }')
+  RUN_STATE=${l%%"$TAB"*} RUN_WIN=${l#*"$TAB"}
+  case $RUN_STATE in working | idle | waiting) ;; *) RUN_STATE=gone RUN_WIN=- ;; esac
+}
+
+# Sets RUN_LIVE (the run, followed through restores) and RUN_DONE (1 when
+# its latest turn signalled done: a run_signal after the run's last
+# `sent` (collie send), carried over by restores).
+run_resolve() { # id run
+  local l
+  l=$(awk -F'\t' -v r="$2" '
+    function kv(k,  a, i, n) {
+      n = split($3, a, " ")
+      for (i = 1; i <= n; i++) if (index(a[i], k "=") == 1) return substr(a[i], length(k) + 2)
+    }
+    $2 == "run_signal" && kv("signal") == "done" { d[kv("run")] = 1 }
+    $2 == "sent" { d[kv("run")] = 0 }
+    $2 == "run_restored" { as[kv("run")] = kv("as"); if (d[kv("run")]) d[kv("as")] = 1 }
+    END { while (r in as) r = as[r]; print r "\t" d[r] + 0 }' "$TASKS_DIR/$1/events.log")
+  RUN_LIVE=${l%%"$TAB"*} RUN_DONE=${l#*"$TAB"}
 }
 
 # Every run of a task, newest first, as "run<TAB>agent<TAB>repo<TAB>state<TAB>
@@ -184,6 +210,42 @@ task_status() { # id top_state [stored_status]
 # task_archived event; "" if never.
 finished_at() { # id
   awk -F'\t' '$2 == "task_done" || $2 == "task_archived" { t = $1 } END { print t }' "$TASKS_DIR/$1/events.log"
+}
+
+# The last `collie verify` result per repo, one line each, indented:
+# repo, pass|fail, exit code, time, log path. Prints nothing if never run.
+verify_results() { # id
+  awk -F'\t' -v d="$TASKS_DIR/$1" '
+    function kv(k,  a, i, n) {
+      n = split($3, a, " ")
+      for (i = 1; i <= n; i++) if (index(a[i], k "=") == 1) return substr(a[i], length(k) + 2)
+    }
+    $2 == "verify" {
+      r = kv("repo"); if (!(r in last)) order[++n] = r
+      last[r] = kv("result") "  exit " kv("exit") "  " $1 "  " d "/" kv("log")
+    }
+    END { for (i = 1; i <= n; i++) print "  " order[i] "  " last[order[i]] }' "$TASKS_DIR/$1/events.log"
+}
+
+# Writes the fenced ```sh blocks under TASK.md's "## Verify" heading to
+# <dir>/1.sh, 2.sh, ... and prints how many. Fences elsewhere, other
+# languages, and "## " lines inside a fence are skipped.
+verify_blocks() { # task.md dir
+  awk -v dir="$2" '
+    /^```/ {
+      if (!fence) {
+        fence = 1
+        if (sec && $0 ~ /^```sh[ \t]*$/) { sh = 1; f = dir "/" ++n ".sh"; printf "" >f }
+      } else if ($0 ~ /^```[ \t]*$/) {
+        fence = 0
+        if (sh) close(f)
+        sh = 0
+      } else if (sh) print >f
+      next
+    }
+    fence { if (sh) print >f; next }
+    /^## / { sec = $0 ~ /^## Verify[ \t]*$/ }
+    END { print n + 0 }' "$1"
 }
 
 # Sets START to the commit a repo's worktree was created at ("" if unknown).
