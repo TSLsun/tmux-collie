@@ -130,6 +130,22 @@ merged_into() { # common branch base
   return 1
 }
 
+# Whether a branch has (or had) commits of its own since start, so that
+# merged_into means its work landed rather than that it only gained base
+# commits (fast-forwarded to base, or base merged into it): a non-merge commit
+# on its first-parent line that base lacks (squash or rebase merge), or a
+# reflog entry made by committing on it after start (merged as is). A merged
+# PR also counts; callers check that.
+own_commits() { # common branch start base
+  local g=(git --git-dir="$1") b="refs/heads/$2" h s
+  [ -z "$("${g[@]}" rev-list --first-parent --no-merges -n1 "$b" "^$3" "^$4")" ] || return 0
+  while read -r h s; do
+    case $s in "commit:"* | "commit (amend):"* | "commit (initial):"* | "cherry-pick:"* | "am:"*) ;; *) continue ;; esac
+    "${g[@]}" merge-base --is-ancestor "$h" "$3" 2>/dev/null || return 0
+  done < <("${g[@]}" reflog show --format='%H %gs' "$b" -- 2>/dev/null)
+  return 1
+}
+
 # Updates origin's refs so merges done on the remote count; no-op without an
 # origin remote. Never prompts for credentials. Reports progress on stderr.
 # Once per repo and command: tasks of one repo share its refs.
