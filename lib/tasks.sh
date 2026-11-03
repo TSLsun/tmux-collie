@@ -140,3 +140,116 @@ task_owning() {
     fi
   done
 }
+
+# --- dependencies -------------------------------------------------------------
+
+# A task's `after:` ids: the tasks it builds on. Cached data only (no git, no
+# gh), so ls and the dashboard stay fast. Sets DEP for one id: ok (done, or
+# every PR in its pr.tsv merged; squash merges count), unknown (no such task),
+# archived, or waiting; and DEP_PRS ("#76:open ...", or "").
+dep_state() { # id
+  local f="$TASKS_DIR/$1" name num st n=0 m=0
+  DEP_PRS=""
+  if ! valid_id "$1" || [ ! -f "$f/TASK.md" ]; then
+    DEP=unknown
+    return
+  fi
+  fm_get "$f/TASK.md" status
+  case $FM in
+    done) DEP=ok; return ;;
+    archived) DEP=archived; return ;;
+  esac
+  if [ -f "$f/pr.tsv" ]; then
+    while IFS=$TAB read -r name num st || [ -n "$name" ]; do
+      [ -n "$num" ] || continue
+      n=$((n + 1))
+      [ "$st" != merged ] || m=$((m + 1))
+      DEP_PRS="$DEP_PRS${DEP_PRS:+ }#$num:$st"
+    done <"$f/pr.tsv"
+  fi
+  if [ "$n" -gt 0 ] && [ "$m" -eq "$n" ]; then DEP=ok; else DEP=waiting; fi
+}
+
+# Sets BLOCKED to the task's unsatisfied `after:` ids, space-separated ("" when
+# none). Unknown and archived deps block too: a broken dep is never satisfied.
+task_blocked() { # task_dir
+  local dep
+  BLOCKED=""
+  fm_get "$1/TASK.md" after
+  for dep in $FM; do
+    dep_state "$dep"
+    [ "$DEP" = ok ] || BLOCKED="$BLOCKED${BLOCKED:+ }$dep"
+  done
+}
+
+# Checks an `after:` value for set/new: dies on a malformed id or the task
+# itself; warns on an unknown task or a dependency cycle, which may be fixed
+# later. Sets AFTER to the ids, single-spaced.
+check_after() { # id value
+  local dep seen=" " todo next d
+  AFTER=""
+  for dep in ${2//,/ }; do
+    valid_id "$dep" || die "after: '$dep' is not a task id"
+    [ "$dep" != "$1" ] || die "after: a task cannot depend on itself"
+    case $seen in *" $dep "*) continue ;; esac
+    seen="$seen$dep "
+    AFTER="$AFTER${AFTER:+ }$dep"
+    [ -f "$TASKS_DIR/$dep/TASK.md" ] || warn "after: no task '$dep' (yet)"
+  done
+  ! dep_cycle "$1" "$AFTER" || warn "after: $1 would be part of a dependency cycle"
+}
+
+# Whether the after: chain of the given ids leads back to the task.
+dep_cycle() { # id ids
+  local todo=$2 seen=" " next d
+  while [ -n "$todo" ]; do
+    next=""
+    for d in $todo; do
+      case $seen in *" $d "*) continue ;; esac
+      seen="$seen$d "
+      [ -f "$TASKS_DIR/$d/TASK.md" ] || continue
+      fm_get "$TASKS_DIR/$d/TASK.md" after
+      next="$next $FM"
+    done
+    case " $next " in *" $1 "*) return 0 ;; esac
+    todo=$next
+  done
+  return 1
+}
+
+# A task's dependency lines for show and the dashboard preview: each after:
+# dep (✓ ok, · waiting, ✗ unknown or archived) with its status and cached PRs,
+# then the open tasks whose after: names this one. Nothing without either.
+dep_lines() { # id
+  local dep d mark note after blocks=""
+  fm_get "$TASKS_DIR/$1/TASK.md" after
+  after=$FM
+  if [ -n "$after" ]; then
+    printf 'after:%s\n' "$(! dep_cycle "$1" "$after" || printf '  (dependency cycle)')"
+    for dep in $after; do
+      dep_state "$dep"
+      case $DEP in
+        ok) mark='✓' ;;
+        waiting) mark='·' ;;
+        *) mark='✗' ;;
+      esac
+      case $DEP in
+        unknown) note="unknown task" ;;
+        archived) note=archived ;;
+        *)
+          task_status "$dep" ""
+          note="$STATUS${DEP_PRS:+  $DEP_PRS}"
+          ;;
+      esac
+      printf '  %s %s  %s\n' "$mark" "$dep" "$note"
+    done
+  fi
+  for d in "$TASKS_DIR"/*; do
+    [ -f "$d/TASK.md" ] || continue
+    fm_get "$d/TASK.md" status
+    case $FM in done | archived) continue ;; esac
+    fm_get "$d/TASK.md" after
+    case " $FM " in *" $1 "*) blocks="$blocks${blocks:+ }${d##*/}" ;; esac
+  done
+  [ -z "$blocks" ] || printf 'blocks: %s\n' "$blocks"
+}
