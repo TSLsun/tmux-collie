@@ -191,10 +191,17 @@ cmd_brief() {
         [ "${#head}" -le 100 ] || head="${head:0:97}..."
         pr=$(grep -oE -m1 "$PR_RE" "$d/REPORT.md") || pr=""
         pr=$(awk -F'\t' -v url="$pr" '
-          NF >= 3 { s = s (s == "" ? "" : "; ") (url == "" ? "#" $2 " " : "") $3 ($4 != "" && $4 != "-" ? ", CI " $4 : "") }
+          NF >= 3 {
+            n++; details[n] = $3 ($4 != "" && $4 != "-" ? ", CI " $4 : "")
+            numbers[n] = $2
+          }
           END {
-            if (url != "") print "PR " url (s == "" ? "" : " (" s ")")
-            else if (s != "") print "PR " s
+            if (url != "" && n <= 1) print "PR " url (n ? " (" details[1] ")" : "")
+            else {
+              for (i = 1; i <= n; i++) s = s (s == "" ? "" : "; ") "#" numbers[i] " " details[i]
+              if (url != "") print "PR " url "; " s
+              else if (s != "") print "PR " s
+            }
           }' "$d/pr.tsv" 2>/dev/null) || pr=""
         what="${head:-REPORT.md written}${pr:+ | $pr}" act="collie review $id"
         ;;

@@ -62,3 +62,11 @@ STUB
   [ "$(cat "$(task_dir x)/pr.tsv")" = "A	12	open	pass" ]
   [ "$(collie dash -n | cut -f8)" = "#12:open" ]
 }
+
+@test "brief: multiple cached PRs keep their own numbers and CI states with a report URL" {
+  collie new x --no-window
+  printf '2020-01-01T00:00:00Z\trun_started\trun=1 agent=sleep repo=A\n' >>"$(task_dir x)/events.log"
+  printf '# report\n\nPR: https://github.com/o/r/pull/7\n\nReady.\n' >"$(task_dir x)/REPORT.md"
+  printf 'A\t7\tmerged\tpass\nA\t83\topen\tfail\n' >"$(task_dir x)/pr.tsv"
+  [[ "$(collie brief)" == *'PR https://github.com/o/r/pull/7; #7 merged, CI pass; #83 open, CI fail'* ]]
+}

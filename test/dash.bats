@@ -237,6 +237,11 @@ branch_of() { awk -F'\t' -v r="$2" '$1 == r { print $3 }' "$(task_dir "$1")/repo
   [[ "$(collie _preview x)" == *$'\n'"  A  $(branch_of x A)  #244 open  "* ]]
   [[ "$output" == *$'\033[32m#244\033[0m \033[35m#12\033[0m'* ]]
   [[ "$output" == *$'\033[2m#7\033[0m'* && "$output" == *$'\033[31m#3\033[0m'* ]]
+  printf 'A\t123456\topen\nA\t123457\tdraft\nA\t123458\tclosed\nA\t123459\tmerged\n' >>"$(task_dir x)/pr.tsv"
+  [[ "$(collie _preview x)" == *"#244 open, #123456 open, #123457 draft, #123458 closed, #123459 merged"* ]]
+  narrow=$(FZF_COLUMNS=20 collie _rows | sed $'s/\033\\[[0-9;]*m//g' | cut -f2)
+  [[ "$narrow" == *"○ x  start  P2  #244 #12 #123456 +3"* ]]
+  [ "$(FZF_COLUMNS=20 collie dash -n | awk -F'\t' '$1 == "x" { print $8 }')" = "#244:open #12:merged #123456:open #123457:draft #123458:closed #123459:merged" ]
   # a fresh cache: no gh call on render
   : >"$TMP/gh.log"
   collie _rows >/dev/null
