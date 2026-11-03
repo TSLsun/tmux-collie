@@ -33,6 +33,15 @@ collie gc                                              # or: collie done fix-ret
 collie history                                         # later: finished tasks, their commits and REPORT.md
 ```
 
+`collie new` without an id (also `prefix h c` and the dashboard's `c`) asks
+for each field in turn and checks the id and type as soon as they are typed:
+an invalid or taken id is asked again with the reason, and an uppercase one
+offers its lowercase (Enter accepts it). For more than a line of objective,
+answer `e` to write TASK.md — Objective, Context, Acceptance Criteria — in
+`$EDITOR` before the agent starts. If creation still fails, what you typed
+is kept in `new-draft` under the state dir and the next `collie new` offers
+it as the defaults.
+
 ## 2. What a task is made of
 
 ```mermaid
