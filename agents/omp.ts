@@ -10,18 +10,26 @@ export default function (pi: any) {
       execFileSync(bin, ["state", s], { stdio: "ignore" });
     } catch {}
   };
+  // Subagents (task tool) load this extension too, in the same pane: their
+  // ctx.agent.kind is "sub" (main session: "main"; older omp: no ctx.agent).
+  // A subagent's agent_end is not the main turn ending, so only the main
+  // session reports state.
+  const on = (event: string, f: (e: any) => void) =>
+    pi.on(event, (e: any, ctx: any) => {
+      if ((ctx?.agent?.kind ?? "main") === "main") f(e);
+    });
   const state = (s: string) => () => set(s);
-  pi.on("agent_start", state("working"));
+  on("agent_start", state("working"));
   // the ask tool waits for the user's answer, like an approval prompt
-  pi.on("tool_execution_start", (e: any) => {
+  on("tool_execution_start", (e: any) => {
     if (e?.toolName === "ask") set("waiting");
   });
-  pi.on("tool_execution_end", state("working"));
-  pi.on("tool_approval_requested", state("waiting"));
-  pi.on("tool_approval_resolved", state("working"));
+  on("tool_execution_end", state("working"));
+  on("tool_approval_requested", state("waiting"));
+  on("tool_approval_resolved", state("working"));
   // willContinue: omp goes on by itself (queued follow-up), not idle yet
-  pi.on("agent_end", (e: any) => {
+  on("agent_end", (e: any) => {
     if (!e?.willContinue) set("idle");
   });
-  pi.on("session_shutdown", state("exited"));
+  on("session_shutdown", state("exited"));
 }
