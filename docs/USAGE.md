@@ -291,7 +291,7 @@ npx skills add TSLsun/tmux-collie     # installs skills/collie-lead
 ```mermaid
 flowchart LR
   I[run claude: implement] -->|wait --done| C{lead checks REPORT.md,<br/>commits, verify}
-  C --> R[run codex: review<br/>REVIEW.md, worktree untouched]
+  C --> R[run codex --scratch: review<br/>REVIEW.md, worktree untouched]
   R -->|wait --done| T{lead re-runs<br/>each finding's proof}
   T -->|reproduced| S[send to run 1:<br/>same conversation]
   S -->|wait --done| C
@@ -301,7 +301,7 @@ flowchart LR
 | Step | Commands | The lead checks itself |
 |---|---|---|
 | implement | `run --agent claude -p ...`, `wait --run N --done` | REPORT.md is new, commits in `review`, clean tree, `verify` passes |
-| review | `run --agent codex -p ...`, `wait --run R --done` | REVIEW.md is new; HEAD and `git status` unchanged |
+| review | `run --agent codex --scratch -p ...`, `wait --run R --done` | REVIEW.md is new; the task worktree's HEAD and `git status` unchanged |
 | fix | `send --run N -f findings.md`, `wait --run N --done` | each sent finding was reproduced by its command; it no longer reproduces |
 | ship | `verify`, then TASK.md `## Ship` | `verify` passes on the final HEAD |
 
