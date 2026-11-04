@@ -1,6 +1,41 @@
 # shellcheck shell=bash
 # Sourced by bin/collie: new, add, ls, show, log, edit, go, set.
 
+# Asks for a name (task id or type) until it is valid: re-asks on the spot
+# with the reason, offering the lowercased name when case is the only
+# problem; with check "id", also re-asks for an existing task. Sets ASK.
+ask_slug() { # label default [id]
+  local def=$2 low
+  while :; do
+    read -r -e -p "$1${def:+ [$def]}: " ASK || die "new: no $1 given"
+    ASK=${ASK:-$def}
+    if [ -z "$ASK" ]; then
+      echo "  $1 is required"
+    elif ! valid_id "$ASK"; then
+      low=$(printf '%s' "$ASK" | tr '[:upper:]' '[:lower:]')
+      if [ "$low" != "$ASK" ] && valid_id "$low"; then
+        def=$low
+        echo "  must be lowercase: Enter accepts $low"
+        continue
+      fi
+      echo "  invalid $1 '$ASK': use [a-z0-9-], max 40, no leading '-'"
+    elif [ "${3:-}" = id ] && { [ -e "$TASKS_DIR/$ASK" ] || [ -L "$TASKS_DIR/$ASK" ]; }; then
+      echo "  task '$ASK' already exists"
+    else
+      return 0
+    fi
+    def=""
+  done
+}
+
+# EXIT trap of an interactive new that did not create its task: says where
+# the typed input waits (the next collie new offers it).
+NEW_DRAFT=""
+new_draft_note() {
+  [ -n "$NEW_DRAFT" ] && [ -f "$NEW_DRAFT" ] || return 0
+  printf 'collie: what you typed is kept in %s; collie new offers it again\n' "$NEW_DRAFT" >&2
+}
+
 cmd_new() {
   local id="" specs="" ws="" type=feat title="" from="" edit=0 window=1
   local goal="" asked=0 t ship=${COLLIE_SHIP-$(tmux_opt @collie-ship)}
@@ -49,16 +84,38 @@ cmd_new() {
     printf '  %-10s %-12s %s\n' branch '<type>/<id>' "from ${base:-the default branch}" \
       id required '[a-z0-9-], max 40' \
       type "$type" 'e.g. fix, refactor, docs' \
-      objective optional 'goes into TASK.md' \
+      objective optional "goes into TASK.md; e: \$EDITOR" \
       ship "$([ "$ship" = 1 ] && echo on || echo off)" 'agent pushes, opens a PR, checks CI' \
       agent "$agent" "$([ "$run" = 1 ] && echo 'starts after creation' || echo 'asked if an objective is given')"
     echo
-    read -r -e -p "task id: " id
-    read -r -e -p "type [$type]: " t && type=${t:-$type}
-    [ -n "$goal" ] || read -r -e -p "objective (optional): " goal
-    read -r -e -p "ship [$([ "$ship" = 1 ] && echo Y/n || echo y/N)]: " t
+    # what an earlier interactive new could not create: offered as defaults
+    local draft="$STATE_DIR/new-draft" did="" dtype="" dgoal=""
+    if [ -f "$draft" ]; then
+      { IFS= read -r did; IFS= read -r dtype; IFS= read -r dgoal; } <"$draft" || true
+      printf 'draft from an earlier collie new: %s\n' "$draft"
+      [ -z "$dgoal" ] || printf '  draft objective: %s\n' "$dgoal"
+    fi
+    ask_slug "task id" "$did" id
+    id=$ASK
+    ask_slug type "${dtype:-$type}"
+    type=$ASK
+    if [ -z "$goal" ]; then
+      if [ -n "$dgoal" ]; then
+        read -r -e -p "objective [Enter: the draft, -: none, e: \$EDITOR]: " goal || goal=""
+        case $goal in "") goal=$dgoal ;; -) goal="" ;; e) goal=$dgoal edit=1 ;; esac
+      else
+        read -r -e -p "objective (optional, e: \$EDITOR): " goal || goal=""
+        [ "$goal" != e ] || goal="" edit=1
+      fi
+    fi
+    # from here on a failure keeps what was typed (see new_draft_note)
+    mkdir -p "$STATE_DIR"
+    printf '%s\n%s\n%s\n' "$id" "$type" "$goal" >"$draft"
+    NEW_DRAFT=$draft
+    trap new_draft_note EXIT
+    read -r -e -p "ship [$([ "$ship" = 1 ] && echo Y/n || echo y/N)]: " t || t=""
     case $t in [yY]*) ship=1 ;; [nN]*) ship=0 ;; esac
-    if [ -n "$goal" ] && [ "$run" = 0 ] && command -v tmux >/dev/null; then
+    if { [ -n "$goal" ] || [ "$edit" = 1 ]; } && [ "$run" = 0 ] && [ "$window" = 1 ] && command -v tmux >/dev/null; then
       read -r -e -p "start $agent now [Y/n]: " t
       case $t in [nN]*) ;; *) run=1 ;; esac
     fi
@@ -88,6 +145,11 @@ cmd_new() {
   if [ -n "$after" ]; then
     fm_set "$tdir/TASK.md" after "$AFTER"
     log_event "$id" field_set "after=$AFTER"
+  fi
+  if [ -n "$NEW_DRAFT" ]; then
+    rm -f "$NEW_DRAFT"
+    NEW_DRAFT=""
+    trap - EXIT
   fi
   [ "$edit" -eq 0 ] || cmd_edit "$id"
   printf '%s\n' "${NEW_PATHS%%$'\n'*}"
@@ -132,21 +194,39 @@ cmd_add() {
   fi
 }
 
+# Whether a task's REVIEW.md has open findings: it was written after
+# REPORT.md (the implementer's last turn; or there is none) and has an
+# unticked "- [ ] ..." line. Collie does not judge the findings themselves.
+open_findings() { # task_dir
+  [ -f "$1/REVIEW.md" ] || return 1
+  [ ! -f "$1/REPORT.md" ] || [ "$1/REVIEW.md" -nt "$1/REPORT.md" ] || return 1
+  grep -qE '^[[:space:]]*[-*] \[ \]' "$1/REVIEW.md"
+}
+
 # What a task needs from you, first match: answer (an agent waits for
-# permission or input), review (status review), reply (an agent finished its
-# turn without a fresh report), - (an agent is working, or the task is
-# finished), start (todo), else stalled (active, no live agent). Sets NEEDS.
+# permission or input), - (an agent is working, or the task is finished),
+# findings (REVIEW.md has open findings, see open_findings), review (status
+# review), reply (an agent finished its turn without a fresh report), start
+# (todo), else stalled (active, no live agent). Sets NEEDS.
 # ls turns a todo task's start into blocked:<ids> while its after: deps are
 # unsatisfied (see task_blocked).
-task_needs() { # status top_state
+task_needs() { # status top_state [task_dir]
   case $1:$2 in
     done:* | archived:*) NEEDS=- ;;
     *:waiting) NEEDS=answer ;;
-    review:*) NEEDS=review ;;
-    *:idle) NEEDS=reply ;;
     *:working) NEEDS=- ;;
-    todo:*) NEEDS=start ;;
-    *) NEEDS=stalled ;;
+    *)
+      if [ -n "${3:-}" ] && open_findings "$3"; then
+        NEEDS=findings
+        return
+      fi
+      case $1:$2 in
+        review:*) NEEDS=review ;;
+        *:idle) NEEDS=reply ;;
+        todo:*) NEEDS=start ;;
+        *) NEEDS=stalled ;;
+      esac
+      ;;
   esac
 }
 
@@ -169,7 +249,7 @@ cmd_ls() {
     repos=""
     while IFS=$TAB read -r name _ || [ -n "$name" ]; do repos="$repos${repos:+,}$name"; done <"$d/repos.tsv"
     task_status "$id" "$top" "$st"
-    task_needs "$STATUS" "$top"
+    task_needs "$STATUS" "$top" "$d"
     if [ "$NEEDS" = start ]; then
       task_blocked "$d"
       [ -z "$BLOCKED" ] || NEEDS="blocked:${BLOCKED// /,}"

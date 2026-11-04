@@ -83,15 +83,15 @@ status    derived on every ls/dash; only done and archived are stored.
             active    at least one run; an agent is working or waiting, or
                       the last run left no REPORT.md
             review    agents quiet and REPORT.md written since the last run
-                      started
+                      started (scratch runs, run --scratch, not counted)
             done      accepted (done, gc): worktrees + session removed
             archived  abandoned (archive): same cleanup
           todo -> active -> review -> done | archived; review -> active when
           an agent works again; reopen takes done/archived back to active.
 
 agent     per run: working, waiting (needs an answer), idle (turn over),
-          exited, unknown (window gone). ls's needs column: answer, review,
-          reply, stalled, start, or -.
+          exited, unknown (window gone). ls's needs column: answer,
+          findings, review, reply, stalled, start, or -.
 
 TASK.md   the contract, at .collie/TASK.md in each worktree (a symlink to the
           record): frontmatter (id, title, priority, status) and sections
@@ -190,9 +190,12 @@ outside git), and tmux session <id> with a window per repo.
                     repeatable
 
 No id on a tty prompts for id, type, objective, ship, and (given an
-objective) whether to start the agent. Fetches origin first; prints the
-primary worktree path. All-or-nothing: a failure removes the worktrees and
-branches it created.
+objective) whether to start the agent. A bad id or type is asked again at
+once (an uppercase one offers its lowercase); objective e writes TASK.md in
+$EDITOR instead. If creation fails, the input is kept in new-draft under
+the state dir and the next prompt offers it. Fetches origin first; prints
+the primary worktree path. All-or-nothing: a failure removes the worktrees
+and branches it created.
 
   collie new login -m 'add OAuth login' --run
   collie new deploy-v2 -r api -r web:release/v2
@@ -213,8 +216,9 @@ EOF
 usage: collie ls [-a]
 
 List live tasks, tab-separated: id, status, priority, session (* exists,
-- none), agent (most urgent run state), repos, needs (answer, review, reply,
-stalled, start, blocked:<ids>, -). -a includes done and archived. Read-only.
+- none), agent (most urgent run state), repos, needs (answer, findings,
+review, reply, stalled, start, blocked:<ids>, -). -a includes done and
+archived. Read-only.
 EOF
       ;;
     brief)
@@ -401,7 +405,7 @@ EOF
     run)
       cat <<'EOF'
 usage: collie run [<id>] [--agent name] [--model m] [--effort e] [-r repo]
-                  [-p prompt] [-s [-c client]] [-- args]
+                  [-p prompt] [-s [-c client]] [--scratch] [-- args]
 
 Start an agent in a new window of the task session, in the first repo's
 worktree (-r: that repo's). The default prompt names the task and points the
@@ -417,6 +421,10 @@ per run; any other command runs without them.
   -r repo        which repo's worktree to start in
   -p prompt      first prompt instead of the default; -p '' sends none
   -s             switch the current client (or -c client) to the window
+  --scratch      start in a new scratch worktree: detached at the task
+                 branch's head, next to the task worktree, removed with
+                 its uncommitted changes by done/archive (gc lists it); for
+                 reviewers whose repros must not touch the task worktree
   -- args        extra arguments for the agent
 
   collie run deploy-v2 -r B --agent codex -p 'fix CI'

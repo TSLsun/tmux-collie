@@ -133,7 +133,7 @@ cmd__conflicts() {
 }
 
 # Active tasks in `ls` format, most urgent first (see DESIGN §3.3: answer >
-# reply > review > stalled > working > start > blocked), then by priority and id, plus
+# reply > findings > review > stalled > working > start > blocked), then by priority and id, plus
 # two last fields: the cached PRs ("#<number>:<state> ...", or -) and the
 # number of predicted conflicts (see conflicts_cached, or -).
 dash_rows() {
@@ -146,13 +146,14 @@ dash_rows() {
   CONFLICTS=$CONFLICTS awk -F'\t' -v tasks="$TASKS_DIR" '
     BEGIN { n = split(ENVIRON["CONFLICTS"], cl, "\n"); for (i = 1; i <= n; i++) if (split(cl[i], x, "\t") == 3) cf[x[1]] = x[2] }
     {
-      r = 6
+      r = 7
       if ($7 == "answer") r = 1
       else if ($7 == "reply") r = 2
-      else if ($7 == "review") r = 3
-      else if ($7 == "stalled") r = 4
-      else if ($7 == "-") r = 5
-      else if ($7 ~ /^blocked/) r = 7
+      else if ($7 == "findings") r = 3
+      else if ($7 == "review") r = 4
+      else if ($7 == "stalled") r = 5
+      else if ($7 == "-") r = 6
+      else if ($7 ~ /^blocked/) r = 8
       f = tasks "/" $1 "/pr.tsv"; s = ""
       while ((getline l <f) > 0) if (split(l, x, "\t") >= 3) s = s (s == "" ? "" : " ") "#" x[2] ":" x[3]
       close(f)
@@ -817,7 +818,7 @@ cmd__menu() { # session [client]
   items=(dashboard h "$popup '$C _popup $C dash'"
     lazygit g "$popup -d '#{pane_current_path}' '$C _popup lazygit'"
     terminal t "$popup -d '#{pane_current_path}'"
-    "new task" c "display-popup -EE -w 70 -h 15 -d '#{pane_current_path}' '$C new'")
+    "new task" c "display-popup -EE -w 80% -h 70% -d '#{pane_current_path}' '$C new'")
   if valid_id "$T" && [ -f "$TASKS_DIR/$T/TASK.md" ]; then
     # the dashboard's task actions (action_items), same keys and labels;
     # terminal and new task are the global items above

@@ -37,7 +37,7 @@ start_run() ( # task agent repo path argv...
 )
 
 cmd_run() {
-  local id="" agent="" repo="" prompt=$DEFAULT_PROMPT custom=0 extra=() switch=0 client=""
+  local id="" agent="" repo="" prompt=$DEFAULT_PROMPT custom=0 extra=() switch=0 client="" scratch=0
   local RUN_MODEL="" RUN_EFFORT=""
   while [ $# -gt 0 ]; do
     case $1 in
@@ -46,6 +46,7 @@ cmd_run() {
       --effort) RUN_EFFORT=${2:?--effort needs a level}; shift ;;
       -r) repo=${2:?-r needs a repo}; shift ;;
       -s) switch=1 ;;
+      --scratch) scratch=1 ;;
       -c) client=${2:?-c needs a client}; shift ;;
       -p) [ $# -ge 2 ] || die "-p needs a prompt"; prompt=$2 custom=1; shift ;;
       --) shift; extra=("$@"); break ;;
@@ -74,13 +75,14 @@ cmd_run() {
   [[ $RUN_MODEL =~ ^[A-Za-z0-9._:/-]*$ ]] || die "run: invalid model '$RUN_MODEL'"
   [[ $RUN_EFFORT =~ ^[a-z]*$ ]] || die "run: invalid effort '$RUN_EFFORT'"
 
-  local d name c b p rname="" rc="" path=""
+  local d name c b p rname="" rc="" rb="" path=""
   d="$TASKS_DIR/$id"
   while IFS=$TAB read -r name c b p; do
-    if [ -z "$rname" ] && { [ -z "$repo" ] || [ "$name" = "$repo" ]; }; then rname=$name rc=$c path=$p; fi
+    if [ -z "$rname" ] && { [ -z "$repo" ] || [ "$name" = "$repo" ]; }; then rname=$name rc=$c rb=$b path=$p; fi
   done <"$d/repos.tsv"
   [ -n "$rname" ] || die "repo '$repo' is not part of task '$id'"
   [ -d "$path" ] || die "missing worktree $path"
+  [ "$scratch" = 0 ] || [ "$rc" != - ] || die "run: --scratch needs a git repo; '$rname' is a folder"
   # a paused run's resume note (collie pause) is for whoever picks the task up
   [ "$custom" = 1 ] || [ ! -f "$d/RESUME.md" ] || prompt="$prompt $RESUME_PROMPT"
   # a folder has no .collie link
@@ -113,10 +115,22 @@ cmd_run() {
   # an agent with hooks and no prompt sits at its input box
   local st=working run wid server pane
   [ "$AGENT_HOOKS" = 0 ] || [ -n "$prompt" ] || st=idle
+  # --scratch: the run works in its own worktree at the branch head; RUN_DIRS
+  # above already leaves the task worktree out
+  if [ "$scratch" = 1 ]; then
+    scratch_add "$d" "$rc" "$rb" "$path" || die "run: could not add a scratch worktree for $rname"
+    path=$SCRATCH
+  fi
   # the server pid tells `restore` a run lost with its server from a closed
   # window; the pane is the agent's, for `sync` to type into once it is split
-  wid=$(start_run "$id" "$agent" "$rname" "$path" "${AGENT_ARGV[@]}") || return
+  if ! wid=$(start_run "$id" "$agent" "$rname" "$path" "${AGENT_ARGV[@]}"); then
+    [ "$scratch" = 0 ] || git --git-dir="$rc" worktree remove --force "$path" || true
+    return 1
+  fi
   read -r run wid server pane <<<"$wid"
+  if [ "$scratch" = 1 ]; then
+    log_event "$id" scratch_created "run=$run repo=$rname path=$path head=$(git -C "$path" rev-parse HEAD)" || return
+  fi
   [ "$AGENT_HOOKS_PENDING" = 0 ] || AGENT_HOOKS=0
   # @collie_run last: the wrapper starts the agent once it is set
   stamp %s
@@ -459,6 +473,11 @@ cmd_restore() {
       if [ "$sid" = = ]; then
         used="$used$agent:$repo=$run "
         [ -z "$live_sid" ] || used_sids="$used_sids$agent:$live_sid "
+        continue
+      fi
+      # a resumed run would land in the task worktree, not its scratch one
+      if scratch_list "$TASKS_DIR/$id" | awk -F'\t' -v r="$run" '$1 == r { f = 1 } END { exit !f }'; then
+        echo "$id run $run: $agent in $repo: skipped: scratch run; start a new one with run --scratch"
         continue
       fi
       AGENT_RESUME=() AGENT_RESUME_ID=() AGENT_REQUIRE_SESSION=0
