@@ -110,11 +110,12 @@ reason. Ask the agent for the report, or `collie review` it anyway.
 
 A task's *needs* (last `ls` column, the dashboard's state) folds status and
 agent state into what it wants from you, first match: `answer` (an agent is
-`waiting`), `review` (task review), `reply` (an agent is `idle`), `-` (an agent
-is `working`, or finished task), `start` (todo), else `stalled` (active, no
-live agent).
+`waiting`), `-` (an agent is `working`, or finished task), `findings`
+(REVIEW.md newer than REPORT.md has an unticked `- [ ]` line), `review` (task
+review), `reply` (an agent is `idle`), `start` (todo), else `stalled` (active,
+no live agent).
 
-Dashboard order: `answer` > `reply` > `review` > `stalled` > `working` >
+Dashboard order: `answer` > `reply` > `findings` > `review` > `stalled` > `working` >
 `start`, then priority, then id (the more it needs you, the higher
 it sorts). The dashboard shows them in groups (needs you, active, todo); tab
 switches to grouping by priority or repo, keeping this order inside a group.
@@ -130,12 +131,15 @@ switches to grouping by priority or repo, keeping this order inside a group.
   repos.tsv      # machine-owned: name<TAB>git common dir<TAB>branch<TAB>worktree path
                  # (a folder: name<TAB>-<TAB>-<TAB>folder path; see FOLDER-TASKS.md)
   REPORT.md      # agent's final report (P5)
+  REVIEW.md      # reviewer's findings; unticked "- [ ]" lines are open
   events.log     # append-only: ts<TAB>event<TAB>k=v ...
   decisions.tsv  # append-only, `collie log`: ts run phase decision why evidence result
   commits.txt    # written by done/archive: per repo, branch commits + diff stat
   repos/<repo> -> worktree path (symlink)
 
 <repo worktree>/.collie -> ~/.local/state/collie/tasks/<id>
+<repo worktree>.scratch-<n>/         # run --scratch: detached at the branch head,
+                                     # same .collie link; removed by done/archive
 ```
 
 - Worktrees stay next to their repo: `<root>/<slug>` for a bare layout

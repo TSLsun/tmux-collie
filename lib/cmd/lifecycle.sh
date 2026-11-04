@@ -54,6 +54,10 @@ finish_task() { # final_status args...
       [ "$c" != - ] || continue
       case "$here/" in "$p"/*) die "currently inside $p; cd elsewhere first" ;; esac
     done <"$d/repos.tsv"
+    while IFS=$TAB read -r _ _ p; do
+      [ -n "$p" ] || continue
+      case "$here/" in "$p"/*) die "currently inside $p; cd elsewhere first" ;; esac
+    done < <(scratch_list "$d")
   fi
 
   # what the task committed, kept for history once its branches are deleted
@@ -73,6 +77,7 @@ finish_task() { # final_status args...
     fi
     log_event "$id" worktree_removed "repo=$name path=$p"
   done <"$d/repos.tsv"
+  scratch_remove "$id"
   fm_set "$d/TASK.md" status "$final"
   log_event "$id" "task_$final" "force=$force"
   [ -z "$WT_REPORT" ] || printf '%sreclaimed %s\n' "$WT_REPORT" "$(human_kb "$WT_KB")"

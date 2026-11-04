@@ -206,7 +206,8 @@ rollback() {
 # WT_KB / WT_CLEAN_KB to the total and the clean-only total in KiB.
 # Buckets: wip:N (tracked files with uncommitted edits), scratch:N
 # (untracked files that are not ignored), unmerged (named in the second
-# argument by the caller, which already checked), else clean.
+# argument by the caller, which already checked), else clean; then one line
+# per scratch worktree (run --scratch), counted as clean: done removes them.
 wt_report() { # task_dir unmerged_names
   local name c b p bucket kb
   WT_REPORT="" WT_KB=0 WT_CLEAN_KB=0
@@ -224,6 +225,15 @@ wt_report() { # task_dir unmerged_names
     [ -n "$bucket" ] || { bucket=clean; WT_CLEAN_KB=$((WT_CLEAN_KB + kb)); }
     WT_REPORT="$WT_REPORT  $name  $bucket  $(human_kb "$kb")"$'\n'
   done <"$1/repos.tsv"
+  # scratch worktrees are removed whatever they hold
+  local r
+  while IFS=$TAB read -r r name p; do
+    [ -n "$p" ] && [ -d "$p" ] || continue
+    kb=$(du -sk "$p" 2>/dev/null | cut -f1) || true
+    kb=${kb:-0}
+    WT_KB=$((WT_KB + kb)) WT_CLEAN_KB=$((WT_CLEAN_KB + kb))
+    WT_REPORT="$WT_REPORT  $name  run $r scratch worktree  $(human_kb "$kb")"$'\n'
+  done < <(scratch_list "$1")
 }
 
 # KiB as a short size: 512K, 3.4M, 1.2G.
@@ -232,4 +242,48 @@ human_kb() {
     if (k < 1024) printf "%dK\n", k
     else if (k < 1048576) printf "%.1fM\n", k / 1024
     else printf "%.1fG\n", k / 1048576 }'
+}
+
+# --- scratch worktrees (run --scratch) --------------------------------------
+
+# Adds a detached worktree at the task branch's head for one run, next to the
+# task worktree as <worktree>.scratch-<n> and linked to the task dir like it,
+# so a reviewer can run repros without touching the task worktree. Sets
+# SCRATCH to its path.
+scratch_add() { # task_dir common branch worktree
+  local n=1 p
+  while p="$4.scratch-$n" && { [ -e "$p" ] || [ -L "$p" ]; }; do n=$((n + 1)); done
+  git --git-dir="$2" worktree add -q --detach "$p" "refs/heads/$3" </dev/null || return 1
+  if ! ln -s "$1" "$p/.collie"; then
+    git --git-dir="$2" worktree remove --force "$p" || warn "could not remove scratch worktree $p"
+    return 1
+  fi
+  SCRATCH=$p
+}
+
+# A task's scratch worktrees, one "run<TAB>repo<TAB>path" line each, from
+# its scratch_created events (removed ones included: callers check the path).
+scratch_list() { # task_dir
+  awk -F'\t' '
+    function kv(k,  a, i, n) {
+      n = split($3, a, " ")
+      for (i = 1; i <= n; i++) if (index(a[i], k "=") == 1) return substr(a[i], length(k) + 2)
+    }
+    $2 == "scratch_created" { print kv("run") "\t" kv("repo") "\t" kv("path") }' "$1/events.log"
+}
+
+# Removes a task's scratch worktrees: disposable, so uncommitted changes go
+# with them. Logs each removal.
+scratch_remove() { # id
+  local d="$TASKS_DIR/$1" r name p c
+  while IFS=$TAB read -r r name p; do
+    [ -n "$p" ] && [ -d "$p" ] || continue
+    c=$(awk -F'\t' -v n="$name" '$1 == n { print $2; exit }' "$d/repos.tsv")
+    [ ! -L "$p/.collie" ] || rm -f "$p/.collie"
+    if git --git-dir="$c" worktree remove --force "$p"; then
+      log_event "$1" worktree_removed "repo=$name path=$p run=$r"
+    else
+      warn "could not remove scratch worktree $p"
+    fi
+  done < <(scratch_list "$d")
 }

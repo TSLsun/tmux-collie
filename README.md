@@ -69,6 +69,7 @@ collie handoff deploy-v2 --from 1 --agent codex --note handoff.md
 collie send deploy-v2 'rerun the tests'  # type into its idle agent (--run N, --wait, -f file)
 collie pause deploy-v2                 # idle agent saves work, leaves .collie/RESUME.md
 collie run deploy-v2 --model opus --effort high  # per-run model/effort (claude, codex)
+collie run deploy-v2 --agent codex --scratch -p 'review ...'  # own worktree at the branch head
 collie wait deploy-v2 --done --timeout 3600     # until the run signals done and stops
 collie doctor                          # deps, agents, task/worktree consistency
 collie ls                              # agent column: waiting/idle/working/exited/unknown
@@ -135,14 +136,15 @@ collie set lead after="api web"        # blocked until api and web are done/merg
 ```
 
 `ls`'s last column says what a task needs from you: `answer` (an agent waits
-for permission or input), `review` (fresh REPORT.md), `reply` (an agent
+for permission or input), `findings` (REVIEW.md has open findings, see
+[the format](docs/USAGE.md#review-findings)), `review` (fresh REPORT.md), `reply` (an agent
 finished its turn without one), `stalled` (active, no live agent), `start`
 (todo), `blocked:<ids>` (todo, waiting on its `after:` tasks; see
 [task dependencies](docs/USAGE.md#task-dependencies)), or `-` (an agent is
 working, or the task is finished).
 
-Dashboard rows start with a glyph (red `●` needs you: answer, review, reply,
-stalled; yellow `◐` working; dim `○` todo), then aligned columns: id, state
+Dashboard rows start with a glyph (red `●` needs you: answer, findings, review,
+reply, stalled; yellow `◐` working; dim `○` todo), then aligned columns: id, state
 (the needs value, or `working`), priority (P0 red, P1 yellow, P3 dim), and the
 task branch's PR per repo (`#N`: open green, draft dim, merged purple, closed
 red; nothing for none), then a yellow `⚡N` when the task is predicted to conflict with N others (base
