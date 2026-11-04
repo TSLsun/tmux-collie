@@ -61,7 +61,9 @@ delete an item only when it is covered by a test.
       by process, `adopt` resumes its own conversation by the id of the
       `run/session-owners/<id>.lock` it holds (`-c` took the session a reused
       tty last showed), extension reports working/idle. `waiting` (ask,
-      approvals) only tested with a fake omp.
+      approvals) only tested with a fake omp. 2026-11-03, real 18.15.0
+      (`omp -p`, one task-tool subagent): the subagent's events carry
+      `ctx.agent.kind` `sub` and its `agent_end` no longer reports idle.
 - [x] Codex 0.165.0 on macOS, checked 2026-10-28: hooks, approval/question
       waits and recovery, notifications/status, adoption and exact restore.
 - [ ] Other Codex versions/platforms and localized/custom prompts are unverified.

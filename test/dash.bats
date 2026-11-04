@@ -403,7 +403,7 @@ branch_of() { awk -F'\t' -v r="$2" '$1 == r { print $3 }' "$(task_dir "$1")/repo
   hook x working
   [ -z "$(tmux show-options -gqv @collie-last-pane)" ]
   hook x waiting
-  [ "$(tmux show-options -gqv @collie-last-pane)" = "$(run_pane x)" ]
+  wait_for '[ "$(tmux show-options -gqv @collie-last-pane)" = "$(run_pane x)" ]'
 }
 
 @test "_preview: title, derived status, runs, per-repo ahead/dirty" {

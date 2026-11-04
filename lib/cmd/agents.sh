@@ -682,6 +682,9 @@ ancestor_pane() {
   done
 }
 
+# Whether the status bar counts agents started by hand: @collie-status-manual on.
+status_manual() { [ "$(tmux_opt @collie-status-manual)" = on ]; }
+
 # Windows in the status bar's scope, as " @1 @2 ": with
 # @collie-status-scope tasks, only those of task sessions; else all ("").
 status_scope() {
@@ -694,13 +697,15 @@ status_scope() {
   done < <(tmux list-windows -a -F '#{session_name}|#{window_id}' 2>/dev/null || true)
 }
 
-# Counts every agent, including ones started by hand; with
-# @collie-status-scope tasks, only those in task sessions. Each count is a
-# mouse range: clicking it opens `collie _status-menu` (bound in collie.tmux).
+# Counts the agents of collie runs; with @collie-status-manual on, also
+# agents started by hand, whose state is only guessed from output silence
+# (with @collie-status-scope tasks, only those in task sessions). Each count
+# is a mouse range: clicking it opens `collie _status-menu` (bound in
+# collie.tmux).
 cmd_status() {
   status_scope
   { win_states -a | cut -f5
-    manual_runs -a | awk -F'\t' -v w="$STATUS_WINS" 'w == "" || index(w, " " $4 " ") { print $3 }'
+    ! status_manual || manual_runs -a | awk -F'\t' -v w="$STATUS_WINS" 'w == "" || index(w, " " $4 " ") { print $3 }'
   } | awk '
     function c(st, fg) { if (n[st]) s = s " #[range=user|collie-" st "]#[fg=" fg "]●" n[st] "#[norange]" }
     { n[$1]++ }
@@ -716,7 +721,8 @@ cmd_status() {
 # (collie runs to their window, agents started by hand to their pane). A row
 # is "session:window  agent  age  priority title" (the directory for agents
 # outside a task); age is the time in this state, or without output when
-# idle. It opens at column x (the click), above a bottom status bar or below
+# idle, marked "~" when the state is guessed from output silence (agents
+# started by hand, runs without hooks). It opens at column x (the click), above a bottom status bar or below
 # a top one; tmux keeps it on screen.
 cmd__status-menu() { # range client [x]
   local st=${1#collie-} C="$PLUGIN_DIR/bin/collie" items=() locs=() ts=() ags=() ages=() descs=()
@@ -742,7 +748,7 @@ cmd__status-menu() { # range client [x]
   done < <(
     {
       win_states -a | awk -F'\t' -v st="$st" '$5 == st { a = $4; if ($3 != "-" && $3 != 1) a = a " #" $3; print "w\t" $1 "\t" $2 "\t" $2 "\t" a "\t" }'
-      manual_runs -a | awk -F'\t' -v w="$STATUS_WINS" -v st="$st" '
+      ! status_manual || manual_runs -a | awk -F'\t' -v w="$STATUS_WINS" -v st="$st" '
         FNR == NR { j = index($0, "|"); ses[substr($0, 1, j - 1)] = substr($0, j + 1); next }
         $3 == st && (w == "" || index(w, " " $4 " ")) { print "m\t" ses[$4] "\t" $5 "\t" $4 "\t" $2 "\t" $7 }' \
         <(tmux list-windows -a -F '#{window_id}|#{session_name}' 2>/dev/null || true) -
@@ -752,13 +758,13 @@ cmd__status-menu() { # range client [x]
         if (n < 0) n = 0
         return n < 60 ? n "s" : n < 3600 ? int(n / 60) "m" : n < 86400 ? int(n / 3600) "h" : int(n / 86400) "d"
       }
-      FNR == NR { split($0, f, "|"); ix[f[1]] = f[2]; cur[f[1]] = f[3]; at[f[1]] = f[4]; act[f[1]] = f[5]; next }
+      FNR == NR { split($0, f, "|"); ix[f[1]] = f[2]; cur[f[1]] = f[3]; at[f[1]] = f[4]; act[f[1]] = f[5]; hk[f[1]] = f[6]; next }
       {
         w = $4; n = ""
         if ($1 == "w" && cur[w] == st && at[w] != "") n = now - at[w]
         else if (st == "idle") n = now - act[w]
-        print $2 "\037" $3 "\037" $2 ":" ix[w] "\037" $5 "\037" ago(n) "\037" $6
-      }' <(tmux list-windows -a -F '#{window_id}|#{window_index}|#{@collie_state}|#{@collie_state_at}|#{window_activity}' 2>/dev/null || true) -
+        print $2 "\037" $3 "\037" $2 ":" ix[w] "\037" $5 "\037" ($1 == "m" || hk[w] == "0" ? "~" : "") ago(n) "\037" $6
+      }' <(tmux list-windows -a -F '#{window_id}|#{window_index}|#{@collie_state}|#{@collie_state_at}|#{window_activity}|#{@collie_hooks}' 2>/dev/null || true) -
   )
   if [ "${#ts[@]}" = 0 ]; then
     tmux display-message ${2:+-c "$2"} "collie: no $st agents"

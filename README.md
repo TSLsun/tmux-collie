@@ -225,7 +225,8 @@ would kill your tmux server (`tmux kill-server`/`kill-session`, `pkill tmux`)
 unless they name a private server with `-L`/`-S`; limits in DESIGN.md.
 Agents you start by hand in a task's session (`claude`, `codex`, `gemini`,
 `omp`, `aider`) are found by process and show up the same way, but without
-hooks they are only working or idle (by output silence) and do not notify.
+hooks they are only working or idle (by output silence) and do not notify;
+the status bar counts them only with `@collie-status-manual on`.
 `collie adopt` (dashboard `?` → `a`, `prefix h` → `a`) restarts a hand-started
 Claude, Codex or omp with the same conversation and hooks. For Codex, start it
 with `--no-daemon` and have `lsof` installed. If Collie cannot identify the
@@ -247,8 +248,10 @@ when the plugin loads. Run `collie doctor` for version and setup diagnostics.
 ```tmux
 set -g status-right '#{collie_status} %H:%M'   # ●waiting ●idle ●working counts
 set -g @collie-status-scope 'all'              # all | tasks: skip hand-started agents outside tasks
+set -g @collie-status-manual 'off'             # on: also count agents started by hand (state guessed)
 set -g @collie-agent 'claude'                  # default agent ($COLLIE_AGENT wins)
 set -g @collie-notify 'on'                     # on | off | command "title" "body"
+set -g @collie-idle-grace '3'                  # seconds an idle must hold before it notifies
 set -g @collie-restore 'off'                   # on: collie restore at plugin load
 ```
 
@@ -260,8 +263,8 @@ pane; set `@collie-terminal` to the terminal's bundle id if it is not detected
 
 With `set -g mouse on`, clicking a count opens a menu of the agents behind it,
 next to the count; each row shows `session:window`, the agent, how long it has
-been in that state, and the task's priority and title (the directory for agents
-outside a task). Picking one jumps to its window (tmux 3.4+; the plugin binds
+been in that state (`~` when guessed from output silence), and the task's
+priority and title (the directory for agents outside a task). Picking one jumps to its window (tmux 3.4+; the plugin binds
 `MouseUp1Status` unless you already bound it). Hovering cannot show anything:
 tmux has no mouse move events.
 
