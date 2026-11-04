@@ -10,7 +10,9 @@ block until they finish, check what they produced, decide, and record every
 decision in collie so that a fresh lead can resume where you stopped.
 
 Needs tmux-collie with `run --agent/--model/--effort`, `wait`, `signal done`
-and `send`. Uses `collie log` and `collie verify` when they exist (`collie
+and `send`. Uses `run --scratch` when it exists (`collie help run` lists
+it); without it, the reviewer runs in the task worktree and the HEAD/status
+check in step 3 is what keeps it honest. Uses `collie log` and `collie verify` when they exist (`collie
 help log` succeeds); without them, keep the same rows in `.collie/LEAD.md` and
 run the TASK.md `## Verify` blocks in the worktree yourself.
 
@@ -50,6 +52,7 @@ works in both.
 |---|---|
 | `collie show <id>` | fields, runs (number, agent, state), recent events, last decision |
 | `collie run <id> --agent A [--model M] [--effort E] -p '<prompt>'` | start a run in a new window |
+| `collie run <id> --scratch ...` | same, in a new scratch worktree detached at the task branch's head; done/archive remove it |
 | `sed -n 's/.*\trun_started\trun=\([0-9]*\) .*/\1/p' .collie/events.log \| tail -1` | the run number you just started |
 | `collie wait <id> --run N --done --timeout S` | until run N signalled done and is idle: 0 done, 1 timeout, 2 run gone without signal |
 | `collie signal done` | run by the agent as the last step of each turn; put it in every prompt |
@@ -114,23 +117,28 @@ collie wait <id> --run $N --done --timeout 3600
 ```sh
 git -C <worktree> rev-parse HEAD > .collie/pre-review.head
 git -C <worktree> status --porcelain > .collie/pre-review.status
-collie run <id> --agent codex -p 'Task <id>. You are the reviewer, not the
-implementer. Do not edit, commit or stage anything in the worktree. Review
-the branch against its base for correctness against .collie/TASK.md. For
-every finding write: file:line, the defect, the exact command you ran and
-its output that proves it. No proof, no finding. Write the findings to
+collie run <id> --agent codex --scratch -p 'Task <id>. You are the reviewer,
+not the implementer. You are in a scratch worktree at the branch head: run
+builds and repros here freely, but commit nothing. Review the branch against
+its base for correctness against .collie/TASK.md. For every finding write one
+line "- [ ] file:line, the defect, the exact command you ran and its output
+that proves it". No proof, no finding. Write the findings to
 .collie/REVIEW.md ("no findings" if none). Then run `collie signal done`.'
 R=<run number>
 collie wait <id> --run $R --done --timeout 3600
 ```
 
-Check: REVIEW.md is new; HEAD and `status --porcelain` equal the saved
-files. Different → the review is void; log it and stop for the human.
+Check: REVIEW.md is new; the task worktree's HEAD and `status --porcelain`
+equal the saved files. Different → the review is void; log it and stop for
+the human. While REVIEW.md is newer than REPORT.md and has a `- [ ]` line,
+`collie ls`/`brief` show the task as `findings`.
 
 ### 4. Triage and send back
 
 Re-run each finding's command; keep the ones that reproduce. Add your own
-probe's finding if it reproduces. Write them to a file, ending with "Fix,
+probe's finding if it reproduces. In REVIEW.md, tick each one you drop
+(`- [x] ... (dropped: <why>)`) so only the sent findings stay open; the
+implementer's REPORT.md update closes the rest. Write them to a file, ending with "Fix,
 add a check that fails on the old code, commit, update .collie/REPORT.md,
 then run `collie signal done`.", and send it to the implementer:
 
@@ -144,9 +152,9 @@ send exit 2 → `collie wait <id> --run $N`, then send again. Exit 3 → the run
 is gone: `collie handoff --from $N`.
 
 Back to step 2; also re-run each sent finding's command: it must no longer
-reproduce. For the next review, `collie send` the reviewer run ("review
-<old HEAD>..HEAD, same rules, overwrite .collie/REVIEW.md, signal done")
-instead of starting a new one. Two rounds without convergence: stop.
+reproduce. For the next review, `collie send` the reviewer run ("run `git checkout
+--detach <branch>` in your worktree, review <old HEAD>..HEAD, same rules,
+overwrite .collie/REVIEW.md, signal done") instead of starting a new one. Two rounds without convergence: stop.
 
 ### 5. Verify and ship
 
@@ -170,6 +178,6 @@ resolved, the verify result, the PR, and what the human must decide.
 | After | Check yourself |
 |---|---|
 | implementer turn | REPORT.md new, commits in `collie review`, clean tree, `collie verify` passes |
-| reviewer turn | REVIEW.md new, each finding has command + output, HEAD and status unchanged |
+| reviewer turn | REVIEW.md new, each finding a `- [ ]` line with command + output, task worktree HEAD and status unchanged |
 | a finding | you re-ran its command and saw the defect |
 | fix turn | the finding's command no longer shows it, `collie verify` passes |

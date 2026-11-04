@@ -207,6 +207,7 @@ value (`ls`'s last column, the dashboard's STATE), first match:
 | Needs | When | Dash glyph |
 |---|---|---|
 | `answer` | an agent is `waiting` | red `●` |
+| `findings` | REVIEW.md has open findings ([format](#review-findings)), no agent working | red `●` |
 | `review` | task status `review` | red `●` |
 | `reply` | an agent is `idle` (turn over, no fresh REPORT.md) | red `●` |
 | `-` | an agent is `working` (dash: `working`), or task finished | yellow `◐` |
@@ -214,8 +215,8 @@ value (`ls`'s last column, the dashboard's STATE), first match:
 | `blocked:<ids>` | task status `todo`, its `after:` tasks unsatisfied (dash: `blocked`) | dim `○` |
 | `stalled` | `active`, but no live agent | red `●` |
 
-The dashboard sorts tasks in that urgency (`answer` > `reply` > `review` >
-`stalled` > `working` > `start` > `blocked`), then priority, and shows them in groups
+The dashboard sorts tasks in that urgency (`answer` > `reply` > `findings` >
+`review` > `stalled` > `working` > `start` > `blocked`), then priority, and shows them in groups
 (needs you, active, todo); `tab` /
 `shift-tab` regroup by priority or repo.
 
@@ -332,7 +333,7 @@ npx skills add TSLsun/tmux-collie     # installs skills/collie-lead
 ```mermaid
 flowchart LR
   I[run claude: implement] -->|wait --done| C{lead checks REPORT.md,<br/>commits, verify}
-  C --> R[run codex: review<br/>REVIEW.md, worktree untouched]
+  C --> R[run codex --scratch: review<br/>REVIEW.md, worktree untouched]
   R -->|wait --done| T{lead re-runs<br/>each finding's proof}
   T -->|reproduced| S[send to run 1:<br/>same conversation]
   S -->|wait --done| C
@@ -342,7 +343,7 @@ flowchart LR
 | Step | Commands | The lead checks itself |
 |---|---|---|
 | implement | `run --agent claude -p ...`, `wait --run N --done` | REPORT.md is new, commits in `review`, clean tree, `verify` passes |
-| review | `run --agent codex -p ...`, `wait --run R --done` | REVIEW.md is new; HEAD and `git status` unchanged |
+| review | `run --agent codex --scratch -p ...`, `wait --run R --done` | REVIEW.md is new; the task worktree's HEAD and `git status` unchanged |
 | fix | `send --run N -f findings.md`, `wait --run N --done` | each sent finding was reproduced by its command; it no longer reproduces |
 | ship | `verify`, then TASK.md `## Ship` | `verify` passes on the final HEAD |
 
@@ -353,6 +354,29 @@ turn, never for the previous one. Each decision goes to `collie log`
 resume. The lead stops for you when the contract is unclear, a decision is
 hard to reverse, two fix rounds do not converge, or CI fails without a proven
 cause; `collie brief` lists it.
+
+The reviewer runs with `--scratch`: its own worktree, detached at the task
+branch's head next to the task worktree (`<worktree>.scratch-<n>`, with the
+same `.collie` link), so it can build and run repros without touching the
+implementer's files. For a re-review it checks out the new head there
+(`git checkout --detach <branch>`). Scratch runs do not count as the
+implementer's last run for the task status, and `restore` skips them. `done`
+and `archive` remove scratch worktrees with whatever they hold; `gc -n` lists
+them.
+
+#### Review findings
+
+The needs column shows `findings` while `.collie/REVIEW.md` is newer than
+`.collie/REPORT.md` (the implementer's last turn) and has an open finding: a
+line starting with `- [ ] ` (a Markdown task item). Tick it (`- [x]`) or
+delete it once it is resolved or rejected; a REVIEW.md without unticked
+items (for example "no findings") has none. Collie only reads the marker;
+what counts as a finding is up to the reviewer and the lead.
+
+```markdown
+- [ ] lib/a.sh:12 trim clobbers the caller's `_t`. Proof: `sh probe.sh` -> `_t after trim: [x]`
+- [x] test/a.bats:3 missing check for empty input (fixed in 8391040)
+```
 
 The lead needs the tmux socket, so run it in claude (or any agent without a
 socket-blocking sandbox). Codex's workspace-write sandbox blocks the socket;

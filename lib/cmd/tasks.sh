@@ -194,21 +194,39 @@ cmd_add() {
   fi
 }
 
+# Whether a task's REVIEW.md has open findings: it was written after
+# REPORT.md (the implementer's last turn; or there is none) and has an
+# unticked "- [ ] ..." line. Collie does not judge the findings themselves.
+open_findings() { # task_dir
+  [ -f "$1/REVIEW.md" ] || return 1
+  [ ! -f "$1/REPORT.md" ] || [ "$1/REVIEW.md" -nt "$1/REPORT.md" ] || return 1
+  grep -qE '^[[:space:]]*[-*] \[ \]' "$1/REVIEW.md"
+}
+
 # What a task needs from you, first match: answer (an agent waits for
-# permission or input), review (status review), reply (an agent finished its
-# turn without a fresh report), - (an agent is working, or the task is
-# finished), start (todo), else stalled (active, no live agent). Sets NEEDS.
+# permission or input), - (an agent is working, or the task is finished),
+# findings (REVIEW.md has open findings, see open_findings), review (status
+# review), reply (an agent finished its turn without a fresh report), start
+# (todo), else stalled (active, no live agent). Sets NEEDS.
 # ls turns a todo task's start into blocked:<ids> while its after: deps are
 # unsatisfied (see task_blocked).
-task_needs() { # status top_state
+task_needs() { # status top_state [task_dir]
   case $1:$2 in
     done:* | archived:*) NEEDS=- ;;
     *:waiting) NEEDS=answer ;;
-    review:*) NEEDS=review ;;
-    *:idle) NEEDS=reply ;;
     *:working) NEEDS=- ;;
-    todo:*) NEEDS=start ;;
-    *) NEEDS=stalled ;;
+    *)
+      if [ -n "${3:-}" ] && open_findings "$3"; then
+        NEEDS=findings
+        return
+      fi
+      case $1:$2 in
+        review:*) NEEDS=review ;;
+        *:idle) NEEDS=reply ;;
+        todo:*) NEEDS=start ;;
+        *) NEEDS=stalled ;;
+      esac
+      ;;
   esac
 }
 
@@ -231,7 +249,7 @@ cmd_ls() {
     repos=""
     while IFS=$TAB read -r name _ || [ -n "$name" ]; do repos="$repos${repos:+,}$name"; done <"$d/repos.tsv"
     task_status "$id" "$top" "$st"
-    task_needs "$STATUS" "$top"
+    task_needs "$STATUS" "$top" "$d"
     if [ "$NEEDS" = start ]; then
       task_blocked "$d"
       [ -z "$BLOCKED" ] || NEEDS="blocked:${BLOCKED// /,}"
