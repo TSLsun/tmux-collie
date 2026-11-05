@@ -191,7 +191,7 @@ created: 2026-01-01
 | `collie adopt [<id>] [-y]` | Restart an agent started by hand in the task's session under `collie run`, resuming its conversation (claude, codex, omp; Codex requires one identifiable open rollout) |
 | `collie dash [-n]` | fzf dashboard, most urgent first; enter jumps to the most urgent agent window |
 | `collie set [<id>] priority=P1 title="..."` | Update priority or title; a bare field reads stdin |
-| `collie edit [<id>]` | Open TASK.md in `$EDITOR` (also `new --edit`, dash `ctrl-e` or `? e`, menu `e`) |
+| `collie edit [<id>]` | Open TASK.md in `$EDITOR` (also `new --edit`, dash `e` or `? e`, menu `e`) |
 | `collie review [<id>] [-p]` | Per-repo commits, diff stat (`-p` patch), dirty files (folders: files modified since the first run), then REPORT.md |
 | `collie spike <id>` | New `exp/<id>` task from the current worktree, carrying its uncommitted tracked changes (`git stash create`); `-u` also copies untracked, non-ignored files; source untouched |
 | `collie done [<id>] [--force]` | Accept: safety checks, then remove worktrees and session |

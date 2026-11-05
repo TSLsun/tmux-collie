@@ -38,7 +38,7 @@ delete an item only when it is covered by a test.
       unnoticeable.
 
 ## P3 — Dashboard & interaction
-- [ ] `collie dash` interactively: fzf layout, preview pane, `ctrl-r` reload,
+- [ ] `collie dash` interactively: fzf layout, preview pane, rows reloading after an action,
       enter selecting the urgent window and switching session (from a popup,
       `switch-client` must act on the popup's client). Tests cover rows,
       ordering, preview text and target window only.
