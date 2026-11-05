@@ -7,6 +7,17 @@ run_agent() {
   RUN_AGENT=${RUN_AGENT:-claude}
 }
 
+# The agents a run key offers, one per line: the default (run_agent) first,
+# then the bundled adapters. A name a menu command cannot quote is left out.
+run_agents() {
+  local a
+  run_agent
+  for a in "$RUN_AGENT" claude codex gemini omp; do
+    [[ $a =~ ^[A-Za-z0-9._/-]+$ ]] || continue
+    printf '%s\n' "$a"
+  done | awk '!seen[$0]++'
+}
+
 # Allocate and record a run in one per-task critical section. A subshell
 # keeps cleanup traps local to this launch, including callers like handoff.
 start_run() ( # task agent repo path argv...

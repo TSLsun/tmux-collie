@@ -357,7 +357,7 @@ cmd__runrows() { # [id]
 
 # fzf transform for tab / btab (next / prev): switch the dashboard grouping.
 cmd__group() { # next|prev
-  case ${FZF_PROMPT:-} in "$PICK_MARK"* | "$ASK_MARK"*) return 0 ;; esac
+  case ${FZF_PROMPT:-} in "$PICK_MARK"* | "$ASK_MARK"* | "$AGENT_MARK"*) return 0 ;; esac
   ! dash_runs || return 0
   local self="'$BASH' '$PLUGIN_DIR/bin/collie'" n=${#DASH_GROUPS[@]} i
   dash_group
@@ -385,7 +385,7 @@ cmd_dash() {
   # the action panel's state (see dash_panel), for this dashboard's transforms
   export COLLIE_DASH="$STATE_DIR/dash.$$"
   mkdir -p "$COLLIE_DASH"
-  for k in $(action_items x | cut -c1) enter up down j k q space / '?' y n u h; do
+  for k in $(action_items x | cut -c1) enter up down j k q space / '?' y n u h 1 2 3 4 5; do
     binds+=(--bind="$k:transform($self _key '$k' {1} {+1})")
   done
   # after the transform: fzf ignores clear-query while the input is hidden
@@ -471,6 +471,18 @@ cmd__key() { # key [id [marked id...]]
       else
         echo "$back"
       fi
+      return
+      ;;
+    "$AGENT_MARK"*)
+      # the agent chooser (r): a digit picks, enter the default, others cancel
+      k=""
+      case $2 in
+        enter) k=1 ;;
+        [1-9]) k=$2 ;;
+      esac
+      [ -z "$k" ] || k=$(run_agents | sed -n "${k}p")
+      cur=${FZF_PROMPT#"$AGENT_MARK"}
+      if [ -n "$k" ]; then dash_run "${cur% }" "$k"; else echo "$back"; fi
       return
       ;;
     "$SEARCH_PROMPT"*)
@@ -625,7 +637,8 @@ cmd__handoff() { # id run
 # fzf actions for a dashboard action (see action_items) on a task and the
 # marked ids (sync only). Edit, terminal and new task take the screen (see
 # _actions); review switches the panel to `collie review` and back; run starts
-# in the background; done, archive, adopt and sync ask y/n in the panel first
+# in the background (r first asks for the agent in the panel, R takes the
+# default); done, archive, adopt and sync ask y/n in the panel first
 # (the prompt holds "<ASK_MARK><key> <id...> "), then run in the background.
 dash_action() { # id key [marked id...]
   local self="'$BASH' '$PLUGIN_DIR/bin/collie'" id=$1 k=$2 m ids=""
@@ -639,21 +652,25 @@ dash_action() { # id key [marked id...]
         echo "change-prompt($DASH_PROMPT)+change-preview-label($REVIEW_LABEL)+refresh-preview"
       fi
       ;;
-    r)
-      # a blocked todo task asks first (see cmd_run)
-      if [ -n "$id" ] && task_status "$id" "" && [ "$STATUS" = todo ] &&
-        task_blocked "$TASKS_DIR/$id" && [ -n "$BLOCKED" ]; then
-        echo "change-prompt($ASK_MARK$k $id )+refresh-preview"
-      else
-        dash_bg r "$id"
-      fi
-      ;;
+    r) echo "change-prompt($AGENT_MARK$id )+refresh-preview" ;;
+    R) dash_run "$id" ;;
     s)
       for m in "$@"; do [ -z "$m" ] || ids="$ids $m"; done
       echo "change-prompt($ASK_MARK$k${ids:- $id} )+refresh-preview"
       ;;
     *) echo "change-prompt($ASK_MARK$k $id )+refresh-preview" ;;
   esac
+}
+
+# fzf actions for run (R, or r and an agent): in the background, but a
+# blocked todo task asks first (see cmd_run; the prompt keeps the agent).
+dash_run() { # id [agent]
+  if [ -n "$1" ] && task_status "$1" "" && [ "$STATUS" = todo ] &&
+    task_blocked "$TASKS_DIR/$1" && [ -n "$BLOCKED" ]; then
+    echo "change-prompt(${ASK_MARK}r $1 ${2:+$2 })+refresh-preview"
+  else
+    dash_bg r "$1" ${2:+"$2"}
+  fi
 }
 
 # What an action key does, for the panel: run, adopt, done, archive, sync.
@@ -678,13 +695,13 @@ panel_msg() { # kind text
 # A dashboard action in the background (an fzf bg-transform), immune to the
 # popup closing; then the rows reload and the panel reports: one green line
 # that fades (see _fade), or the output in red until a key.
-cmd__bg() { # key id...
+cmd__bg() { # key id... (r: id [agent])
   local self="'$BASH' '$PLUGIN_DIR/bin/collie'" k=$1 a out rc=0 rows=_rows
   shift
   # the user may have opened a task's runs (u) meanwhile
   ! dash_runs || rows=_runrows
   case $k in
-    r) a=(run "$1") ;;
+    r) a=(run "$1" ${2:+--agent "$2"}) ;;
     a) a=(adopt "$1" -y) ;;
     d) a=("done" "$1") ;;
     x) a=(archive "$1") ;;
@@ -753,11 +770,18 @@ dash_panel() { # id
           return 0
           ;;
         r)
-          task_blocked "$TASKS_DIR/$ids"
+          task_blocked "$TASKS_DIR/${ids%% *}"
           printf 'blocked on: %s (not done or merged)\n\n' "$BLOCKED"
           ;;
       esac
       return 1
+      ;;
+    "$AGENT_MARK"*)
+      k=${FZF_PROMPT#"$AGENT_MARK"}
+      printf '\033[1;33mrun %s with:\033[0m\n\n' "${k% }"
+      run_agents | awk '{ printf "  \033[36m%d\033[39m  %s%s\n", NR, $0, (NR == 1 ? " (default)" : "") }'
+      printf '\n%s\n' "digit: run · enter: default · esc: cancel"
+      return 0
       ;;
   esac
   if [ "${FZF_PREVIEW_LABEL:-}" = "$REVIEW_LABEL" ] && [ -n "$1" ]; then
@@ -787,7 +811,7 @@ rule() { local s="" i; for ((i = 0; i < $1; i++)); do s="$s$2"; done; printf '%s
 
 # "<key>  <label>" lines of the dashboard actions for a task (or none).
 action_items() { # [id]
-  [ -z "$1" ] || printf '%s\n' 'r  run agent' 'a  adopt agent' 'e  edit task' 'v  review' 't  terminal' 'd  done' 'x  archive' 's  sync'
+  [ -z "$1" ] || printf '%s\n' 'r  run agent' 'R  run default agent' 'a  adopt agent' 'e  edit task' 'v  review' 't  terminal' 'd  done' 'x  archive' 's  sync'
   printf '%s\n' 'c  new task'
 }
 
@@ -825,7 +849,8 @@ cmd__menu() { # session [client]
     items+=("")
     while read -r k l; do
       case $k in
-        r) a="run-shell '$C run $T -s${2:+ -c $2}'" ;;
+        r) a="run-shell '$C _runpick $T${2:+ $2}'" ;;
+        R) a="run-shell '$C run $T -s${2:+ -c $2}'" ;;
         a) a="display-popup -E -w 90 -h 12 '$C _popup $C adopt $T'" ;;
         e) a="$popup '$C _popup $C edit $T'" ;;
         v) a="$popup '$C _popup \"$C review $T | less -R\"'" ;;
@@ -845,6 +870,19 @@ cmd__menu() { # session [client]
       "dev: back to installed" B "run-shell '$C _dev reset'")
   fi
   tmux display-menu ${2:+-c "$2"} -T '#[align=centre] collie ' -x C -y C "${items[@]}"
+}
+
+# The prefix menu's run agent (r): a menu of run_agents, the default first,
+# keyed 1, 2, ...; each runs the task like run default agent (R).
+cmd__runpick() { # id [client]
+  local C="$PLUGIN_DIR/bin/collie" items=() a i=0 l
+  valid_id "${1:-}" || die "usage: collie _runpick <id> [client]"
+  while read -r a; do
+    i=$((i + 1)) l=$a
+    [ "$i" -gt 1 ] || l="$a (default)"
+    items+=("$l" "$i" "run-shell '$C run $1 -s${2:+ -c $2} --agent $a'")
+  done < <(run_agents)
+  tmux display-menu ${2:+-c "$2"} -T '#[align=centre] run agent ' -x C -y C "${items[@]}"
 }
 
 # @collie-dev: reload the plugin from another tmux-collie checkout (load <dir>)

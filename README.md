@@ -157,8 +157,9 @@ background (and by `sync` and `gc`). Rows come in groups under a
 active, todo. `tab` / `shift-tab` switch the grouping (status, priority,
 repo); it is kept for the next dashboard. Keys work like lazygit: they act
 directly, and only `/` opens a filter. The preview pane doubles as the action
-panel, so the list stays in view. `enter` goes to the task; `r` runs an agent
-in the background (the row updates; `enter` jumps to it), `a` adopts one, `d`
+panel, so the list stays in view. `enter` goes to the task; `r` asks which
+agent in the panel (default first), then runs it in the background (the row
+updates; `enter` jumps to it), `R` runs the default agent at once, `a` adopts one, `d`
 marks the task done and `x` archives it (each after y/n in the panel, then in
 the background), `v` switches the panel to `collie review` and back
 (`shift-↑/↓` scroll), `s` syncs; `e` edits TASK.md, `t` opens a terminal and
@@ -166,7 +167,7 @@ the background), `v` switches the panel to `collie review` and back
 panel that fades; a failed one shows its output in red until a key. `j` / `k` move, `space` marks or unmarks a task (marked rows
 show `*`), `q` or esc quits. In the `/` filter every key types; `enter` keeps
 the filter (the header shows `filter: <query>`) and returns to the keys, esc drops it. `?`
-opens the action menu in the panel (run agent, adopt agent, edit
+opens the action menu in the panel (run agent, run default agent, adopt agent, edit
 task, review, terminal, done, archive, sync, new task): press its key, or move
 with ↑↓ and press enter; esc closes it. `sync` (`s`) shows `collie sync -n` for the marked
 tasks (or the selected one when none is marked) in the panel, asks y/n, then syncs only
@@ -179,9 +180,10 @@ below it otherwise, and wraps long lines. The header's key hints wrap instead
 of being cut.
 
 `prefix h` opens a menu (dashboard, lazygit, terminal, new
-task, run agent, adopt agent, edit task, review, done, archive, sync, jump to alert, gc merged tasks) for the current session's task; outside a
+task, run agent, run default agent, adopt agent, edit task, review, done, archive, sync, jump to alert, gc merged tasks) for the current session's task; outside a
 task session it keeps only dashboard, lazygit, terminal, new task, jump to alert and gc merged tasks.
-`run agent` (`r`) switches you to the new agent window;
+`run agent` (`r`) lists the agents (default first), then switches you to the
+new agent window; `run default agent` (`R`) skips the list;
 plain `collie run` leaves it in the background (`-s` switches). `jump to alert` (`j`) switches to the pane of the last agent that notified. `prefix h h` goes straight to the
 dashboard. `new task` (`c`) prompts in a popup, creates the task from the
 current pane's repo and switches to it. A popup whose command fails stays open

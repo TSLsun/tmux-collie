@@ -65,7 +65,7 @@ stub_tmux() {
   [ "$status" -eq 0 ]
   [[ "$output" == *"display-menu"* && "$output" == *"collie dash"* && "$output" == *"review x"* && "$output" == *"_popup "*"done x"* ]]
   [[ "$output" == *"edit task"$'\n'"e"$'\n'*"_popup "*"edit x"* ]]
-  [[ "$output" == *"run agent"$'\n'"r"$'\n'"run-shell '"*"collie run x -s -c cl'"* ]]
+  [[ "$output" == *"run default agent"$'\n'"R"$'\n'"run-shell '"*"collie run x -s -c cl'"* ]]
   [[ "$output" == *"adopt agent"$'\n'"a"$'\n'*"_popup "*"adopt x"* ]]
   [[ "$output" == *"archive"$'\n'"x"$'\n'"confirm-before -p 'archive x? (y/n)'"*"_popup "*"archive x"* ]]
   [[ "$output" == *"jump to alert"*"_jump - cl"* ]]
@@ -87,6 +87,25 @@ stub_tmux() {
   done <<<"$acts"
   [[ "$output" == *"terminal"$'\n'"t"$'\n'* && "$output" == *"new task"$'\n'"c"$'\n'* ]]
   [[ "$output" == *"sync"$'\n'"s"$'\n'"confirm-before -p 'sync x? (y/n)'"*"_popup -w "*"collie sync x"* ]]
+}
+
+@test "_menu: run agent (r) opens a menu of agents, the default first" {
+  make_bare_repo
+  collie new x -r proj --no-window
+  stub_tmux
+  PATH="$TMP/stub:$PATH" run collie _menu x cl
+  [[ "$output" == *"run agent"$'\n'"r"$'\n'"run-shell '"*"collie _runpick x cl'"* ]]
+  COLLIE_AGENT=codex PATH="$TMP/stub:$PATH" run collie _runpick x cl
+  [ "$status" -eq 0 ]
+  [[ "$output" == "display-menu"$'\n'"-c"$'\n'"cl"$'\n'*"run agent"* ]]
+  [[ "$output" == *$'\n'"codex (default)"$'\n'"1"$'\n'"run-shell '"*"collie run x -s -c cl --agent codex'"$'\n'"claude"$'\n'"2"$'\n'* ]]
+  [[ "$output" == *$'\n'"gemini"$'\n'"3"$'\n'*$'\n'"omp"$'\n'"4"$'\n'"run-shell '"*"collie run x -s -c cl --agent omp'" ]]
+  [ "$(grep -c -- '--agent codex' <<<"$output")" -eq 1 ]
+  # a default no menu command can quote is left out
+  COLLIE_AGENT="my agent" PATH="$TMP/stub:$PATH" run collie _runpick x
+  [[ "$output" == *$'\n'"claude (default)"$'\n'"1"$'\n'"run-shell '"*"collie run x -s --agent claude'"* && "$output" != *"my agent"* ]]
+  run collie _runpick "bad id"
+  [ "$status" -ne 0 ]
 }
 
 @test "_popup: -w pauses for a key after success too" {

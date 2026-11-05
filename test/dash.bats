@@ -154,7 +154,7 @@ EOF
 }
 
 @test "_key: action keys run their action directly, lazygit style" {
-  [[ "$(FZF_PROMPT='collie> ' collie _key r x)" == "change-prompt(collie> )+refresh-preview+bg-transform("*"_bg r x)" ]]
+  [[ "$(FZF_PROMPT='collie> ' collie _key R x)" == "change-prompt(collie> )+refresh-preview+bg-transform("*"_bg r x)" ]]
   [ "$(FZF_PROMPT='collie> ' collie _key v x)" = "change-prompt(collie> )+change-preview-label( review )+refresh-preview" ]
   [ "$(FZF_PROMPT='collie> ' FZF_PREVIEW_LABEL=' review ' collie _key v x)" = "change-prompt(collie> )+change-preview-label()+refresh-preview" ]
   [[ "$(FZF_PROMPT='collie> ' collie _key e x)" == "change-prompt(collie> )+clear-screen+execute("*"_actions 'x' 'e')+reload("*"_rows)+refresh-preview" ]]
@@ -333,15 +333,55 @@ branch_of() { awk -F'\t' -v r="$2" '$1 == r { print $3 }' "$(task_dir "$1")/repo
   [ "$(FZF_PROMPT='collie> ' collie _key esc x)" = abort ]
   [ "$(FZF_PROMPT='collie> ' collie _key enter x)" = clear-multi+accept ]
   [ "$(FZF_PROMPT='collie> ' collie _key up x)" = up ]
-  [[ "$(FZF_PROMPT='▸ run agent ' collie _key r x)" == "change-prompt(collie> )+refresh-preview+bg-transform("*"_bg r x)" ]]
-  [ "$(FZF_PROMPT='▸ run agent ' collie _key down x)" = "change-prompt(▸ adopt agent )+refresh-preview" ]
+  [[ "$(FZF_PROMPT='▸ run agent ' collie _key R x)" == "change-prompt(collie> )+refresh-preview+bg-transform("*"_bg r x)" ]]
+  [ "$(FZF_PROMPT='▸ run agent ' collie _key down x)" = "change-prompt(▸ run default agent )+refresh-preview" ]
   [ "$(FZF_PROMPT='▸ run agent ' collie _key up x)" = "change-prompt(▸ new task )+refresh-preview" ]
   [ "$(FZF_PROMPT='▸ new task ' collie _key down x)" = "change-prompt(▸ run agent )+refresh-preview" ]
-  [ "$(FZF_PROMPT='▸ run agent ' collie _key j x)" = "change-prompt(▸ adopt agent )+refresh-preview" ]
+  [ "$(FZF_PROMPT='▸ run agent ' collie _key j x)" = "change-prompt(▸ run default agent )+refresh-preview" ]
   [[ "$(FZF_PROMPT='▸ review ' collie _key enter x)" == *"change-preview-label( review )"* ]]
   [ "$(FZF_PROMPT='▸ archive ' collie _key enter x)" = "change-prompt(? x x )+refresh-preview" ]
   [ "$(FZF_PROMPT='▸ run agent ' collie _key esc x)" = "change-prompt(collie> )+refresh-preview" ]
   [ "$(FZF_PROMPT='▸ new task ' collie _key r '')" = "change-prompt(collie> )+refresh-preview" ]
+}
+
+@test "_key: r asks for the agent in the panel, default first; a digit or enter runs it" {
+  collie new x --no-window
+  export COLLIE_DASH="$TMP/dash"
+  mkdir -p "$COLLIE_DASH"
+  [ "$(FZF_PROMPT='collie> ' collie _key r x)" = "change-prompt(@ x )+refresh-preview" ]
+  [ "$(FZF_PROMPT='▸ run agent ' collie _key enter x)" = "change-prompt(@ x )+refresh-preview" ]
+  [ -z "$(FZF_PROMPT='collie> ' collie _key r '')" ]
+  run env FZF_PROMPT='@ x ' bash "$COLLIE_ROOT/bin/collie" _preview x
+  [[ "$output" == *"run x with:"*"1"*"sleep (default)"*"2"*"claude"*"3"*"codex"*"4"*"gemini"*"5"*"omp"* ]]
+  [[ "$output" != *"objective:"* ]]
+  [[ "$(FZF_PROMPT='@ x ' collie _key 3 x)" == "change-prompt(collie> )+refresh-preview+bg-transform("*"_bg r x codex)" ]]
+  [[ "$(FZF_PROMPT='@ x ' collie _key enter x)" == *"bg-transform("*"_bg r x sleep)" ]]
+  [ "$(FZF_PROMPT='@ x ' collie _key esc x)" = "change-prompt(collie> )+refresh-preview" ]
+  [ "$(FZF_PROMPT='@ x ' collie _key 9 x)" = "change-prompt(collie> )+refresh-preview" ]
+  [ "$(FZF_PROMPT='@ x ' collie _key R x)" = "change-prompt(collie> )+refresh-preview" ]
+  [ -z "$(FZF_PROMPT='@ x ' collie _group next)" ]
+  # outside the chooser a digit does nothing; in a search it types
+  [ -z "$(FZF_PROMPT='collie> ' collie _key 1 x)" ]
+  [ "$(FZF_PROMPT='filter: ' collie _key 1 x)" = "put(1)" ]
+}
+
+@test "_key: r on a blocked task asks y/n and keeps the agent" {
+  collie new a --no-window
+  collie new x --no-window --after a
+  [ "$(FZF_PROMPT='@ x ' collie _key 2 x)" = "change-prompt(? r x claude )+refresh-preview" ]
+  [[ "$(FZF_PROMPT='? r x claude ' COLLIE_DASH="$TMP" collie _preview x)" == *"run x claude? (y/n)"*"blocked on: a"* ]]
+  [[ "$(FZF_PROMPT='? r x claude ' collie _key y x)" == *"bg-transform("*"_bg r x claude)" ]]
+}
+
+@test "_bg: r with an agent runs that agent instead of the default" {
+  printf '#!/bin/sh\nexec sleep 300\n' >"$TMP/stub/omp"
+  chmod +x "$TMP/stub/omp"
+  collie new x --no-window
+  export COLLIE_DASH="$TMP/dash"
+  mkdir -p "$COLLIE_DASH"
+  [[ "$(collie _bg r x omp)" == *"_fade)" ]]
+  grep -q 'run_started.*agent=omp' "$(task_dir x)/events.log"
+  [ "$(tmux display -p -t "$(run_pane x)" '#{@collie_agent}')" = omp ]
 }
 
 @test "_actions: terminal opens a shell in the task's worktree; other keys do nothing" {
