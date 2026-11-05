@@ -89,6 +89,25 @@ stub_tmux() {
   [[ "$output" == *"sync"$'\n'"s"$'\n'"confirm-before -p 'sync x? (y/n)'"*"_popup -w "*"collie sync x"* ]]
 }
 
+@test "_menu: run with agent (R) opens a menu of agents, the default first" {
+  make_bare_repo
+  collie new x -r proj --no-window
+  stub_tmux
+  PATH="$TMP/stub:$PATH" run collie _menu x cl
+  [[ "$output" == *"run with agent"$'\n'"R"$'\n'"run-shell '"*"collie _runpick x cl'"* ]]
+  COLLIE_AGENT=codex PATH="$TMP/stub:$PATH" run collie _runpick x cl
+  [ "$status" -eq 0 ]
+  [[ "$output" == "display-menu"$'\n'"-c"$'\n'"cl"$'\n'*"run agent"* ]]
+  [[ "$output" == *$'\n'"codex (default)"$'\n'"1"$'\n'"run-shell '"*"collie run x -s -c cl --agent codex'"$'\n'"claude"$'\n'"2"$'\n'* ]]
+  [[ "$output" == *$'\n'"gemini"$'\n'"3"$'\n'*$'\n'"omp"$'\n'"4"$'\n'"run-shell '"*"collie run x -s -c cl --agent omp'" ]]
+  [ "$(grep -c -- '--agent codex' <<<"$output")" -eq 1 ]
+  # a default no menu command can quote is left out
+  COLLIE_AGENT="my agent" PATH="$TMP/stub:$PATH" run collie _runpick x
+  [[ "$output" == *$'\n'"claude (default)"$'\n'"1"$'\n'"run-shell '"*"collie run x -s --agent claude'"* && "$output" != *"my agent"* ]]
+  run collie _runpick "bad id"
+  [ "$status" -ne 0 ]
+}
+
 @test "_popup: -w pauses for a key after success too" {
   run collie _popup -w true </dev/null
   [ "$status" -eq 0 ] && [[ "$output" == *"[press any key]"* ]]
