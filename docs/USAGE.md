@@ -413,8 +413,8 @@ the runs a lead starts only need `collie signal done`, which works there.
 |---|---|---|---|
 | Dashboard | `collie dash` | `h` | — |
 | New task | `collie new` | `c` (prompts, switches to it) | `?` `c` |
-| Edit TASK.md | `collie edit` | `e` | `ctrl-e` or `?` `e` |
-| Run agent | `collie run` | `r` | `ctrl-r` or `?` `r` |
+| Edit TASK.md | `collie edit` | `e` | `e` or `?` `e` |
+| Run agent | `collie run` | `r` | `r` or `?` `r` |
 | Run a chosen agent | `collie run --agent` | `R` (menu of agents, default first) | `R` or `?` `R` (digit picks, `enter` the default) |
 | Continue with another agent | `collie handoff` | — | `u`, then `h` on the run (note in `$EDITOR`) |
 | Type into an idle agent | `collie send` | — | — |
@@ -425,11 +425,11 @@ the runs a lead starts only need `collie signal done`, which works there.
 | Go to task | `collie go` | — | `enter` (most urgent agent window) |
 | Runs of a task | `collie show` | — | `u` (`enter`: its window, `esc`: back) |
 | Jump to last alert | — | `j` | — |
-| Review | `collie review` | `v` | `ctrl-v` or `?` `v` |
+| Review | `collie review` | `v` | `v` or `?` `v` |
 | Run TASK.md Verify blocks | `collie verify` | — | — (last result in the preview) |
 | Shell in worktree | — | `t` (popup at the pane's path) | `?` `t` (task's first worktree) |
 | lazygit | — | `g` | — |
-| Done | `collie done` | `d` (confirms) | `ctrl-d` or `?` `d` (confirms) |
+| Done | `collie done` | `d` (confirms) | `d` or `?` `d` (confirms) |
 | Archive | `collie archive` | `x` (confirms) | `?` `x` (confirms) |
 | Sync task branch with base | `collie sync` | `s` (confirms, shows output) | `?` `s` (confirms, `space` marks several) |
 | Finish merged tasks | `collie gc` | `G` (lists them, confirms) | — |
@@ -445,8 +445,8 @@ The menu's task entries (`r a e v d x s`) appear only inside a task's session,
 with the same keys and labels as the dashboard's `?` actions. `t` differs on
 purpose: the menu opens the shell at the current pane's path (it works in any
 session), the dashboard, which has no pane of the task, in its first worktree.
-On the dashboard the `ctrl-` keys act on the selected row at once, so plain
-keys keep filtering; `?` lists every action.
+On the dashboard an action key acts on the selected row at once; `/` starts a
+filter, in which every key types; `?` lists every action.
 `<id>` may be omitted anywhere inside a task session (`$COLLIE_TASK`).
 
 ## 6. Variations
