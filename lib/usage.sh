@@ -25,6 +25,8 @@ tasks:
   review [<id>] [-p]  per-repo commits, diff stat, dirty files, REPORT.md
   verify [<id>]       run TASK.md's ## Verify sh blocks in each worktree
   spike <id> [-u]     new exp/<id> task with this worktree's uncommitted changes
+  race <id> -n N      start N independent candidate tasks from one base
+  pick <id> <n>       fast-forward the task branch to candidate n
   gc [-n]             finish tasks whose branches are merged into base
   sync [<id>...] [-n] merge base into active task branches and push them
   done [<id>]         accept: remove worktrees + session, keep branches
@@ -209,6 +211,31 @@ Attach more repos to an existing task: a branch + worktree and a session
 window for each. Fetches origin first.
 
   collie add deploy-v2 -r infra
+EOF
+      ;;
+    race)
+      cat <<'EOF'
+usage: collie race <id> -n N [--agent a,b,c] [--model m] [--effort e]
+                  [-r repo] [-p prompt]
+
+Create N child tasks <id>-1 through <id>-N with exp/<id>-<n> branches from
+the same tip of the task branch. Each copies the parent's TASK.md and starts
+one run. --agent assigns agents in order and cycles; omitted agents use the
+default. --model, --effort and -p are passed to every run. A race uses one
+git repo (the task's first repo, or -r); N must be 2..9. Existing child tasks
+or exp branches are refused. Runs start only after every candidate is created;
+partial creation is reported and any created branches/worktrees are retained.
+Output gives each child task, run and path; use `collie wait <id>-<n> --done`
+for each candidate.
+EOF
+      ;;
+    pick)
+      cat <<'EOF'
+usage: collie pick <id> <n>
+
+Fast-forward the task branch to race candidate <id>-<n>. The task worktree
+must be clean and its branch must still be at the race base. The candidate
+branches and tasks are kept; archive candidate tasks when finished.
 EOF
       ;;
     ls)
@@ -603,7 +630,7 @@ EOF
 }
 
 # the public commands, in overview order
-HELP_COMMANDS='new add ls brief show history log edit go dash set review verify spike gc sync done archive reopen run handoff send pause adopt restore wait signal state status doctor repos workspaces'
+HELP_COMMANDS='new add ls brief show history log edit go dash set review verify spike race pick gc sync done archive reopen run handoff send pause adopt restore wait signal state status doctor repos workspaces'
 
 cmd_help() {
   local c

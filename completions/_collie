@@ -46,6 +46,8 @@ _collie() {
     'review:per-repo commits and diffs'
     'verify:run TASK.md Verify blocks in each worktree'
     'spike:branch the current worktree into an exp/ task'
+    'race:start N candidate task runs from one base'
+    'pick:keep a race candidate on its task branch'
     'gc:finish merged tasks'
     'sync:merge base into active task branches'
     'doctor:check dependencies and tasks'
@@ -84,6 +86,8 @@ _collie() {
     send) compadd -- -r --run --wait -f; _collie_tasks ;;
     pause) compadd -- -r --run -p -f; _collie_tasks ;;
     show | review) _collie_tasks -a ;;
+    race) compadd -- -n --agent --model --effort -r -p; _collie_tasks ;;
+    pick) compadd {1..9}; _collie_tasks ;;
     verify) compadd -- -r; _collie_tasks ;;
     run) compadd -- --agent --model --effort -r -p -s --scratch; _collie_tasks ;;
     add | edit | go | adopt | done | archive) _collie_tasks ;;

@@ -61,6 +61,15 @@ works in both.
 | `collie verify <id>` | run TASK.md `## Verify` blocks in the worktree; non-zero on failure |
 | `collie review <id>` | commits since the branch started, diff stat, dirty files, REPORT.md |
 | `collie handoff <id> --from N --agent claude\|codex --note f` | continue a stuck or gone run with the other agent, fresh conversation |
+| `collie race <id> -n N [--agent A,B]` | create independent candidate tasks from one base; wait for each with `collie wait <id>-<n> --done` |
+| `collie review <id>` | compare race candidates' diff stats and REPORT.md |
+| `collie pick <id> <n>` | keep candidate N's work on the task branch, only when clean and still at the race base |
+
+For a race, make the candidates solve the same contract independently, then
+use `collie review <id>` to inspect their changes and reports before choosing
+one with `collie pick <id> <n>`. Judging and any rubric are your methodology;
+Collie only creates, runs, shows and keeps candidates. Never delete their
+`exp/*` branches.
 
 `send` logs a `sent` event, which clears the run's done signal: after a
 `send`, `wait --done` waits for the new turn, never for the previous turn's

@@ -42,6 +42,25 @@ answer `e` to write TASK.md — Objective, Context, Acceptance Criteria — in
 is kept in `new-draft` under the state dir and the next `collie new` offers
 it as the defaults.
 
+## Comparing independent candidates
+
+`collie race <id> -n N` creates N child tasks (`<id>-1` through `<id>-N`)
+with `exp/<id>-<n>` branches from the task branch's same starting commit,
+copies the parent TASK.md, and starts one run per candidate. Use `--agent
+a,b,c` to assign agents in order (the list cycles); `--model`, `--effort` and
+`-p` configure each run. A race uses one git repo, selected with `-r` if
+needed; `-n` is 2..9. Each candidate is a normal task, so wait for it
+individually with `collie wait <id>-<n> --done`.
+
+`collie review <id>` shows the parent's usual review followed by a candidate
+comparison table and each candidate's diff stat and REPORT.md. Review a
+candidate directly with `collie review <id>-<n>`.
+
+`collie pick <id> <n>` keeps candidate N's work on the original task branch.
+It only fast-forwards when the task worktree is clean and its branch is still
+at the race's recorded base. It never resets or creates a merge commit.
+Candidate branches are kept; candidate tasks remain available. Archive them
+individually when no longer needed, e.g. `collie archive <id>-1`.
 ## 2. What a task is made of
 
 ```mermaid
