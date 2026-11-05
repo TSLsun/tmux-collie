@@ -43,20 +43,20 @@ cmd_new() {
   case $ship in on | 1 | yes | true) ship=1 ;; *) ship=0 ;; esac
   while [ $# -gt 0 ]; do
     case $1 in
-      -r) specs="$specs${2:?-r needs a repo}"$'\n'; shift ;;
-      -w) ws=${2:?-w needs a workspace}; shift ;;
-      -m) goal=${2:?-m needs text}; shift ;;
-      -t) type=${2:?-t needs a type}; shift ;;
-      --title) title=${2:?--title needs text}; shift ;;
-      --from) from=${2:?--from needs a ref}; shift ;;
-      --after) after="$after ${2:?--after needs task ids}"; shift ;;
+      -r) need_value new "-r needs a repo" "${2:-}"; specs="$specs$2"$'\n'; shift ;;
+      -w) need_value new "-w needs a workspace" "${2:-}"; ws=$2; shift ;;
+      -m) need_value new "-m needs text" "${2:-}"; goal=$2; shift ;;
+      -t) need_value new "-t needs a type" "${2:-}"; type=$2; shift ;;
+      --title) need_value new "--title needs text" "${2:-}"; title=$2; shift ;;
+      --from) need_value new "--from needs a ref" "${2:-}"; from=$2; shift ;;
+      --after) need_value new "--after needs task ids" "${2:-}"; after="$after $2"; shift ;;
       --edit) edit=1 ;;
       --no-window) window=0 ;;
       --ship) ship=1 ;;
       --no-ship) ship=0 ;;
       --run) run=1 ;;
-      --agent) agent=${2:?--agent needs a name}; run=1; shift ;;
-      -p) [ $# -ge 2 ] || die "-p needs a prompt"; runargs+=(-p "$2"); run=1; shift ;;
+      --agent) need_value new "--agent needs a name" "${2:-}"; agent=$2; run=1; shift ;;
+      -p) [ $# -ge 2 ] || die "new: -p needs a prompt"; runargs+=(-p "$2"); run=1; shift ;;
       --) shift; runargs+=(-- "$@"); run=1; break ;;
       -*) die "new: unknown option $1" ;;
       *) [ -z "$id" ] || die "new: too many arguments"; id=$1 ;;
@@ -172,8 +172,8 @@ cmd_add() {
   local id="" specs="" from="" window=1
   while [ $# -gt 0 ]; do
     case $1 in
-      -r) specs="$specs${2:?-r needs a repo}"$'\n'; shift ;;
-      --from) from=${2:?--from needs a ref}; shift ;;
+      -r) need_value add "-r needs a repo" "${2:-}"; specs="$specs$2"$'\n'; shift ;;
+      --from) need_value add "--from needs a ref" "${2:-}"; from=$2; shift ;;
       --no-window) window=0 ;;
       -*) die "add: unknown option $1" ;;
       *) [ -z "$id" ] || die "add: too many arguments"; id=$1 ;;
