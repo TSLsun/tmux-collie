@@ -164,21 +164,31 @@ const h = {};
 const { default: ext } = await import(process.argv[1]);
 ext({ on: (e, f) => (h[e] = f) });
 // The extension uses execFileSync: returning is the completion signal.
-const step = async (e, a) => h[e](a);
+const main = { agent: { kind: "main", depth: 0 } };
+const sub = { agent: { kind: "sub", depth: 1 } };
+const step = async (e, a, ctx = main) => h[e](a, ctx);
 await step("agent_start");
 await step("tool_approval_requested");
 await step("tool_approval_resolved");
 await step("tool_execution_start", { toolName: "bash" });
+// a task-tool subagent finishing mid-turn (omp 18.15.0) is not idle
+await step("agent_start", {}, sub);
+await step("tool_approval_requested", {}, sub);
+await step("tool_approval_resolved", {}, sub);
+await step("agent_end", {}, sub);
+await step("session_shutdown", {}, sub);
 await step("tool_execution_start", { toolName: "ask" });
 await step("tool_execution_end");
 await step("agent_end", { willContinue: true });
-await step("agent_end", {});
+// older omp passes no ctx.agent: counts as the main session
+await step("agent_end", {}, undefined);
 ' "$2"
 exec sleep 300
 EOF
   chmod +x "$TMP/bin/omp"
   collie run x --agent omp -p ''
-  # ask waits like an approval; agent_end with willContinue is not idle yet
+  # ask waits like an approval; agent_end with willContinue is not idle yet;
+  # subagent events change nothing
   states() { grep -o 'state=[a-z]*' "$(task_dir x)/events.log" | tr '\n' ' '; }
   wait_for '[ "$(states)" = "state=working state=waiting state=working state=waiting state=working state=idle " ]'
   [ "$(agent_of x)" = idle ]

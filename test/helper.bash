@@ -15,6 +15,8 @@ setup_env() {
   # State assertions must not age into idle while a loaded runner schedules
   # other tests. Silence behavior tests opt into their own short threshold.
   export COLLIE_SILENCE=999
+  # idle notifications at once; grace tests set their own
+  export COLLIE_IDLE_GRACE=0
   export COLLIE_STATE_DIR="$TMP/state"
   export XDG_CONFIG_HOME="$TMP/config"
   export COLLIE_REPO_ROOTS="$TMP/repos/*"

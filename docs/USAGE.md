@@ -195,10 +195,16 @@ stateDiagram-v2
 | State | Notifies? | Source |
 |---|---|---|
 | `waiting` | yes | hook (not available for generic agents) |
-| `idle` | yes, from `working` | hook; generic agents: 30s without output |
+| `idle` | yes, from `working`, once it holds `@collie-idle-grace` s (3) | hook; generic agents: 30s without output |
 | `working` | no | hook; generic agents: output |
 | `exited` | no | wrapper saw the process exit |
 | `unknown` | no | window or session gone |
+
+The idle notification waits `@collie-idle-grace` seconds (3) and is dropped
+when the state changed meanwhile: Claude may resume on its own right after its
+turn ends (a background task's result). The state
+itself, `collie wait` and the status bar follow the hooks at once. omp's
+task-tool subagents do not report state; only the main session does.
 
 A task's `agent` column shows its most urgent run (`waiting` > `idle` >
 `working` > `exited` > `unknown`). Status and agent fold into one *needs*
