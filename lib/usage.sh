@@ -318,10 +318,11 @@ EOF
 usage: collie dash [-n]
 
 fzf dashboard of live tasks, most urgent first, with a preview and actions
-(? lists them). u lists the selected task's runs, newest first, with their
-exits and handoff/restore links: enter goes to one's window, h hands a claude
-or codex run off to the other agent (see handoff), esc goes back. -n prints
-the rows instead. -n is read-only.
+(? lists them). r runs the default agent; R asks which agent to run (the
+default first; a digit picks, enter takes the default). u lists the selected
+task's runs, newest first, with their exits and handoff/restore links: enter
+goes to one's window, h hands a claude or codex run off to the other agent
+(see handoff), esc goes back. -n prints the rows instead. -n is read-only.
 EOF
       ;;
     set)

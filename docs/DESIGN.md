@@ -229,6 +229,7 @@ prefix h →  ┌ collie ─────────────┐
             │ v  review           │ │ task sessions only
             │ ─────────────────── │ │
             │ r  run agent        │ │
+            │ R  run with agent   │ │
             │ a  adopt agent      │ │
             │ d  done             │ │
             │ x  archive          │ ┘
