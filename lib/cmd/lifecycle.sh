@@ -319,11 +319,14 @@ cmd_spike() {
   log_event "$id" spiked_from "task=${owner:--} path=$src head=$head"
 }
 
-# A task is merged when every branch moved past where its worktree started
-# and that tip is merged into the base branch (see merged_into).
+# A task is merged when every branch moved past where its worktree started,
+# has commits of its own (see own_commits) and that tip is merged into the
+# base branch (see merged_into). Merged tasks whose agent is working or
+# waiting are skipped.
 cmd_gc() {
-  local dry=0 d id name c b p start tip merged err total=0 found=0
+  local dry=0 d id name c b p start tip merged note busy err total=0 found=0
   [ "${1:-}" != -n ] || dry=1
+  load_tmux_state
   for d in "$TASKS_DIR"/*; do
     [ -f "$d/TASK.md" ] || continue
     fm_get "$d/TASK.md" status
@@ -331,7 +334,7 @@ cmd_gc() {
     id=${d##*/}
     cmd__pr "$id" || true
     # folders have no branch: a task needs at least one merged repo
-    merged=0
+    merged=0 note=""
     while IFS=$TAB read -r name c b p; do
       [ "$c" != - ] || continue
       merged=1
@@ -343,8 +346,22 @@ cmd_gc() {
         merged=0
         break
       fi
+      if ! awk -F'\t' -v n="$name" '$1 == n && $3 == "merged" { f = 1 } END { exit !f }' "$d/pr.tsv" 2>/dev/null &&
+        ! own_commits "$c" "$b" "$start" "$BASE"; then
+        merged=0 note="no own commits on $name"
+        break
+      fi
     done <"$d/repos.tsv"
+    if [ -n "$note" ]; then
+      echo "skipped $id: $note"
+      continue
+    fi
     [ "$merged" -eq 1 ] || continue
+    busy=$(task_runs "$id" | awk -F'\t' '$3 == "working" || $3 == "waiting" { print $3; exit }')
+    if [ -n "$busy" ]; then
+      echo "skipped $id: agent $busy (see: collie done $id)"
+      continue
+    fi
     # merged, so only wip/scratch can hold done back: those are skipped
     found=1
     wt_report "$d" ""
@@ -380,7 +397,8 @@ cmd__gc() {
   local ids k
   echo "checking for merged tasks…"
   ids=$(cmd_gc -n)
-  if [ -z "$ids" ]; then
+  if [ -z "$ids" ] || ! grep -qv '^skipped ' <<<"$ids"; then
+    [ -z "$ids" ] || printf '%s\n' "$ids"
     printf 'no merged tasks — press any key'
     read -rsn1 _ || true
     return 0

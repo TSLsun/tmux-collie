@@ -114,7 +114,12 @@ stateDiagram-v2
 not in its base branch; `--force` overrides both (and discards uncommitted
 changes). `gc` runs `done` for every task whose branches all moved past their
 start and are merged into base (squash merges count with git >= 2.38), and
-skips the rest.
+skips the rest. A branch must also have commits of its own: one only
+fast-forwarded to base, or with base merged into it, is reported as
+`skipped <id>: no own commits on <repo>`. A fast-forward merge is recognised
+from the branch's reflog or a merged PR. Merged tasks whose agent is working
+or waiting are skipped too (`skipped <id>: agent waiting`); finish those with
+`collie done`.
 
 Each worktree they remove or skip is listed with a bucket and its size
 (`du -sk`), then the total reclaimed:
