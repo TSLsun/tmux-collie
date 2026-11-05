@@ -220,23 +220,23 @@ override with `@collie-key`). It opens a `display-menu` that lists every action,
 so nothing has to be memorised:
 
 ```
-prefix h →  ┌ collie ─────────────┐
-            │ h  dashboard        │   ← prefix h h: the most used action
-            │ g  lazygit          │
-            │ t  terminal         │
-            │ c  new task         │   ← `collie new` without id: prompts
-            │ e  edit task        │ ┐
-            │ v  review           │ │ task sessions only
-            │ ─────────────────── │ │
-            │ r  run agent        │ │
-            │ R  run with agent   │ │
-            │ a  adopt agent      │ │
-            │ d  done             │ │
-            │ x  archive          │ ┘
-            │ ─────────────────── │
-            │ j  jump to alert    │   ← last agent that notified
-            │ G  gc merged tasks  │   ← lists them, runs gc on y
-            └─────────────────────┘
+prefix h →  ┌ collie ──────────────┐
+            │ h  dashboard         │   ← prefix h h: the most used action
+            │ g  lazygit           │
+            │ t  terminal          │
+            │ c  new task          │   ← `collie new` without id: prompts
+            │ e  edit task         │ ┐
+            │ v  review            │ │ task sessions only
+            │ ──────────────────── │ │
+            │ r  run agent         │ │
+            │ R  run default agent │ │
+            │ a  adopt agent       │ │
+            │ d  done              │ │
+            │ x  archive           │ ┘
+            │ ──────────────────── │
+            │ j  jump to alert     │   ← last agent that notified
+            │ G  gc merged tasks   │   ← lists them, runs gc on y
+            └──────────────────────┘
 ```
 
 In a session that isn't a collie task, the task-only entries (`e v r a d x`) are

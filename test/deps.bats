@@ -139,10 +139,10 @@ needs_of() { collie ls -a | awk -F'\t' -v id="$1" '$1 == id { print $7 }'; }
   grep -q run_started "$(task_dir x)/events.log"
 }
 
-@test "deps: dash r on a blocked task asks first; the panel names the deps" {
+@test "deps: dash R on a blocked task asks first; the panel names the deps" {
   collie new a --no-window
   collie new x --no-window --after a
-  [ "$(FZF_PROMPT='collie> ' collie _key r x)" = "change-prompt(? r x )+refresh-preview" ]
+  [ "$(FZF_PROMPT='collie> ' collie _key R x)" = "change-prompt(? r x )+refresh-preview" ]
   [[ "$(FZF_PROMPT='? r x ' COLLIE_DASH="$TMP" collie _preview x)" == *"run x? (y/n)"*"blocked on: a"* ]]
-  [[ "$(FZF_PROMPT='collie> ' collie _key r a)" == *"_bg r a)" ]]
+  [[ "$(FZF_PROMPT='collie> ' collie _key R a)" == *"_bg r a)" ]]
 }

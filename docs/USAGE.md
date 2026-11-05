@@ -414,8 +414,8 @@ the runs a lead starts only need `collie signal done`, which works there.
 | Dashboard | `collie dash` | `h` | — |
 | New task | `collie new` | `c` (prompts, switches to it) | `?` `c` |
 | Edit TASK.md | `collie edit` | `e` | `e` or `?` `e` |
-| Run agent | `collie run` | `r` | `r` or `?` `r` |
-| Run a chosen agent | `collie run --agent` | `R` (menu of agents, default first) | `R` or `?` `R` (digit picks, `enter` the default) |
+| Run agent | `collie run --agent` | `r` (menu of agents, default first) | `r` or `?` `r` (digit picks, `enter` the default) |
+| Run default agent | `collie run` | `R` | `R` or `?` `R` |
 | Continue with another agent | `collie handoff` | — | `u`, then `h` on the run (note in `$EDITOR`) |
 | Type into an idle agent | `collie send` | — | — |
 | Pause an idle agent (leaves RESUME.md) | `collie pause` | — | — |

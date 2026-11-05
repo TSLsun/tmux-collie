@@ -474,7 +474,7 @@ cmd__key() { # key [id [marked id...]]
       return
       ;;
     "$AGENT_MARK"*)
-      # the agent chooser (R): a digit picks, enter the default, others cancel
+      # the agent chooser (r): a digit picks, enter the default, others cancel
       k=""
       case $2 in
         enter) k=1 ;;
@@ -637,7 +637,8 @@ cmd__handoff() { # id run
 # fzf actions for a dashboard action (see action_items) on a task and the
 # marked ids (sync only). Edit, terminal and new task take the screen (see
 # _actions); review switches the panel to `collie review` and back; run starts
-# in the background (R first asks for the agent in the panel); done, archive, adopt and sync ask y/n in the panel first
+# in the background (r first asks for the agent in the panel, R takes the
+# default); done, archive, adopt and sync ask y/n in the panel first
 # (the prompt holds "<ASK_MARK><key> <id...> "), then run in the background.
 dash_action() { # id key [marked id...]
   local self="'$BASH' '$PLUGIN_DIR/bin/collie'" id=$1 k=$2 m ids=""
@@ -651,8 +652,8 @@ dash_action() { # id key [marked id...]
         echo "change-prompt($DASH_PROMPT)+change-preview-label($REVIEW_LABEL)+refresh-preview"
       fi
       ;;
-    r) dash_run "$id" ;;
-    R) echo "change-prompt($AGENT_MARK$id )+refresh-preview" ;;
+    r) echo "change-prompt($AGENT_MARK$id )+refresh-preview" ;;
+    R) dash_run "$id" ;;
     s)
       for m in "$@"; do [ -z "$m" ] || ids="$ids $m"; done
       echo "change-prompt($ASK_MARK$k${ids:- $id} )+refresh-preview"
@@ -661,7 +662,7 @@ dash_action() { # id key [marked id...]
   esac
 }
 
-# fzf actions for run (r, or R and an agent): in the background, but a
+# fzf actions for run (R, or r and an agent): in the background, but a
 # blocked todo task asks first (see cmd_run; the prompt keeps the agent).
 dash_run() { # id [agent]
   if [ -n "$1" ] && task_status "$1" "" && [ "$STATUS" = todo ] &&
@@ -810,7 +811,7 @@ rule() { local s="" i; for ((i = 0; i < $1; i++)); do s="$s$2"; done; printf '%s
 
 # "<key>  <label>" lines of the dashboard actions for a task (or none).
 action_items() { # [id]
-  [ -z "$1" ] || printf '%s\n' 'r  run agent' 'R  run with agent' 'a  adopt agent' 'e  edit task' 'v  review' 't  terminal' 'd  done' 'x  archive' 's  sync'
+  [ -z "$1" ] || printf '%s\n' 'r  run agent' 'R  run default agent' 'a  adopt agent' 'e  edit task' 'v  review' 't  terminal' 'd  done' 'x  archive' 's  sync'
   printf '%s\n' 'c  new task'
 }
 
@@ -848,8 +849,8 @@ cmd__menu() { # session [client]
     items+=("")
     while read -r k l; do
       case $k in
-        r) a="run-shell '$C run $T -s${2:+ -c $2}'" ;;
-        R) a="run-shell '$C _runpick $T${2:+ $2}'" ;;
+        r) a="run-shell '$C _runpick $T${2:+ $2}'" ;;
+        R) a="run-shell '$C run $T -s${2:+ -c $2}'" ;;
         a) a="display-popup -E -w 90 -h 12 '$C _popup $C adopt $T'" ;;
         e) a="$popup '$C _popup $C edit $T'" ;;
         v) a="$popup '$C _popup \"$C review $T | less -R\"'" ;;
@@ -871,8 +872,8 @@ cmd__menu() { # session [client]
   tmux display-menu ${2:+-c "$2"} -T '#[align=centre] collie ' -x C -y C "${items[@]}"
 }
 
-# The prefix menu's run with agent (R): a menu of run_agents, the default
-# first, keyed 1, 2, ...; each runs the task like run agent (r).
+# The prefix menu's run agent (r): a menu of run_agents, the default first,
+# keyed 1, 2, ...; each runs the task like run default agent (R).
 cmd__runpick() { # id [client]
   local C="$PLUGIN_DIR/bin/collie" items=() a i=0 l
   valid_id "${1:-}" || die "usage: collie _runpick <id> [client]"
