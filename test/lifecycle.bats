@@ -208,6 +208,52 @@ squash_upstream() {
   [ "$(fm m status)" = done ]
 }
 
+@test "gc: skips a task with no own commits that only gained base commits" {
+  for t in f g; do collie new "$t" --no-window; done
+  commit_in "$TMP/origin-A" later
+  git -C "$REPO" fetch -q origin
+  git -C "$TMP/repos/A/feat-f" merge -q --ff-only origin/main
+  git -C "$TMP/repos/A/feat-g" merge -q --no-ff -m "merge main" origin/main
+  run --separate-stderr collie gc -n
+  [ "$status" -eq 0 ]
+  [ "$output" = "skipped f: no own commits on A"$'\n'"skipped g: no own commits on A" ]
+  run --separate-stderr collie gc
+  [ "$status" -eq 0 ]
+  [ "$output" = "skipped f: no own commits on A"$'\n'"skipped g: no own commits on A" ]
+  [ -z "$(fm f status)" ] && [ -d "$TMP/repos/A/feat-f" ]
+  [ -z "$(fm g status)" ] && [ -d "$TMP/repos/A/feat-g" ]
+  run collie _gc <<<y
+  [[ "$output" == *"skipped f: no own commits on A"*"no merged tasks"* && "$output" != *"(y/n)"* ]]
+}
+
+@test "gc: without the reflog, a fast-forward merge counts only with a merged PR" {
+  collie new p --no-window
+  commit_in "$TMP/repos/A/feat-p" p
+  merge_upstream feat/p
+  git -C "$REPO" reflog expire --expire=now --expire-unreachable=now refs/heads/feat/p
+  run --separate-stderr collie gc -n
+  [ "$output" = "skipped p: no own commits on A" ]
+  printf 'A\t7\tmerged\tpass\n' >"$(task_dir p)/pr.tsv"
+  run --separate-stderr collie gc
+  [ "$status" -eq 0 ] && [ "${lines[0]}" = "done p" ]
+  [ "$(fm p status)" = done ]
+}
+
+@test "gc: skips a merged task whose agent is working or waiting" {
+  collie new m --no-window
+  commit_in "$TMP/repos/A/feat-m" m
+  merge_upstream feat/m
+  COLLIE_AGENT=sleep collie run m -- 300
+  hook m waiting
+  run --separate-stderr collie gc
+  [ "$status" -eq 0 ]
+  [ "$output" = "skipped m: agent waiting (see: collie done m)" ]
+  [ -z "$(fm m status)" ] && [ -d "$TMP/repos/A/feat-m" ]
+  hook m working
+  run --separate-stderr collie gc -n
+  [ "$output" = "skipped m: agent working (see: collie done m)" ]
+}
+
 @test "gc -n: buckets each worktree wip:N, scratch:N or clean; total counts clean only" {
   make_normal_repo B
   cd "$TMP"

@@ -283,7 +283,7 @@ fire in sessions collie started and the user's settings stay untouched:
 | Agent | State source | Confidence |
 |---|---|---|
 | claude | hooks via `--settings` (above) | working/idle/exited verified; waiting unverified |
-| omp | extension `agents/omp.ts` loaded with `-e` (omp has no command hooks): `agent_start`/`tool_execution_end` → working, `tool_approval_requested` → waiting, `tool_approval_resolved` → working, `agent_end` → idle, `session_shutdown` → exited | fake agent only |
+| omp | extension `agents/omp.ts` loaded with `-e` (omp has no command hooks): `agent_start`/`tool_execution_end` → working, `tool_approval_requested` → waiting, `tool_approval_resolved` → working, `agent_end` → idle (not with `willContinue`), `session_shutdown` → exited; events of task-tool subagents (`ctx.agent.kind` `sub`) are ignored | fake agent; subagent filter checked on real 18.15.0 |
 | codex | per-run hooks for state and conversation identity; visible approval/question prompts determine waiting | real 0.165.0 on macOS; standard English TUI, see UNVERIFIED |
 | gemini | hooks in a generated settings file passed as `GEMINI_CLI_SYSTEM_SETTINGS_PATH`: `BeforeAgent`/`AfterTool` → working, `Notification` (`ToolPermission`) → waiting, `AfterAgent` → idle, `SessionEnd` → exited; hooks print `{}` | fake agent only |
 | generic | wrapper exit + `window_activity`: working → idle after `@collie-silence` s (30) without output | always works, coarse; no `waiting` |

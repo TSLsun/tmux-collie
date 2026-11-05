@@ -61,6 +61,8 @@ A  junk" ]
   w="$TMP/repos/A/feat-m"
   commit_in "$w" m
   collie run m --scratch -- 300
+  # gc skips a working or waiting agent; a reviewer done with its turn is idle
+  hook m idle
   echo junk >"$w.scratch-1/junk"
   git -C "$TMP/origin-A" fetch -q "$REPO/.bare" feat/m
   git -C "$TMP/origin-A" merge -q --ff-only FETCH_HEAD

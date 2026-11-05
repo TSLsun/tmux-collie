@@ -168,8 +168,8 @@ a closed one back on its kept branches.
 ### Status bar counts and click menu
 
 `#{collie_status}` shows red, yellow and green counts for waiting, idle and
-working agents, including ones you started by hand
-(`@collie-status-scope tasks` limits it to task sessions).
+working collie runs; `@collie-status-manual on` adds the ones you started by
+hand (`@collie-status-scope tasks` limits those to task sessions).
 
 With `set -g mouse on`, click a count for a menu of the agents behind it:
 `session:window`, agent, time in that state, and the task's priority and
