@@ -5,12 +5,12 @@ cmd_race() {
   local id="" count=0 agents="" repo="" model="" effort="" prompt="" base c name branch path agent n child rc=0
   while [ $# -gt 0 ]; do
     case $1 in
-      -n) count=${2:? -n needs a count}; shift ;;
-      --agent) agents=${2:?--agent needs names}; shift ;;
-      --model) model=${2:?--model needs a name}; shift ;;
-      --effort) effort=${2:?--effort needs a level}; shift ;;
-      -r) repo=${2:? -r needs a repo}; shift ;;
-      -p) prompt=${2:? -p needs a prompt}; shift ;;
+      -n) need_value race "-n needs a count" "${2:-}"; count=$2; shift ;;
+      --agent) need_value race "--agent needs names" "${2:-}"; agents=$2; shift ;;
+      --model) need_value race "--model needs a name" "${2:-}"; model=$2; shift ;;
+      --effort) need_value race "--effort needs a level" "${2:-}"; effort=$2; shift ;;
+      -r) need_value race "-r needs a repo" "${2:-}"; repo=$2; shift ;;
+      -p) need_value race "-p needs a prompt" "${2:-}"; prompt=$2; shift ;;
       -*) die "race: unknown option $1" ;;
       *) [ -z "$id" ] || die "race: too many arguments"; id=$1 ;;
     esac

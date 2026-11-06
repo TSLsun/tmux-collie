@@ -526,3 +526,27 @@ past_run() {
   collie new a --no-window
   grep -qx '## Ship' "$(task_dir a)/TASK.md"
 }
+
+# --- options missing their value --------------------------------------------
+
+@test "options: a missing value dies with collie: <cmd>: <opt> needs <what>" {
+  check() { # expected-message cmd args...
+    local want=$1; shift
+    run --separate-stderr collie "$@"
+    [ "$status" -eq 1 ] || { echo "$*: status $status"; return 1; }
+    [ "$stderr" = "collie: $want" ] || { echo "$*: got '$stderr'"; return 1; }
+  }
+  check "send: --run needs a run number" send t --run
+  check "pause: --run needs a run number" pause t --run
+  check "run: --agent needs a name" run t --agent
+  check "run: -p needs a prompt" run t -p
+  check "wait: --timeout needs seconds" wait t --timeout
+  check "race: -n needs a count" race t -n
+  check "race: -r needs a repo" race t -r
+  check "new: --after needs task ids" new t --after
+  check "new: -p needs a prompt" new t -p
+  check "add: --from needs a ref" add t --from
+  check "verify: -r needs a repo" verify t -r
+  check "spike: --title needs text" spike t --title
+  check "send: -f needs a file" send t -f ""
+}
