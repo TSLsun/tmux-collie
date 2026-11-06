@@ -99,3 +99,30 @@ release_candidates() {
   touch "$TMP/go-race-2"
   collie wait race-2 --run 1 --done --timeout 30
 }
+
+@test "race: a mid-race creation failure rolls back every candidate and a retry succeeds" {
+  local events
+  events=$(cat "$(task_dir race)/events.log")
+  cat >"$TMP/stub/ln" <<'SH'
+#!/bin/bash
+case "${@: -1}" in */race-2/repos/A) exit 1 ;; esac
+exec /bin/ln "$@"
+SH
+  chmod +x "$TMP/stub/ln"
+  run collie race race -n 2 --agent race-fake,race-fake
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"rolled back"* ]]
+  [ ! -e "$(task_dir race-1)" ] && [ ! -e "$(task_dir race-2)" ]
+  [ ! -e "$REPO/exp-race-1" ] && [ ! -e "$REPO/exp-race-2" ]
+  ! git -C "$REPO" show-ref --verify --quiet refs/heads/exp/race-1
+  ! git -C "$REPO" show-ref --verify --quiet refs/heads/exp/race-2
+  [ "$(cat "$(task_dir race)/events.log")" = "$events" ]
+  ! git -C "$REPO" worktree list | grep -q exp-race
+
+  rm "$TMP/stub/ln"
+  run collie race race -n 2 --agent race-fake,race-fake
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'race-1 1 '* && "$output" == *'race-2 1 '* ]]
+  [ "$(grep -c race_started "$(task_dir race)/events.log")" -eq 1 ]
+  release_candidates
+}
