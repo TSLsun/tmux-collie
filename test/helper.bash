@@ -103,7 +103,17 @@ task_dir() { echo "$COLLIE_STATE_DIR/tasks/$1"; }
 
 fm() { awk -v k="$2" 'index($0, k ": ") == 1 { print substr($0, length(k) + 3); exit }' "$(task_dir "$1")/TASK.md"; }
 
-window_path() { tmux display -p -t "=$1:$2" '#{pane_current_path}'; }
+# cwd of the pane in window <name> of session <id>. On Linux tmux reads it from
+# /proc of the pane's foreground process, which until it execs the pane command
+# is tmux's forked child (no cwd yet, or the server's); wait for the exec first.
+window_path() {
+  local t="=$1:$2" cmd deadline=$((SECONDS + 5))
+  while cmd=$(tmux display -p -t "$t" '#{pane_current_command}') &&
+    { [ -z "$cmd" ] || [ "$cmd" = tmux ]; } && [ "$SECONDS" -lt "$deadline" ]; do
+    sleep 0.1
+  done
+  tmux display -p -t "$t" '#{pane_current_path}'
+}
 
 # pane of run <n> (default 1) in task <id>
 run_pane() { tmux list-windows -t "=$1" -F '#{@collie_run} #{pane_id}' | awk -v r="${2:-1}" '$1 == r { print $2 }'; }
