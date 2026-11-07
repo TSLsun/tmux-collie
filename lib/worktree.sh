@@ -264,11 +264,7 @@ scratch_add() { # task_dir common branch worktree
 # A task's scratch worktrees, one "run<TAB>repo<TAB>path" line each, from
 # its scratch_created events (removed ones included: callers check the path).
 scratch_list() { # task_dir
-  awk -F'\t' '
-    function kv(k,  a, i, n) {
-      n = split($3, a, " ")
-      for (i = 1; i <= n; i++) if (index(a[i], k "=") == 1) return substr(a[i], length(k) + 2)
-    }
+  awk -F'\t' "$AWK_KV"'
     $2 == "scratch_created" { print kv("run") "\t" kv("repo") "\t" kv("path") }' "$1/events.log"
 }
 

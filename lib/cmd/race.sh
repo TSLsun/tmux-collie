@@ -99,12 +99,11 @@ cmd_pick() {
   child="$id-$n"
   d="$TASKS_DIR/$id"
   [ -f "$TASKS_DIR/$child/TASK.md" ] || die "pick: no candidate '$child'"
-  line=$(awk -F'\t' '$2 == "race_started" { print $3; exit }' "$d/events.log")
-  [ -n "$line" ] || die "pick: task '$id' has no recorded race"
-  base=$(awk -F' ' '{ for(i=1;i<=NF;i++) if($i ~ /^base=/) { sub(/^base=/,"",$i); print $i } }' <<<"$line")
-  repo=$(awk -F' ' '{ for(i=1;i<=NF;i++) if($i ~ /^repo=/) { sub(/^repo=/,"",$i); print $i } }' <<<"$line")
+  line=$(awk -F'\t' "$AWK_KV"'$2 == "race_started" { print $3 "\t" kv("base") "\t" kv("repo"); exit }' "$d/events.log")
+  [ -n "${line%%"$TAB"*}" ] || die "pick: task '$id' has no recorded race"
+  IFS=$TAB read -r line base repo <<<"$line"
   [ -n "$base" ] && [ -n "$repo" ] || die "pick: malformed race metadata"
-  candidate=$(awk -F'\t' -v wanted="$child" '$2=="race_candidate" { if(index($3,"task=" wanted " ") || $3 ~ ("task=" wanted "$")) found=1 } END { print found }' "$d/events.log")
+  candidate=$(awk -F'\t' -v wanted="$child" "$AWK_KV"'$2 == "race_candidate" && kv("task") == wanted { found = 1 } END { print found }' "$d/events.log")
   [ "$candidate" = 1 ] || die "pick: '$child' is not a candidate of '$id'"
   local name _
   while IFS=$TAB read -r name c task_branch path; do [ "$name" = "$repo" ] && break; done <"$d/repos.tsv"
@@ -127,6 +126,6 @@ cmd_pick() {
   commit=$(git -C "$path" rev-parse HEAD) || return 1
   log_event "$id" race_picked "n=$n task=$child commit=$commit"
   printf 'picked %s (%s); candidates remain on exp/* branches\n' "$child" "$commit"
-  awk -F'\t' '$2 == "race_candidate" { n=split($3,a," "); for(i=1;i<=n;i++) if(a[i] ~ /^task=/) { sub(/^task=/,"",a[i]); print "hint: collie archive " a[i] } }' "$d/events.log"
+  awk -F'\t' "$AWK_KV"'$2 == "race_candidate" && kv("task") != "" { print "hint: collie archive " kv("task") }' "$d/events.log"
 }
   

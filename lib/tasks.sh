@@ -107,6 +107,19 @@ log_event() {
   printf '%s\t%s\t%s\n' "$NOW" "$2" "${3:-}" >>"$TASKS_DIR/$1/events.log"
 }
 
+# awk functions for an event's "k=v k=v ..." fields (events.log field 3),
+# prepended to a program: awk -F'\t' "$AWK_KV"'$2 == "x" { print kv("run") }'.
+# kv(k): key k of the current line's $3; kvs(s, k): of string s. The first
+# match wins; "" if absent.
+# shellcheck disable=SC2016 # awk code, not shell
+AWK_KV='
+function kvs(s, k,  a, i, n) {
+  n = split(s, a, " ")
+  for (i = 1; i <= n; i++) if (index(a[i], k "=") == 1) return substr(a[i], length(k) + 2)
+}
+function kv(k) { return kvs($3, k) }
+'
+
 # decisions.tsv (see `collie log`): the newest row, "last decision (of n):"
 # then two indented lines and a blank one; nothing until a row is logged.
 last_decision() { # dir
