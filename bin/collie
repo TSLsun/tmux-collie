@@ -42,6 +42,8 @@ need_value() { [ -n "$3" ] || die "$1: $2"; }
 . "$PLUGIN_DIR/lib/cmd/agents.sh"
 . "$PLUGIN_DIR/lib/cmd/race.sh"
 . "$PLUGIN_DIR/lib/cmd/dash.sh"
+. "$PLUGIN_DIR/lib/cmd/dash_keys.sh"
+. "$PLUGIN_DIR/lib/cmd/dash_pr.sh"
 . "$PLUGIN_DIR/lib/cmd/admin.sh"
 
 # every cmd_<name> function is the command <name>: adding one needs no list here
