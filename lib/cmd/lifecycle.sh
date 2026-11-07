@@ -174,12 +174,11 @@ cmd_reopen() {
 }
 
 race_review() { # parent task_dir
-  local id=$1 d=$2 line base repo n candidate agent branch cd name cg cb cp top state commits files plus minus verify report
-  line=$(awk -F'\t' '$2 == "race_started" { print $3; exit }' "$d/events.log")
-  [ -n "$line" ] || return 0
-  base=$(awk -F' ' '{ for (i=1;i<=NF;i++) if ($i ~ /^base=/) { sub(/^base=/,"",$i); print $i; exit } }' <<<"$line")
-  repo=$(awk -F' ' '{ for (i=1;i<=NF;i++) if ($i ~ /^repo=/) { sub(/^repo=/,"",$i); print $i; exit } }' <<<"$line")
+  local id=$1 d=$2 line base repo n candidate agent branch cd name cg cb cp top state commits files plus minus verify report cands
+  line=$(awk -F'\t' "$AWK_KV"'$2 == "race_started" { print kv("base") "\t" kv("repo"); exit }' "$d/events.log")
+  IFS=$TAB read -r base repo <<<"$line"
   [ -n "$base" ] && [ -n "$repo" ] || return 0
+  cands=$(awk -F'\t' "$AWK_KV"'$2 == "race_candidate" && kv("task") != "" { print kv("task") "\t" kv("agent") "\t" kv("branch") }' "$d/events.log")
   printf '== candidates  base %s (%s)\n' "${base:0:7}" "$repo"
   printf ' n  task     agent   status  commits  files  +/-        verify  report\n'
   while IFS=$'\t' read -r candidate agent branch; do
@@ -194,7 +193,7 @@ race_review() { # parent task_dir
     commits=$(git --git-dir="$cg" rev-list --count "$base..refs/heads/$cb" 2>/dev/null || echo 0)
     read -r files plus minus <<<"$(git --git-dir="$cg" diff --numstat "$base...refs/heads/$cb" 2>/dev/null |
       awk '{ f++; if ($1 ~ /^[0-9]+$/) a += $1; if ($2 ~ /^[0-9]+$/) d += $2 } END { printf "%d %d %d", f, a, d }')"
-    verify=$(awk -F'\t' '$2 == "verify" { n=split($3,a," "); for(i=1;i<=n;i++) if(a[i] ~ /^result=/) { sub(/^result=/,"",a[i]); v=a[i] } } END { print v }' "$cd/events.log")
+    verify=$(awk -F'\t' "$AWK_KV"'$2 == "verify" { v = kv("result") } END { print v }' "$cd/events.log")
     [ -n "$verify" ] || verify=-
     report='(no REPORT.md)'
     if [ -f "$cd/REPORT.md" ]; then
@@ -204,16 +203,7 @@ race_review() { # parent task_dir
     fi
     printf ' %s  %-8s %-7s %-7s %-8s %-6s +%-4s -%-4s %-7s %s\n' \
       "$(awk -F'-' '{print $NF}' <<<"$candidate")" "$candidate" "$agent" "$state" "$commits" "$files" "$plus" "$minus" "$verify" "$report"
-  done < <(awk -F'\t' '
-    $2 == "race_candidate" {
-      n=split($3,a," "); task=agent=branch=""
-      for(i=1;i<=n;i++) {
-        if(index(a[i],"task=")==1) task=substr(a[i],6)
-        if(index(a[i],"agent=")==1) agent=substr(a[i],7)
-        if(index(a[i],"branch=")==1) branch=substr(a[i],8)
-      }
-      if(task!="") print task "\t" agent "\t" branch
-    }' "$d/events.log")
+  done <<<"$cands"
   while IFS=$'\t' read -r candidate agent branch; do
     [ -n "$candidate" ] || continue
     cd="$TASKS_DIR/$candidate"
@@ -222,16 +212,7 @@ race_review() { # parent task_dir
     printf '\n== %s  %s (%s)\n' "$candidate" "$branch" "$agent"
     git --git-dir="$cg" diff --stat "$base...refs/heads/$cb" 2>/dev/null || true
     if [ -f "$cd/REPORT.md" ]; then cat "$cd/REPORT.md"; else echo '(no REPORT.md)'; fi
-  done < <(awk -F'\t' '
-    $2 == "race_candidate" {
-      n=split($3,a," "); task=agent=branch=""
-      for(i=1;i<=n;i++) {
-        if(index(a[i],"task=")==1) task=substr(a[i],6)
-        if(index(a[i],"agent=")==1) agent=substr(a[i],7)
-        if(index(a[i],"branch=")==1) branch=substr(a[i],8)
-      }
-      if(task!="") print task "\t" agent "\t" branch
-    }' "$d/events.log")
+  done <<<"$cands"
 }
 
 cmd_review() {
