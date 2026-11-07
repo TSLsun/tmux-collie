@@ -936,11 +936,7 @@ run_preview() { # id run|window
   local d="$TASKS_DIR/$1" r
   r=$(run_history "$1" | awk -F'\t' -v k="$2" '$1 == k || ($1 == "-" && $5 == k) { print; exit }')
   [ -n "$r" ] || return 0
-  awk -F'\t' -v ev="$d/events.log" '
-    function kv(s, k,  a, i, n) {
-      n = split(s, a, " ")
-      for (i = 1; i <= n; i++) if (index(a[i], k "=") == 1) return substr(a[i], length(k) + 2)
-    }
+  awk -F'\t' -v ev="$d/events.log" "$AWK_KV"'
     {
       print ($1 == "-" ? "agent started by hand" : "run #" $1) "  [" $4 "]"
       print "agent:   " $2
@@ -951,9 +947,9 @@ run_preview() { # id run|window
       if ($1 == "-") { print ""; print "a (on the task): adopt it as a collie run"; exit }
       while ((getline l <ev) > 0) {
         split(l, f, "\t")
-        if (f[2] == "agent_session" && kv(f[3], "run") == $1) sid = kv(f[3], "id")
-        if (f[2] == "run_exited" && kv(f[3], "run") == $1) end = f[1]
-        if (f[2] == "run_handoff" && kv(f[3], "to") == $1) pk = kv(f[3], "packet")
+        if (f[2] == "agent_session" && kvs(f[3], "run") == $1) sid = kvs(f[3], "id")
+        if (f[2] == "run_exited" && kvs(f[3], "run") == $1) end = f[1]
+        if (f[2] == "run_handoff" && kvs(f[3], "to") == $1) pk = kvs(f[3], "packet")
       }
       if (end != "") print "ended:   " end
       if (sid != "") print "session: " sid
