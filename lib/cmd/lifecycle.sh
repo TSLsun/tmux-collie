@@ -265,7 +265,7 @@ cmd_verify() {
   local id="" only="" d tmp n i rc st fail=0 name c b p rel
   while [ $# -gt 0 ]; do
     case $1 in
-      -r) only=${2:?-r needs a repo}; shift ;;
+      -r) need_value verify "-r needs a repo" "${2:-}"; only=$2; shift ;;
       -*) die "verify: unknown option $1" ;;
       *) [ -z "$id" ] || die "verify: too many arguments"; id=$1 ;;
     esac
@@ -335,7 +335,7 @@ cmd_spike() {
     case $1 in
       -u | --include-untracked) untracked=1 ;;
       --no-window) args+=("$1") ;;
-      --title) args+=("$1" "${2:?--title needs text}"); shift ;;
+      --title) need_value spike "--title needs text" "${2:-}"; args+=("$1" "$2"); shift ;;
       -*) die "spike: unknown option $1" ;;
       *) [ -z "$id" ] || die "spike: too many arguments"; id=$1 ;;
     esac

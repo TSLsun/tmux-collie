@@ -52,14 +52,14 @@ cmd_run() {
   local RUN_MODEL="" RUN_EFFORT=""
   while [ $# -gt 0 ]; do
     case $1 in
-      --agent) agent=${2:?--agent needs a name}; shift ;;
-      --model) RUN_MODEL=${2:?--model needs a name}; shift ;;
-      --effort) RUN_EFFORT=${2:?--effort needs a level}; shift ;;
-      -r) repo=${2:?-r needs a repo}; shift ;;
+      --agent) need_value run "--agent needs a name" "${2:-}"; agent=$2; shift ;;
+      --model) need_value run "--model needs a name" "${2:-}"; RUN_MODEL=$2; shift ;;
+      --effort) need_value run "--effort needs a level" "${2:-}"; RUN_EFFORT=$2; shift ;;
+      -r) need_value run "-r needs a repo" "${2:-}"; repo=$2; shift ;;
       -s) switch=1 ;;
       --scratch) scratch=1 ;;
-      -c) client=${2:?-c needs a client}; shift ;;
-      -p) [ $# -ge 2 ] || die "-p needs a prompt"; prompt=$2 custom=1; shift ;;
+      -c) need_value run "-c needs a client" "${2:-}"; client=$2; shift ;;
+      -p) [ $# -ge 2 ] || die "run: -p needs a prompt"; prompt=$2 custom=1; shift ;;
       --) shift; extra=("$@"); break ;;
       -*) die "run: unknown option $1" ;;
       *) [ -z "$id" ] || die "run: too many arguments"; id=$1 ;;
@@ -261,9 +261,9 @@ cmd_send() {
   local id="" repo="" run="" file="" wait=0 text="" args=() t agent st win pane first
   while [ $# -gt 0 ]; do
     case $1 in
-      -r) repo=${2:?-r needs a repo}; shift ;;
-      --run) run=${2:-}; shift ;;
-      -f) file=${2:?-f needs a file}; shift ;;
+      -r) need_value send "-r needs a repo" "${2:-}"; repo=$2; shift ;;
+      --run) need_value send "--run needs a run number" "${2:-}"; run=$2; shift ;;
+      -f) need_value send "-f needs a file" "${2:-}"; file=$2; shift ;;
       --wait) wait=1 ;;
       --) shift; args+=("$@"); break ;;
       -*) die "send: unknown option $1" ;;
@@ -324,10 +324,10 @@ cmd_pause() {
   local id="" repo="" run="" text="" file="" t agent st
   while [ $# -gt 0 ]; do
     case $1 in
-      -r) repo=${2:?-r needs a repo}; shift ;;
-      --run) run=${2:-}; shift ;;
-      -p) [ $# -ge 2 ] || die "-p needs a request"; text=$2; shift ;;
-      -f) file=${2:?-f needs a file}; shift ;;
+      -r) need_value pause "-r needs a repo" "${2:-}"; repo=$2; shift ;;
+      --run) need_value pause "--run needs a run number" "${2:-}"; run=$2; shift ;;
+      -p) [ $# -ge 2 ] || die "pause: -p needs a request"; text=$2; shift ;;
+      -f) need_value pause "-f needs a file" "${2:-}"; file=$2; shift ;;
       -*) die "pause: unknown option $1" ;;
       *) [ -z "$id" ] || die "pause: too many arguments"; id=$1 ;;
     esac
@@ -537,10 +537,10 @@ cmd_wait() {
   local id="" run="" want=idle timeout=0 start=$SECONDS
   while [ $# -gt 0 ]; do
     case $1 in
-      --run) run=${2:?--run needs a number}; shift ;;
-      --state) want=${2:?--state needs a state}; shift ;;
+      --run) need_value wait "--run needs a number" "${2:-}"; run=$2; shift ;;
+      --state) need_value wait "--state needs a state" "${2:-}"; want=$2; shift ;;
       --done) want="done" ;;
-      --timeout) timeout=${2:?--timeout needs seconds}; shift ;;
+      --timeout) need_value wait "--timeout needs seconds" "${2:-}"; timeout=$2; shift ;;
       -*) die "wait: unknown option $1" ;;
       *) [ -z "$id" ] || die "wait: too many arguments"; id=$1 ;;
     esac
