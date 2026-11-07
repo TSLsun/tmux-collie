@@ -80,7 +80,7 @@ stub_tmux() {
   [ "$status" -eq 0 ]
   # every dashboard task action (? menu) is in the prefix menu, same key and
   # label; terminal (t) and new task (c) are its global items
-  acts=$(bash -c '. "$1" && action_items x' _ "$BATS_TEST_DIRNAME/../lib/cmd/dash.sh" | grep -v '^[tc] ')
+  acts=$(bash -c '. "$1" && action_items x' _ "$BATS_TEST_DIRNAME/../lib/cmd/dash_keys.sh" | grep -v '^[tc] ')
   [ "$(printf '%s\n' "$acts" | wc -l)" -ge 7 ]
   while read -r k l; do
     [[ "$output" == *$'\n'"$l"$'\n'"$k"$'\n'* ]] || { echo "missing: $k $l"; false; }
