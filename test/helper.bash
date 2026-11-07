@@ -9,7 +9,15 @@ setup_env() {
   export TMUX_TMPDIR="$TMP/tmux"
   [ -z "${COLLIE_TEST_DIAGNOSTICS_DIR:-}" ] || mkdir -p "$COLLIE_TEST_DIAGNOSTICS_DIR"
   mkdir -p "$TMUX_TMPDIR" "$TMP/repos" "$TMP/home"
-  unset TMUX TMUX_PANE COLLIE_TASK COLLIE_TASK_DIR COLUMNS FZF_COLUMNS
+  # Preserve only caller-controlled suite inputs and the root computed above.
+  local name
+  for name in $(compgen -v COLLIE_); do
+    case "$name" in
+      COLLIE_ROOT|COLLIE_BASH|COLLIE_TEST_DIAGNOSTICS_DIR) ;;
+      *) unset "$name" ;;
+    esac
+  done
+  unset TMUX TMUX_PANE COLUMNS FZF_COLUMNS
   # the test tmux server must not load the user's ~/.tmux.conf (and plugins)
   export HOME="$TMP/home"
   # State assertions must not age into idle while a loaded runner schedules

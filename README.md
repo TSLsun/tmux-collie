@@ -348,6 +348,9 @@ start from local refs.
 make check   # shellcheck + bats (uses an isolated tmux server per test)
 ```
 
+Test fixtures clear inherited `COLLIE_*` settings, except `COLLIE_BASH` and
+`COLLIE_TEST_DIAGNOSTICS_DIR`, which select the test shell and diagnostics path.
+
 Scripts target bash 3.2 (macOS `/bin/bash`).
 
 `bin/collie` is the entry point; it sources shared helpers from `lib/*.sh`
