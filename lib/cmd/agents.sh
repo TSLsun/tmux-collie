@@ -475,6 +475,18 @@ cmd_restore() {
         echo "$id run $run: $agent in $repo: skipped: scratch run; start a new one with run --scratch"
         continue
       fi
+      # a run whose repo was since dropped (maybe re-added under its name) or
+      # switched to another branch belongs to a removed worktree
+      if ! awk -F'\t' -v r="$run" -v n="$repo" '
+        { count = split($3, fields, " "); for (i = 1; i <= count; i++) {
+            if ($2 == "run_started" && fields[i] == "run=" r) started = 1
+            if (started && ($2 == "repo_dropped" || $2 == "repo_switched") && fields[i] == "repo=" n) dropped = 1
+          } }
+        END { exit dropped ? 1 : 0 }' "$TASKS_DIR/$id/events.log" ||
+        ! awk -F'\t' -v n="$repo" '$1 == n { found = 1 } END { exit !found }' "$TASKS_DIR/$id/repos.tsv"; then
+        echo "$id run $run: $agent in $repo: skipped: repo removed or switched since"
+        continue
+      fi
       AGENT_RESUME=() AGENT_RESUME_ID=() AGENT_REQUIRE_SESSION=0
       # shellcheck source=/dev/null
       [[ $agent == */* ]] || [ ! -f "$PLUGIN_DIR/agents/$agent.sh" ] || . "$PLUGIN_DIR/agents/$agent.sh"

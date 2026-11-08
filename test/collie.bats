@@ -199,6 +199,160 @@ two_repos() {
   [ -d "$TMP/repos/B.worktrees/feat-x" ]
 }
 
+@test "add: switches an attached repo to another branch and keeps the old branch" {
+  two_repos
+  cd "$TMP"
+  collie new x -r A -r B --no-window
+  run collie add x -r B:release/v2
+  [ "$status" -eq 0 ]
+  [ "$(git -C "$TMP/repos/B.worktrees/release-v2" branch --show-current)" = release/v2 ]
+  [ ! -e "$TMP/repos/B.worktrees/feat-x" ]
+  git -C "$TMP/repos/B" show-ref -q --verify refs/heads/feat/x
+  grep -q $'^B\t' "$(task_dir x)/repos.tsv"
+}
+
+@test "drop: removes one repo's worktree and links while keeping its branch" {
+  two_repos
+  cd "$TMP"
+  collie new x -r A -r B
+  run collie drop x -r B
+  [ "$status" -eq 0 ]
+  [ ! -e "$TMP/repos/B.worktrees/feat-x" ]
+  [ ! -e "$(task_dir x)/repos/B" ]
+  [ "$(cd "$TMP/repos/A/feat-x/.collie" && pwd -P)" = "$(task_dir x)" ]
+  git -C "$TMP/repos/B" show-ref -q --verify refs/heads/feat/x
+  [ "$(wc -l <"$(task_dir x)/repos.tsv" | tr -d ' ')" -eq 1 ]
+  [ "$(tmux list-windows -t =x | wc -l | tr -d ' ')" -eq 1 ]
+  grep -q repo_dropped "$(task_dir x)/events.log"
+}
+
+@test "drop: refuses the last repo and dirty worktree unless forced" {
+  two_repos
+  cd "$TMP"
+  collie new x -r A -r B --no-window
+  run collie drop x -r A
+  [ "$status" -eq 0 ]
+  run collie drop x -r B
+  [ "$status" -ne 0 ]
+  [[ "$output" == *last* ]]
+  collie add x -r A --no-window
+  echo wip >"$TMP/repos/A/feat-x/wip"
+  run collie drop x -r A
+  [ "$status" -ne 0 ]
+  [[ "$output" == *dirty* ]]
+  [ -d "$TMP/repos/A/feat-x" ]
+  run collie drop x -r A --force
+  [ "$status" -eq 0 ]
+  [ ! -e "$TMP/repos/A/feat-x" ]
+  git -C "$TMP/repos/A" show-ref -q --verify refs/heads/feat/x
+}
+
+@test "drop: refuses while cwd is inside the repo worktree" {
+  two_repos
+  cd "$TMP"
+  collie new x -r A -r B --no-window
+  cd "$TMP/repos/B.worktrees/feat-x"
+  run collie drop x -r B
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"currently inside"* ]]
+  [ -d "$TMP/repos/B.worktrees/feat-x" ]
+}
+
+@test "add: a switch refuses a dirty or unmerged worktree unless forced" {
+  two_repos
+  cd "$TMP"
+  collie new x -r A -r B --no-window
+  local w="$TMP/repos/B.worktrees/feat-x"
+  echo wip >"$w/wip"
+  run collie add x -r B:release/v2 --no-window
+  [ "$status" -ne 0 ]
+  [[ "$output" == *dirty* ]]
+  rm "$w/wip"
+  echo work >"$w/work"
+  git -C "$w" add work
+  git -C "$w" commit -q -m work
+  run collie add x -r B:release/v2 --no-window
+  [ "$status" -ne 0 ]
+  [[ "$output" == *unmerged* ]]
+  [ -d "$w" ] && [ ! -e "$TMP/repos/B.worktrees/release-v2" ]
+  run git -C "$TMP/repos/B" show-ref --verify refs/heads/release/v2
+  [ "$status" -ne 0 ]
+  run collie add x -r B:release/v2 --force --no-window
+  [ "$status" -eq 0 ]
+  [ ! -e "$w" ]
+  [ "$(git -C "$TMP/repos/B" log -1 --format=%s feat/x)" = work ]
+  [ "$(awk -F'\t' '$1 == "B" { print $3 }' "$(task_dir x)/repos.tsv")" = release/v2 ]
+  grep -q "repo_switched	repo=B from=feat/x branch=release/v2" "$(task_dir x)/events.log"
+}
+
+@test "add: switching back and re-adding a dropped repo track the latest worktree" {
+  two_repos
+  cd "$TMP"
+  collie new x -r A -r B --no-window
+  local d w="$TMP/repos/B.worktrees/feat-x" first
+  d=$(task_dir x)
+  collie add x -r B:release/v2 --no-window
+  git -C "$TMP/repos/B.worktrees/release-v2" commit -q --allow-empty -m on-release
+  collie add x -r B:feat/x --force --no-window
+  [ "$(git -C "$w" branch --show-current)" = feat/x ]
+  [ "$(readlink "$d/repos/B")" = "$w" ]
+  # rows keep their order: A first
+  [ "$(cut -f1 "$d/repos.tsv" | tr '\n' ' ')" = "A B " ]
+  collie drop x -r B
+  first=$(git -C "$TMP/repos/B" rev-parse feat/x)
+  git -C "$TMP/repos/B" branch -q -f feat/x release/v2
+  collie add x -r B --no-window
+  run collie show x
+  [[ "$output" == *"B	feat/x	$w"* ]]
+  # the re-added worktree started at release/v2's tip, not the first start
+  [ "$(awk -F'\t' '$2 == "worktree_created" && $3 ~ /^repo=B / { s = $3 } END { sub(/.*start=/, "", s); print s }' "$d/events.log")" = "$(git -C "$TMP/repos/B" rev-parse release/v2)" ]
+  [ "$first" != "$(git -C "$TMP/repos/B" rev-parse release/v2)" ]
+}
+
+@test "add: a switch opens a window on the new worktree and closes the old one" {
+  two_repos
+  cd "$TMP"
+  collie new x -r A -r B
+  collie add x -r B:release/v2
+  run tmux list-windows -t =x -F '#{@collie_path}'
+  [[ "$output" == *"B.worktrees/release-v2"* ]]
+  [[ "$output" != *"B.worktrees/feat-x"* ]]
+}
+
+@test "add: mixed switch and attach refuse a repo twice, a folder switch and an unknown option" {
+  two_repos
+  mkdir "$TMP/notes"
+  cd "$TMP"
+  collie new x -r A -r "$TMP/notes" --no-window
+  cp "$(task_dir x)/repos.tsv" "$TMP/before"
+  run collie add x -r B -r B:other --no-window
+  [ "$status" -ne 0 ]
+  [[ "$output" == *twice* ]]
+  run collie add x -r A --no-window
+  [[ "$output" == *"already part"* ]]
+  run collie add x -r A:feat/x --no-window
+  [[ "$output" == *"already on branch"* ]]
+  cmp "$TMP/before" "$(task_dir x)/repos.tsv"
+  [ ! -e "$TMP/repos/B.worktrees/feat-x" ]
+}
+
+@test "drop: a folder loses only its row and link" {
+  make_bare_repo A
+  mkdir "$TMP/notes"
+  echo keep >"$TMP/notes/file"
+  cd "$TMP"
+  collie new x -r A -r "$TMP/notes" --no-window
+  run collie drop x -r notes
+  [ "$status" -eq 0 ]
+  [ "$(cat "$TMP/notes/file")" = keep ]
+  [ ! -e "$(task_dir x)/repos/notes" ]
+  [ "$(cut -f1 "$(task_dir x)/repos.tsv")" = A ]
+  grep -q "repo_dropped	repo=notes path=$TMP/notes" "$(task_dir x)/events.log"
+  run collie drop x -r nope
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"not part of task"* ]]
+}
+
 # --- ls / show / repos / workspaces -----------------------------------------
 
 @test "ls: active tasks with status, session marker and repos; -a includes finished" {
