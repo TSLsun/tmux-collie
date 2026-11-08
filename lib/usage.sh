@@ -55,8 +55,8 @@ discovery:
   workspaces          named repo sets from ~/.config/collie/workspaces
 
 Omitted <id> falls back to $COLLIE_TASK, set in every pane of a task session.
-Read-only: ls brief show history review dash peek status doctor repos workspaces,
-and -n.
+Read-only: ls brief show history review dash peek status doctor repos
+workspaces, and -n.
 Status: todo -> active -> review -> done | archived (derived; see concepts).
 Agents: read .collie/TASK.md first, write .collie/REPORT.md when finished.
 EOF
@@ -671,7 +671,7 @@ EOF
 }
 
 # the public commands, in overview order
-HELP_COMMANDS='new add drop ls brief show history log edit go dash set review verify spike race pick gc sync done archive reopen run handoff send pause adopt restore wait signal state status doctor repos workspaces'
+HELP_COMMANDS='new add drop ls brief show history log edit go dash set review verify spike race pick gc sync done archive reopen run handoff send peek pause adopt restore wait signal state status doctor repos workspaces'
 
 cmd_help() {
   local c
