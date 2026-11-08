@@ -479,6 +479,23 @@ branch_of() { awk -F'\t' -v r="$2" '$1 == r { print $3 }' "$(task_dir "$1")/repo
   [ "$(collie _target x)" = "$(tmux display -p -t "$(run_pane x 2)" '#{window_id}')" ]
 }
 
+@test "runs dashboard preview includes a live pane and omits a gone pane" {
+  collie new x --no-window
+  collie run x -- 300
+  p=$(run_pane x)
+  tmux send-keys -t "$p" -l "printf 'dashboard-preview-marker\\n'"
+  tmux send-keys -t "$p" Enter
+  export COLLIE_DASH="$TMP/dash"
+  mkdir -p "$COLLIE_DASH"
+  printf x >"$COLLIE_DASH/runs"
+  wait_for "tmux capture-pane -p -t '$p' | grep -q dashboard-preview-marker"
+  [[ "$(collie _preview 1)" == *dashboard-preview-marker* ]]
+  tmux kill-window -t "$p"
+  out=$(collie _preview 1)
+  [[ "$out" == *"run #1"* ]]
+  [[ "$out" != *dashboard-preview-marker* ]]
+}
+
 # --- tmux integration -------------------------------------------------------
 
 @test "done works from tmux run-shell (menu action)" {
