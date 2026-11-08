@@ -27,7 +27,7 @@ load_tmux_state() {
 # picks a minor past the slot vector, then skips growing it). Prints stdout.
 tmux_spawn() {
   local out i
-  for i in 1 2 3; do
+  for ((i = 0; i < 3; i++)); do
     out=$(tmux "$@" 2>&1 </dev/null) && { printf '%s\n' "$out"; return 0; }
     case $out in *"Device not configured"*) sleep 0.2 ;; *) break ;; esac
   done
@@ -47,8 +47,10 @@ open_window() { # id name path
 }
 
 ensure_session() {
+  # shellcheck disable=SC2034 # read consumes unused common-dir and branch columns
   local id=$1 name c b p
   has_session "$id" && return 0
+  # shellcheck disable=SC2034 # read consumes unused common-dir and branch columns
   while IFS=$TAB read -r name c b p; do
     if [ -d "$p" ]; then open_window "$id" "$name" "$p"; else warn "missing worktree $p"; fi
   done <"$TASKS_DIR/$id/repos.tsv"

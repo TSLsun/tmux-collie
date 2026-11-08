@@ -65,6 +65,7 @@ resolve_spec() {
   repo_at "$dir" && return
   # a plain directory given by path is a folder, used in place
   { [ -z "$SPEC_BRANCH" ] && [ -d "$dir" ]; } || die "not a git repository: $dir"
+  # shellcheck disable=SC2034 # resolve_spec output consumed by create_repos
   R_FOLDER=1
   R_ROOT=$(cd "$dir" && pwd -P)
   R_NAME=$(printf '%s' "${R_ROOT##*/}" | tr '[:upper:]' '[:lower:]' | sed 's/[^a-z0-9]\{1,\}/-/g; s/^-//; s/-$//')

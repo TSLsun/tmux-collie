@@ -3,8 +3,9 @@
 
 # --- worktree creation (shared by new/add) ----------------------------------
 
-# The caller owns the journal locals. Back up file contents before writing;
-# existing symlinks are retained, including metadata files linked elsewhere.
+# The caller owns dynamically scoped locals: created, setup_backup, tdir,
+# setup_had_repos, SETUP_FILES and SETUP_LINKS; setup helpers read/update them.
+# Back up file contents before writing; retain existing symlinks and metadata.
 setup_snapshot() {
   local path=$1 i=${#SETUP_FILES[@]}
   [ ! -d "$path" ] || return 1
@@ -62,6 +63,7 @@ add_worktree() { # common path branch from
     if [ -n "$from" ]; then
       base=$from
     elif default_base "$c"; then
+      # shellcheck disable=SC2153 # default_base output
       base=$BASE
     else
       warn "cannot determine default branch; use --from"
@@ -258,6 +260,7 @@ scratch_add() { # task_dir common branch worktree
     git --git-dir="$2" worktree remove --force "$p" || warn "could not remove scratch worktree $p"
     return 1
   fi
+  # shellcheck disable=SC2034 # scratch_add output consumed by cmd_run
   SCRATCH=$p
 }
 

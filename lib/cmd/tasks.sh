@@ -77,6 +77,7 @@ cmd_new() {
       where="$R_NAME (current pane)"
       if [ -z "$base" ]; then
         default_base "$R_COMMON" || true
+        # shellcheck disable=SC2153 # default_base output
         base=$(git --git-dir="$R_COMMON" rev-parse --abbrev-ref "$BASE" 2>/dev/null) || true
       fi
     fi
@@ -143,6 +144,7 @@ cmd_new() {
     exit 1
   fi
   if [ -n "$after" ]; then
+    # shellcheck disable=SC2153 # check_after output
     fm_set "$tdir/TASK.md" after "$AFTER"
     log_event "$id" field_set "after=$AFTER"
   fi
@@ -335,6 +337,7 @@ cmd_show() {
     { s = 1; print }' "$d/TASK.md"
   echo
   echo "repos:"
+  # shellcheck disable=SC2034 # read consumes the unused common-dir column
   while IFS=$TAB read -r name c b p; do
     mark=""
     [ -d "$p" ] || mark=" ($gone)"

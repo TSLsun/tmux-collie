@@ -47,6 +47,7 @@ cmd_doctor() {
     fm_get "$d/TASK.md" status
     case $FM in done | archived) continue ;; esac
     id=${d##*/}
+    # shellcheck disable=SC2034 # read consumes the unused branch column
     while IFS=$TAB read -r name c b p; do
       if [ "$c" = - ]; then
         [ -d "$p" ] || { doc_line FAIL "$id: $name folder missing: $p"; fail=1; }

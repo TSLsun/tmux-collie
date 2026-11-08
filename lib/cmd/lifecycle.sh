@@ -28,6 +28,7 @@ finish_task() { # final_status args...
     # Abandoned work is unmerged by definition and branches are kept anyway:
     # archive only labels it, against local refs.
     if [ "$final" = archived ]; then
+      # shellcheck disable=SC2153 # default_base output
       if git --git-dir="$c" show-ref -q --verify "refs/heads/$b" &&
         ! { default_base "$c" && merged_into "$c" "$b" "$BASE"; }; then
         unmerged="$unmerged $name"
@@ -119,6 +120,7 @@ cmd_reopen() {
   done
   task_id "$id"
   local d st name c b p created="" first="" tdir setup_backup setup_had_repos=0
+  # shellcheck disable=SC2034 # journal arrays consumed by setup helpers
   local -a SETUP_FILES=() SETUP_LINKS=()
   d="$TASKS_DIR/$id"
   fm_get "$d/TASK.md" status
@@ -137,7 +139,9 @@ cmd_reopen() {
     [ ! -e "$p" ] && [ ! -L "$p" ] || die "$p already exists"
   done <"$d/repos.tsv"
 
+  # shellcheck disable=SC2034 # journal local consumed by setup_abort
   tdir=$d
+  # shellcheck disable=SC2034 # journal local consumed by setup_abort
   [ ! -d "$d/repos" ] || setup_had_repos=1
   setup_backup=$(mktemp -d) || return 1
   if ! { mkdir -p "$d/repos" && setup_snapshot "$d/events.log" && setup_snapshot "$d/TASK.md"; }; then
@@ -218,6 +222,7 @@ race_review() { # parent task_dir
     [ -n "$candidate" ] || continue
     cd="$TASKS_DIR/$candidate"
     [ -f "$cd/TASK.md" ] && [ -f "$cd/repos.tsv" ] || continue
+    # shellcheck disable=SC2034 # read consumes the unused path column
     IFS=$TAB read -r name cg cb cp <"$cd/repos.tsv"
     printf '\n== %s  %s (%s)\n' "$candidate" "$branch" "$agent"
     git --git-dir="$cg" diff --stat "$base...refs/heads/$cb" 2>/dev/null || true
@@ -401,6 +406,7 @@ cmd_gc() {
       [ "$c" != - ] || continue
       merged=1
       repo_start "$d" "$name"
+      # shellcheck disable=SC2153 # repo_start output
       start=$START
       tip=$(git --git-dir="$c" rev-parse -q --verify "refs/heads/$b") || { merged=0; break; }
       fetch_origin "$c" "$name" || true

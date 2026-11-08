@@ -49,7 +49,9 @@ cmd_race() {
   done
   # All paths and refs are checked before the first child is created. From
   # here creation is all-or-nothing: any failure undoes every candidate.
+  # shellcheck disable=SC2034 # journal locals consumed by setup_abort
   local created="" children="" setup_backup setup_had_repos=1 tdir=$d
+  # shellcheck disable=SC2034 # journal arrays consumed by setup helpers
   local -a SETUP_FILES=() SETUP_LINKS=() picked_agents=()
   setup_backup=$(mktemp -d) || return 1
   for ((n=1; n<=count; n++)); do

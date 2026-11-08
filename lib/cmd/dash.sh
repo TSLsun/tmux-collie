@@ -1038,6 +1038,7 @@ cmd__preview() {
       continue
     fi
     default_base "$c"
+    # shellcheck disable=SC2153 # default_base output
     base=$BASE
     a=$(awk -F'\t' -v n="$name" '
       $1 == n {

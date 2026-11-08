@@ -130,6 +130,7 @@ cmd_run() {
   # above already leaves the task worktree out
   if [ "$scratch" = 1 ]; then
     scratch_add "$d" "$rc" "$rb" "$path" || die "run: could not add a scratch worktree for $rname"
+    # shellcheck disable=SC2153 # scratch_add output
     path=$SCRATCH
   fi
   # the server pid tells `restore` a run lost with its server from a closed
@@ -570,6 +571,7 @@ cmd_wait() {
   while :; do
     run_resolve "$id" "$run"
     run_state "$id" "$RUN_LIVE"
+    # shellcheck disable=SC2153 # run_state output
     case $want in
       "done") [ "$RUN_DONE" = 0 ] || [ "$RUN_STATE" = working ] || return 0 ;;
       exited) [ "$RUN_STATE" != gone ] || return 0 ;;

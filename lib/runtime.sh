@@ -1,12 +1,46 @@
 # shellcheck shell=bash
 # Sourced by bin/collie: agent runtime.
 
+# Shared inputs and out-variables: Bash 3.2 `declare NAME` changes unset to set,
+# so helper results are documented here and assigned only by their setters.
+# bin/collie sets PLUGIN_DIR, STATE_DIR, TASKS_DIR, CONFIG_DIR, TAB and PR_RE for libraries and adapters.
+# bin/collie sets DASH_PROMPT, PICK_MARK, SEARCH_PROMPT, ASK_MARK, AGENT_MARK and REVIEW_LABEL for cmd/dash.sh.
+# repo_at (repos.sh) sets R_AT, R_COMMON, R_ROOT and R_NAME for repos, worktree and commands.
+# resolve_spec (repos.sh) sets R_FOLDER and SPEC_BRANCH for create_repos (worktree.sh).
+# discover (repos.sh) sets REPOS for resolve_spec and cmd_repos.
+# default_base (repos.sh) sets BASE for worktree, runtime and commands.
+# fm_get (tasks.sh) sets FM for libraries and commands.
+# stamp/stamp_utc (tasks.sh) set NOW for runtime and commands.
+# check_after (tasks.sh) sets AFTER for task commands.
+# dep_state (tasks.sh) sets DEP and DEP_PRS for task and dashboard commands.
+# task_blocked (tasks.sh) sets BLOCKED for task, agent and dashboard commands.
+# add_worktree (worktree.sh) sets CREATED_BRANCH and CREATED_PARENT for worktree, reopen and race.
+# create_repos (worktree.sh) sets NEW_PATHS for task and lifecycle commands.
+# wt_report (worktree.sh) sets WT_REPORT, WT_KB and WT_CLEAN_KB for lifecycle commands.
+# scratch_add (worktree.sh) sets SCRATCH for cmd_run.
+# load_tmux_state (tmux.sh) sets SESSIONS and COLLIE_SILENCE for tmux and runtime helpers.
+# run_state (runtime.sh) sets RUN_STATE and RUN_WIN for agent commands.
+# run_resolve (runtime.sh) sets RUN_LIVE and RUN_DONE for cmd_wait.
+# task_status (runtime.sh) sets STATUS, STATUS_NOTE and LAST_EVENT for task and command helpers.
+# repo_start (runtime.sh) sets START for runtime and lifecycle helpers.
+# run_agent (cmd/agents.sh) sets RUN_AGENT for task and race commands.
+# preview_layout (cmd/dash.sh) sets PREVIEW and WIDTH for dashboard and task commands.
+# cmd_run (cmd/agents.sh) sets RUN_NAME, RUN_PROMPT, RUN_DIRS, RUN_MODEL and RUN_EFFORT as adapter inputs.
+# agent_argv (agents/*.sh) sets AGENT_ARGV for cmd_run.
+# cmd_run and adapters set AGENT_HOOKS, AGENT_HOOKS_PENDING, AGENT_EXTRA_HANDLED, AGENT_MODELS and AGENT_SESSION_ID for cmd_run.
+# adopt/restore and adapters set AGENT_RESUME, AGENT_RESUME_ID and AGENT_REQUIRE_SESSION for agent commands.
+# task_id (tasks.sh) sets the calling command's dynamically scoped id local.
+# Worktree setup transaction locals and their readers are documented in worktree.sh.
+
 # --- agent runtime ----------------------------------------------------------
 
+# shellcheck disable=SC2034 # consumed by cmd_run
 DEFAULT_PROMPT='Your task contract is .collie/TASK.md. Read it first; if its Objective is empty, ask me what to do. Record key decisions with collie log. When you finish, write a short report to .collie/REPORT.md.'
 # what `collie pause` asks for by default, and how run, handoff and adopt
 # point a new agent at the note it leaves (.collie/ rewritten to the task dir)
+# shellcheck disable=SC2034 # consumed by cmd_pause
 PAUSE_PROMPT='Pause: stop at the next safe boundary, save your work in progress and write a resume note to .collie/RESUME.md for whoever picks this task up. Do not push or open a PR. Then stop.'
+# shellcheck disable=SC2034 # consumed by run, handoff and adopt
 RESUME_PROMPT='A paused run left a resume note at .collie/RESUME.md: read it after the task contract and continue from there.'
 
 # Agent windows as "session<TAB>window<TAB>run<TAB>agent<TAB>state". Agents
@@ -91,6 +125,7 @@ run_state() { # id run
   # no early exit: task_runs would die of SIGPIPE under pipefail
   l=$(task_runs "$1" | awk -F'\t' -v r="$2" '$1 == r && !f { print $3 "\t" $4; f = 1 }')
   RUN_STATE=${l%%"$TAB"*} RUN_WIN=${l#*"$TAB"}
+  # shellcheck disable=SC2034 # run_state output consumed by command files
   case $RUN_STATE in working | idle | waiting) ;; *) RUN_STATE=gone RUN_WIN=- ;; esac
 }
 
@@ -108,6 +143,7 @@ run_resolve() { # id run
     $2 == "sent" { d[kv("run")] = 0 }
     $2 == "run_restored" { as[kv("run")] = kv("as"); if (d[kv("run")]) d[kv("as")] = 1 }
     END { while (r in as) r = as[r]; print r "\t" d[r] + 0 }' "$TASKS_DIR/$1/events.log")
+  # shellcheck disable=SC2034 # run_resolve outputs consumed by command files
   RUN_LIVE=${l%%"$TAB"*} RUN_DONE=${l#*"$TAB"}
 }
 
@@ -206,6 +242,7 @@ task_status() { # id top_state [stored_status]
     }' "$d/events.log")
   runs=${last%%"$TAB"*}
   last=${last#*"$TAB"}
+  # shellcheck disable=SC2034 # task_status output consumed by dashboard
   LAST_EVENT=${last#*"$TAB"}
   last=${last%%"$TAB"*}
   if [ -z "$last" ]; then
@@ -216,7 +253,9 @@ task_status() { # id top_state [stored_status]
     ! [[ $(date -u -r "$d/REPORT.md" +%Y-%m-%dT%H:%M:%SZ) < $last ]]; then
     STATUS=review
   else
+    # shellcheck disable=SC2034 # task_status output consumed by command files
     STATUS=active
+    # shellcheck disable=SC2034 # task_status output consumed by command files
     STATUS_NOTE="no REPORT.md since run $runs"
   fi
 }
