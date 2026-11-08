@@ -425,11 +425,23 @@ unless marked *manual*.
     PIPE_BUF are atomic). Nothing needs transactions.
   - Per principle 2, most state is derived; a database would become a second
     source of truth needing reconciliation.
-  - ~90% of the work is calling git and tmux; bash is the most direct fit and
-    adds no runtime.
-- **Revisit when:** the core exceeds ~1500 lines, cross-task queries get
-  complex, or frontmatter parsing becomes fragile → port the core to Python
-  (stdlib only), keeping the CLI stable.
+  - ~90% of the work is calling git, tmux, fzf and gh; bash is the most direct
+    fit, with zero runtime dependencies and a TPM drop-in.
+- **Re-evaluation (2026-11-07):** stay on bash 3.2. Most state remains derived.
+  Costs: no associative arrays or `mapfile`; macOS/Linux divergence fixes;
+  implicit cross-file globals; slow, flaky tmux-heavy integration tests.
+  Speed is not a factor: measured Python startup + imports is 0.02–0.03s vs
+  `collie status` at 0.04s; time is spent in tmux/git.
+- **Revisit when:**
+    - `lib` exceeds ~10k lines, or one file exceeds ~1.5k lines and will not split.
+    - Structured state (JSON/SQLite, queries, migrations) is needed.
+    - A daemon/watcher or a real TUI beyond fzf is needed.
+    - Cross-platform fix commits are clearly rising, or Windows/WSL support is needed.
+    - Candidates: Python (stdlib only, 3.9-compatible for macOS
+      `/usr/bin/python3` 3.9.6; lowest migration cost, one subcommand at a time
+      behind the bash CLI, pytest unit tests); Go (single static binary, best for
+      long-term growth or a daemon); Rust only for a rich TUI or a deliberate
+      wish to learn it.
 
 ### ADR-2: worktrees stay next to their repo
 - Existing habits and tools (editors, lazygit, shell history) rely on these
