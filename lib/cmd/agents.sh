@@ -52,14 +52,14 @@ cmd_run() {
   local RUN_MODEL="" RUN_EFFORT=""
   while [ $# -gt 0 ]; do
     case $1 in
-      --agent) agent=${2:?--agent needs a name}; shift ;;
-      --model) RUN_MODEL=${2:?--model needs a name}; shift ;;
-      --effort) RUN_EFFORT=${2:?--effort needs a level}; shift ;;
-      -r) repo=${2:?-r needs a repo}; shift ;;
+      --agent) need_value run "--agent needs a name" "${2:-}"; agent=$2; shift ;;
+      --model) need_value run "--model needs a name" "${2:-}"; RUN_MODEL=$2; shift ;;
+      --effort) need_value run "--effort needs a level" "${2:-}"; RUN_EFFORT=$2; shift ;;
+      -r) need_value run "-r needs a repo" "${2:-}"; repo=$2; shift ;;
       -s) switch=1 ;;
       --scratch) scratch=1 ;;
-      -c) client=${2:?-c needs a client}; shift ;;
-      -p) [ $# -ge 2 ] || die "-p needs a prompt"; prompt=$2 custom=1; shift ;;
+      -c) need_value run "-c needs a client" "${2:-}"; client=$2; shift ;;
+      -p) [ $# -ge 2 ] || die "run: -p needs a prompt"; prompt=$2 custom=1; shift ;;
       --) shift; extra=("$@"); break ;;
       -*) die "run: unknown option $1" ;;
       *) [ -z "$id" ] || die "run: too many arguments"; id=$1 ;;
@@ -192,16 +192,8 @@ cmd_handoff() {
     die "handoff: --note needs a readable, nonempty note file"
   fi
   d="$TASKS_DIR/$id"
-  source=$(awk -F'\t' -v r="$from" '
-    $2 == "run_started" {
-      n = split($3, a, " "); run = agent = repo = ""
-      for (i = 1; i <= n; i++) {
-        if (index(a[i], "run=") == 1) run = substr(a[i], 5)
-        if (index(a[i], "agent=") == 1) agent = substr(a[i], 7)
-        if (index(a[i], "repo=") == 1) repo = substr(a[i], 6)
-      }
-      if (run == r) { print agent "\t" repo; exit }
-    }' "$d/events.log")
+  source=$(awk -F'\t' -v r="$from" "$AWK_KV"'
+    $2 == "run_started" && kv("run") == r { print kv("agent") "\t" kv("repo"); exit }' "$d/events.log")
   [ -n "$source" ] || die "handoff: source run $from does not belong to task '$id'"
   IFS=$TAB read -r source_agent source_repo <<<"$source"
   case $source_agent in claude | codex) ;; *) die "handoff: source run must use claude or codex" ;; esac
@@ -245,11 +237,7 @@ cmd_handoff() {
 send_target() { # id run repo
   local wins=""
   ! has_session "$1" || wins=$(win_states -t "=$1" | awk -F'\t' '$3 != "-" { print $3 "\t" $4 "\t" $5 "\t" $2 }')
-  awk -F'\t' -v want="$2" -v repo="$3" '
-    function kv(k,  a, i, n) {
-      n = split($3, a, " ")
-      for (i = 1; i <= n; i++) if (index(a[i], k "=") == 1) return substr(a[i], length(k) + 2)
-    }
+  awk -F'\t' -v want="$2" -v repo="$3" "$AWK_KV"'
     FNR == NR { if ($1 != "") { line[$1] = $0; st[$1] = $3; order[++m] = $1 }; next }
     $2 == "run_started" { r = kv("run"); known[r] = 1; rp[r] = kv("repo"); ag[r] = kv("agent") }
     END {
@@ -273,9 +261,9 @@ cmd_send() {
   local id="" repo="" run="" file="" wait=0 text="" args=() t agent st win pane first
   while [ $# -gt 0 ]; do
     case $1 in
-      -r) repo=${2:?-r needs a repo}; shift ;;
-      --run) run=${2:-}; shift ;;
-      -f) file=${2:?-f needs a file}; shift ;;
+      -r) need_value send "-r needs a repo" "${2:-}"; repo=$2; shift ;;
+      --run) need_value send "--run needs a run number" "${2:-}"; run=$2; shift ;;
+      -f) need_value send "-f needs a file" "${2:-}"; file=$2; shift ;;
       --wait) wait=1 ;;
       --) shift; args+=("$@"); break ;;
       -*) die "send: unknown option $1" ;;
@@ -336,10 +324,10 @@ cmd_pause() {
   local id="" repo="" run="" text="" file="" t agent st
   while [ $# -gt 0 ]; do
     case $1 in
-      -r) repo=${2:?-r needs a repo}; shift ;;
-      --run) run=${2:-}; shift ;;
-      -p) [ $# -ge 2 ] || die "-p needs a request"; text=$2; shift ;;
-      -f) file=${2:?-f needs a file}; shift ;;
+      -r) need_value pause "-r needs a repo" "${2:-}"; repo=$2; shift ;;
+      --run) need_value pause "--run needs a run number" "${2:-}"; run=$2; shift ;;
+      -p) [ $# -ge 2 ] || die "pause: -p needs a request"; text=$2; shift ;;
+      -f) need_value pause "-f needs a file" "${2:-}"; file=$2; shift ;;
       -*) die "pause: unknown option $1" ;;
       *) [ -z "$id" ] || die "pause: too many arguments"; id=$1 ;;
     esac
@@ -431,11 +419,7 @@ lost_runs() { # id current-server-pid
     up=1
     wins=$(win_states -t "=$1" | cut -f3)
   fi
-  awk -F'\t' -v srv="$2" -v up="$up" '
-    function kv(k,  a, i, n) {
-      n = split($3, a, " ")
-      for (i = 1; i <= n; i++) if (index(a[i], k "=") == 1) return substr(a[i], length(k) + 2)
-    }
+  awk -F'\t' -v srv="$2" -v up="$up" "$AWK_KV"'
     FNR == NR { seen[$1] = 1; next }
     $2 == "run_started" { r = kv("run"); agent[r] = kv("agent"); repo[r] = kv("repo"); server[r] = kv("server"); order[++n] = r }
     $2 == "run_exited" || $2 == "run_restored" { ended[kv("run")] = 1 }
@@ -565,10 +549,10 @@ cmd_wait() {
   local id="" run="" want=idle timeout=0 start=$SECONDS
   while [ $# -gt 0 ]; do
     case $1 in
-      --run) run=${2:?--run needs a number}; shift ;;
-      --state) want=${2:?--state needs a state}; shift ;;
+      --run) need_value wait "--run needs a number" "${2:-}"; run=$2; shift ;;
+      --state) need_value wait "--state needs a state" "${2:-}"; want=$2; shift ;;
       --done) want="done" ;;
-      --timeout) timeout=${2:?--timeout needs seconds}; shift ;;
+      --timeout) need_value wait "--timeout needs seconds" "${2:-}"; timeout=$2; shift ;;
       -*) die "wait: unknown option $1" ;;
       *) [ -z "$id" ] || die "wait: too many arguments"; id=$1 ;;
     esac

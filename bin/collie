@@ -27,6 +27,9 @@ die() {
 
 warn() { printf 'collie: %s\n' "$*" >&2; }
 
+# dies unless an option got a value: need_value run "--agent needs a name" "${2:-}"
+need_value() { [ -n "$3" ] || die "$1: $2"; }
+
 # the code lives in lib/: shared helpers, then one file per command group
 . "$PLUGIN_DIR/lib/usage.sh"
 . "$PLUGIN_DIR/lib/repos.sh"
@@ -39,6 +42,8 @@ warn() { printf 'collie: %s\n' "$*" >&2; }
 . "$PLUGIN_DIR/lib/cmd/agents.sh"
 . "$PLUGIN_DIR/lib/cmd/race.sh"
 . "$PLUGIN_DIR/lib/cmd/dash.sh"
+. "$PLUGIN_DIR/lib/cmd/dash_keys.sh"
+. "$PLUGIN_DIR/lib/cmd/dash_pr.sh"
 . "$PLUGIN_DIR/lib/cmd/admin.sh"
 
 # every cmd_<name> function is the command <name>: adding one needs no list here

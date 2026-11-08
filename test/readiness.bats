@@ -3,6 +3,22 @@ load helper
 setup() { setup_env; }
 teardown() { teardown_env; }
 
+@test "fixture: clears ambient collie settings but preserves suite inputs" {
+  (
+    export COLLIE_RUN=1 COLLIE_TASK=x COLLIE_UNKNOWN='ambient value'
+    export COLLIE_BASH=/bin/bash COLLIE_TEST_DIAGNOSTICS_DIR="$TMP/diagnostics"
+    setup_env
+    [ -z "${COLLIE_RUN+x}" ]
+    [ -z "${COLLIE_TASK+x}" ]
+    [ -z "${COLLIE_UNKNOWN+x}" ]
+    [ "$COLLIE_BASH" = /bin/bash ]
+    [ "$COLLIE_TEST_DIAGNOSTICS_DIR" = "$TMP/diagnostics" ]
+    [ -d "$COLLIE_TEST_DIAGNOSTICS_DIR" ]
+    [ "$COLLIE_STATE_DIR" = "$TMP/state" ]
+    [ -f "$COLLIE_ROOT/bin/collie" ]
+  )
+}
+
 @test "readiness: retries until a delayed completion signal" {
   (sleep 0.2; touch "$TMP/ready") &
   writer=$!

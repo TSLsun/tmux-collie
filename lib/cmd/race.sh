@@ -5,12 +5,12 @@ cmd_race() {
   local id="" count=0 agents="" repo="" model="" effort="" prompt="" base c name branch path agent n child rc=0
   while [ $# -gt 0 ]; do
     case $1 in
-      -n) count=${2:? -n needs a count}; shift ;;
-      --agent) agents=${2:?--agent needs names}; shift ;;
-      --model) model=${2:?--model needs a name}; shift ;;
-      --effort) effort=${2:?--effort needs a level}; shift ;;
-      -r) repo=${2:? -r needs a repo}; shift ;;
-      -p) prompt=${2:? -p needs a prompt}; shift ;;
+      -n) need_value race "-n needs a count" "${2:-}"; count=$2; shift ;;
+      --agent) need_value race "--agent needs names" "${2:-}"; agents=$2; shift ;;
+      --model) need_value race "--model needs a name" "${2:-}"; model=$2; shift ;;
+      --effort) need_value race "--effort needs a level" "${2:-}"; effort=$2; shift ;;
+      -r) need_value race "-r needs a repo" "${2:-}"; repo=$2; shift ;;
+      -p) need_value race "-p needs a prompt" "${2:-}"; prompt=$2; shift ;;
       -*) die "race: unknown option $1" ;;
       *) [ -z "$id" ] || die "race: too many arguments"; id=$1 ;;
     esac
@@ -21,8 +21,7 @@ cmd_race() {
   task_id "$id"
   [[ $count =~ ^[2-9]$ ]] || die "race: -n must be 2..9"
   command -v tmux >/dev/null || die "race: tmux required"
-  local d="$TASKS_DIR/$id" firstc="" firstb="" firstp="" firstn="" spec="" agents_csv=${agents//,/ } default_agent wtroot setup_backup setup_had_repos=0 tdir="$TASKS_DIR/$id"
-  local -a SETUP_FILES=() SETUP_LINKS=()
+  local d="$TASKS_DIR/$id" firstc="" firstb="" firstp="" firstn="" default_agent wtroot
   if [ -f "$d/events.log" ] && awk -F'\t' '$2 == "race_started" { found=1 } END { exit !found }' "$d/events.log"; then
     die "race: task '$id' already has a race; previous races cannot be reused"
   fi
@@ -48,37 +47,47 @@ cmd_race() {
     [ ! -e "$path" ] && [ ! -L "$path" ] || die "race: $path already exists"
     planned+=("$child" "$branch" "$path")
   done
-  # All paths and refs are checked before the first child is created.
-  log_event "$id" race_started "base=$base repo=$firstn n=$count"
+  # All paths and refs are checked before the first child is created. From
+  # here creation is all-or-nothing: any failure undoes every candidate.
+  local created="" children="" setup_backup setup_had_repos=1 tdir=$d
+  local -a SETUP_FILES=() SETUP_LINKS=() picked_agents=()
+  setup_backup=$(mktemp -d) || return 1
   for ((n=1; n<=count; n++)); do
     child=${planned[(n-1)*3]}; branch=${planned[(n-1)*3+1]}; path=${planned[(n-1)*3+2]}
-    mkdir -p "$TASKS_DIR/$child/repos" || { warn "race: partial creation; retained prior candidates and branches"; return 1; }
-    cp "$d/TASK.md" "$TASKS_DIR/$child/TASK.md" || { warn "race: partial creation; retained prior candidates and branches"; return 1; }
-    printf '%s\t%s\n' "$id" "$n" >"$TASKS_DIR/$child/race.tsv" || { warn "race: partial creation; retained prior candidates and branches"; return 1; }
-    setup_backup=$(mktemp -d) || return 1
-    if ! add_worktree "$firstc" "$path" "$branch" "$base"; then
-      warn "race: partial creation at $child; retained any created exp/* branches and worktrees"
-      rm -rf "$setup_backup"
-      return 1
-    fi
     agent=$default_agent
     [ "${#agent_list[@]}" -eq 0 ] || agent=${agent_list[$(((n-1)%${#agent_list[@]}))]}
-    log_event "$id" race_candidate "task=$child agent=$agent branch=$branch" || return 1
-    printf '%s\t%s\t%s\t%s\n' "$firstn" "$firstc" "$branch" "$path" >"$TASKS_DIR/$child/repos.tsv" || { warn "race: partial creation; retained exp/$child"; rm -rf "$setup_backup"; return 1; }
-    if ! link_worktree "$child" "$firstn" "$firstc" "$branch" "$path"; then
-      warn "race: partial creation; retained exp/$child"
-      rm -rf "$setup_backup"
-      return 1
+    picked_agents+=("$agent")
+    children="$children $child"
+    if ! { mkdir -p "$TASKS_DIR/$child/repos" &&
+      cp "$d/TASK.md" "$TASKS_DIR/$child/TASK.md" &&
+      printf '%s\t%s\n' "$id" "$n" >"$TASKS_DIR/$child/race.tsv"; }; then
+      race_abort "$children"; return 1
     fi
-    rm -rf "$setup_backup"
-    log_event "$child" task_created || return 1
+    if ! add_worktree "$firstc" "$path" "$branch" "$base"; then
+      [ "$CREATED_PARENT" != 1 ] || rmdir "${path%/*}" 2>/dev/null || true
+      race_abort "$children"; return 1
+    fi
+    created="$created$firstc$TAB$path$TAB$branch$TAB$CREATED_BRANCH$TAB$CREATED_PARENT"$'\n'
+    if ! { printf '%s\t%s\t%s\t%s\n' "$firstn" "$firstc" "$branch" "$path" >"$TASKS_DIR/$child/repos.tsv" &&
+      link_worktree "$child" "$firstn" "$firstc" "$branch" "$path" &&
+      log_event "$child" task_created; }; then
+      race_abort "$children"; return 1
+    fi
   done
+  # Every candidate exists; only now does the parent record the race.
+  if ! { setup_snapshot "$d/events.log" &&
+    log_event "$id" race_started "base=$base repo=$firstn n=$count"; }; then
+    race_abort "$children"; return 1
+  fi
+  for ((n=1; n<=count; n++)); do
+    if ! log_event "$id" race_candidate "task=${planned[(n-1)*3]} agent=${picked_agents[n-1]} branch=${planned[(n-1)*3+1]}"; then
+      race_abort "$children"; return 1
+    fi
+  done
+  rm -rf "$setup_backup" || warn "could not remove setup backup $setup_backup"
   for ((n=1; n<=count; n++)); do
     child=${planned[(n-1)*3]}
-    local -a runargs=("$child" --agent "$default_agent")
-    agent=$default_agent
-    [ "${#agent_list[@]}" -eq 0 ] || agent=${agent_list[$(((n-1)%${#agent_list[@]}))]}
-    runargs=("$child" --agent "$agent")
+    local -a runargs=("$child" --agent "${picked_agents[n-1]}")
     [ -z "$model" ] || runargs+=(--model "$model")
     [ -z "$effort" ] || runargs+=(--effort "$effort")
     [ -n "$prompt" ] || prompt="Work independently on this race candidate. Read .collie/TASK.md, complete the task, write .collie/REPORT.md, then run: collie signal done"
@@ -91,6 +100,16 @@ cmd_race() {
   return "$rc"
 }
 
+# Undoes a failed race creation through cmd_race's journal locals: links,
+# exclude edits and the parent's events.log, the exp/* worktrees and
+# branches, then the candidate task dirs.
+race_abort() { # children
+  local child
+  setup_abort
+  for child in $1; do rm -rf "${TASKS_DIR:?}/$child" || warn "could not remove candidate $child"; done
+  warn "race: candidate creation failed; rolled back, nothing was created"
+}
+
 cmd_pick() {
   [ $# -eq 2 ] || die "usage: collie pick <id> <n>"
   local id=$1 n=$2 child d c branch path task_branch head current base repo line candidate
@@ -99,12 +118,11 @@ cmd_pick() {
   child="$id-$n"
   d="$TASKS_DIR/$id"
   [ -f "$TASKS_DIR/$child/TASK.md" ] || die "pick: no candidate '$child'"
-  line=$(awk -F'\t' '$2 == "race_started" { print $3; exit }' "$d/events.log")
-  [ -n "$line" ] || die "pick: task '$id' has no recorded race"
-  base=$(awk -F' ' '{ for(i=1;i<=NF;i++) if($i ~ /^base=/) { sub(/^base=/,"",$i); print $i } }' <<<"$line")
-  repo=$(awk -F' ' '{ for(i=1;i<=NF;i++) if($i ~ /^repo=/) { sub(/^repo=/,"",$i); print $i } }' <<<"$line")
+  line=$(awk -F'\t' "$AWK_KV"'$2 == "race_started" { print $3 "\t" kv("base") "\t" kv("repo"); exit }' "$d/events.log")
+  [ -n "${line%%"$TAB"*}" ] || die "pick: task '$id' has no recorded race"
+  IFS=$TAB read -r line base repo <<<"$line"
   [ -n "$base" ] && [ -n "$repo" ] || die "pick: malformed race metadata"
-  candidate=$(awk -F'\t' -v wanted="$child" '$2=="race_candidate" { if(index($3,"task=" wanted " ") || $3 ~ ("task=" wanted "$")) found=1 } END { print found }' "$d/events.log")
+  candidate=$(awk -F'\t' -v wanted="$child" "$AWK_KV"'$2 == "race_candidate" && kv("task") == wanted { found = 1 } END { print found }' "$d/events.log")
   [ "$candidate" = 1 ] || die "pick: '$child' is not a candidate of '$id'"
   local name _
   while IFS=$TAB read -r name c task_branch path; do [ "$name" = "$repo" ] && break; done <"$d/repos.tsv"
@@ -127,6 +145,6 @@ cmd_pick() {
   commit=$(git -C "$path" rev-parse HEAD) || return 1
   log_event "$id" race_picked "n=$n task=$child commit=$commit"
   printf 'picked %s (%s); candidates remain on exp/* branches\n' "$child" "$commit"
-  awk -F'\t' '$2 == "race_candidate" { n=split($3,a," "); for(i=1;i<=n;i++) if(a[i] ~ /^task=/) { sub(/^task=/,"",a[i]); print "hint: collie archive " a[i] } }' "$d/events.log"
+  awk -F'\t' "$AWK_KV"'$2 == "race_candidate" && kv("task") != "" { print "hint: collie archive " kv("task") }' "$d/events.log"
 }
   

@@ -120,6 +120,10 @@ Dashboard order: `answer` > `reply` > `findings` > `review` > `stalled` > `worki
 it sorts). The dashboard shows them in groups (needs you, active, todo); tab
 switches to grouping by priority or repo, keeping this order inside a group.
 
+Dashboard rows, layout and previews live in `lib/cmd/dash.sh`; key and action
+dispatch in `lib/cmd/dash_keys.sh`; PR and conflict caches in
+`lib/cmd/dash_pr.sh`. `bin/collie` sources all three.
+
 ### 3.4 Files
 
 ```
