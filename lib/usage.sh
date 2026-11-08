@@ -38,6 +38,7 @@ agents:
   run [<id>]          start an agent in a new window of the task session
   handoff [<id>]      continue a claude/codex run with the other agent
   send <id> <text>    type into an idle or waiting agent run and submit
+  ci [<id>] [--send]  failing CI logs of its PRs; --send tells its agent
   pause <id>          ask an idle agent run to pause and leave RESUME.md
   adopt [<id>] [-y]   restart a hand-started agent under collie run
   restore [<id>] [-n] restart the agents lost with the tmux server
@@ -525,6 +526,30 @@ gone); 1 other errors, e.g. several live runs without --run.
   collie send fix-retry --run 2 --wait -f review.md
 EOF
       ;;
+    ci)
+      cat <<'EOF'
+usage: collie ci [<id>] [--lines N] [--send [--run N] [--wait]]
+
+For each open PR of the task's repos: the failing checks (name, URL) and, for
+GitHub Actions, the end of each failed job's log (`gh run view --log-failed`)
+without timestamps or ANSI escapes. Cancelled and timed-out checks are listed
+as "no result, rerun" with the `gh run rerun` command: they are not failures.
+
+  --lines N       log lines kept per job (default 80)
+  --send          when a check fails, write the report to .collie/CI.md and
+                  tell the agent run to read it, through `collie send`
+  --run N         with --send: run N, as in `collie send`
+  --wait          with --send: wait for the agent's turn to end
+
+Never starts a run; only cancelled checks send nothing.
+Exit 0 no failing checks; 2 pending and none failing; 3 at least one failing;
+1 errors (no gh, no open PR). With --send and a failing check, as `collie send`:
+0 sent; 2 the agent is working; 3 no live run; 1 other errors.
+
+  collie ci fix-retry
+  collie ci fix-retry --send --wait
+EOF
+      ;;
     pause)
       cat <<'EOF'
 usage: collie pause <id> [-r repo | --run N] [-p request | -f file]
@@ -652,7 +677,7 @@ EOF
 }
 
 # the public commands, in overview order
-HELP_COMMANDS='new add drop ls brief show history log edit go dash set review verify spike race pick gc sync done archive reopen run handoff send pause adopt restore wait signal state status doctor repos workspaces'
+HELP_COMMANDS='new add drop ls brief show history log edit go dash set review verify spike race pick gc sync done archive reopen run handoff send ci pause adopt restore wait signal state status doctor repos workspaces'
 
 cmd_help() {
   local c
