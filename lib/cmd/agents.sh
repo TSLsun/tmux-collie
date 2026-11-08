@@ -192,16 +192,8 @@ cmd_handoff() {
     die "handoff: --note needs a readable, nonempty note file"
   fi
   d="$TASKS_DIR/$id"
-  source=$(awk -F'\t' -v r="$from" '
-    $2 == "run_started" {
-      n = split($3, a, " "); run = agent = repo = ""
-      for (i = 1; i <= n; i++) {
-        if (index(a[i], "run=") == 1) run = substr(a[i], 5)
-        if (index(a[i], "agent=") == 1) agent = substr(a[i], 7)
-        if (index(a[i], "repo=") == 1) repo = substr(a[i], 6)
-      }
-      if (run == r) { print agent "\t" repo; exit }
-    }' "$d/events.log")
+  source=$(awk -F'\t' -v r="$from" "$AWK_KV"'
+    $2 == "run_started" && kv("run") == r { print kv("agent") "\t" kv("repo"); exit }' "$d/events.log")
   [ -n "$source" ] || die "handoff: source run $from does not belong to task '$id'"
   IFS=$TAB read -r source_agent source_repo <<<"$source"
   case $source_agent in claude | codex) ;; *) die "handoff: source run must use claude or codex" ;; esac
@@ -245,11 +237,7 @@ cmd_handoff() {
 send_target() { # id run repo
   local wins=""
   ! has_session "$1" || wins=$(win_states -t "=$1" | awk -F'\t' '$3 != "-" { print $3 "\t" $4 "\t" $5 "\t" $2 }')
-  awk -F'\t' -v want="$2" -v repo="$3" '
-    function kv(k,  a, i, n) {
-      n = split($3, a, " ")
-      for (i = 1; i <= n; i++) if (index(a[i], k "=") == 1) return substr(a[i], length(k) + 2)
-    }
+  awk -F'\t' -v want="$2" -v repo="$3" "$AWK_KV"'
     FNR == NR { if ($1 != "") { line[$1] = $0; st[$1] = $3; order[++m] = $1 }; next }
     $2 == "run_started" { r = kv("run"); known[r] = 1; rp[r] = kv("repo"); ag[r] = kv("agent") }
     END {
@@ -431,11 +419,7 @@ lost_runs() { # id current-server-pid
     up=1
     wins=$(win_states -t "=$1" | cut -f3)
   fi
-  awk -F'\t' -v srv="$2" -v up="$up" '
-    function kv(k,  a, i, n) {
-      n = split($3, a, " ")
-      for (i = 1; i <= n; i++) if (index(a[i], k "=") == 1) return substr(a[i], length(k) + 2)
-    }
+  awk -F'\t' -v srv="$2" -v up="$up" "$AWK_KV"'
     FNR == NR { seen[$1] = 1; next }
     $2 == "run_started" { r = kv("run"); agent[r] = kv("agent"); repo[r] = kv("repo"); server[r] = kv("server"); order[++n] = r }
     $2 == "run_exited" || $2 == "run_restored" { ended[kv("run")] = 1 }

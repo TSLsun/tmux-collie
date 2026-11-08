@@ -69,11 +69,7 @@ task_runs() {
     wins=$(win_states -t "=$id" | awk -F'\t' '{ print $3 "\t" $4 "\t" $5 "\t" $2 }'; manual_runs "=$id" | cut -f1-4)
   fi
   [ -z "$wins" ] || printf '%s\n' "$wins"
-  awk -F'\t' -v fb="$fallback" '
-    function kv(k,  a, i, n) {
-      n = split($3, a, " ")
-      for (i = 1; i <= n; i++) if (index(a[i], k "=") == 1) return substr(a[i], length(k) + 2)
-    }
+  awk -F'\t' -v fb="$fallback" "$AWK_KV"'
     FNR == NR { seen[$1] = 1; next }
     $2 == "run_started" { r = kv("run"); agent[r] = kv("agent"); order[++n] = r }
     $2 == "run_exited" || $2 == "run_restored" { ended[kv("run")] = 1 }
@@ -99,11 +95,7 @@ run_state() { # id run
 # `sent` (collie send), carried over by restores).
 run_resolve() { # id run
   local l
-  l=$(awk -F'\t' -v r="$2" '
-    function kv(k,  a, i, n) {
-      n = split($3, a, " ")
-      for (i = 1; i <= n; i++) if (index(a[i], k "=") == 1) return substr(a[i], length(k) + 2)
-    }
+  l=$(awk -F'\t' -v r="$2" "$AWK_KV"'
     $2 == "run_signal" && kv("signal") == "done" { d[kv("run")] = 1 }
     $2 == "sent" { d[kv("run")] = 0 }
     $2 == "run_restored" { as[kv("run")] = kv("as"); if (d[kv("run")]) d[kv("as")] = 1 }
@@ -123,11 +115,7 @@ run_history() { # id
     wins=$(win_states -t "=$id" | awk -F'\t' '$3 != "-" { print $3 "\t" $5 "\t" $2 }')
     manual_runs "=$id" | awk -F'\t' '{ print "-\t" $2 "\t-\t" $3 "\t" $4 "\t-\tstarted by hand" }'
   fi
-  awk -F'\t' '
-    function kv(k,  a, i, n) {
-      n = split($3, a, " ")
-      for (i = 1; i <= n; i++) if (index(a[i], k "=") == 1) return substr(a[i], length(k) + 2)
-    }
+  awk -F'\t' "$AWK_KV"'
     function add(r, s) { note[r] = (note[r] == "" ? "" : note[r] ", ") s }
     FNR == NR { if ($1 != "") { st[$1] = $2; win[$1] = $3 }; next }
     $2 == "run_started" { r = kv("run"); if (!(r in t)) order[++n] = r; agent[r] = kv("agent"); repo[r] = kv("repo"); t[r] = $1 }
@@ -193,11 +181,7 @@ task_status() { # id top_state [stored_status]
   fi
   case $st in done | archived) STATUS=$st; return ;; esac
   # scratch runs (run --scratch: reviewers) write no REPORT.md: not counted
-  last=$(awk -F'\t' '
-    function kv(k,  a, i, n) {
-      n = split($3, a, " ")
-      for (i = 1; i <= n; i++) if (index(a[i], k "=") == 1) return substr(a[i], length(k) + 2)
-    }
+  last=$(awk -F'\t' "$AWK_KV"'
     $2 == "run_started" { n++; r[n] = kv("run"); t[n] = $1 }
     $2 == "scratch_created" { s[kv("run")] = 1 }
     END {
@@ -230,11 +214,7 @@ finished_at() { # id
 # The last `collie verify` result per repo, one line each, indented:
 # repo, pass|fail, exit code, time, log path. Prints nothing if never run.
 verify_results() { # id
-  awk -F'\t' -v d="$TASKS_DIR/$1" '
-    function kv(k,  a, i, n) {
-      n = split($3, a, " ")
-      for (i = 1; i <= n; i++) if (index(a[i], k "=") == 1) return substr(a[i], length(k) + 2)
-    }
+  awk -F'\t' -v d="$TASKS_DIR/$1" "$AWK_KV"'
     $2 == "verify" {
       r = kv("repo"); if (!(r in last)) order[++n] = r
       last[r] = kv("result") "  exit " kv("exit") "  " $1 "  " d "/" kv("log")
@@ -265,10 +245,8 @@ verify_blocks() { # task.md dir
 
 # Sets START to the commit a repo's worktree was created at ("" if unknown).
 repo_start() { # dir name
-  START=$(awk -F'\t' -v n="repo=$2 " '
-    $2 == "worktree_created" && index($3, n) == 1 {
-      k = split($3, a, " "); for (i = 1; i <= k; i++) if (index(a[i], "start=") == 1) s = substr(a[i], 7)
-    }
+  START=$(awk -F'\t' -v n="repo=$2 " "$AWK_KV"'
+    $2 == "worktree_created" && index($3, n) == 1 { s = kv("start") }
     END { print s }' "$1/events.log")
 }
 
