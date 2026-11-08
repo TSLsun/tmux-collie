@@ -15,9 +15,21 @@ setup_snapshot() {
 }
 
 setup_abort() {
-  local i path failed=0
+  local i path failed=0 m c to
   for path in ${SETUP_LINKS[@]+"${SETUP_LINKS[@]}"}; do
     rm -f "$path" || warn "could not remove setup link $path"
+  done
+  for m in ${SETUP_UNLINKS[@]+"${SETUP_UNLINKS[@]}"}; do
+    mv "${m#*"$TAB"}" "${m%%"$TAB"*}" || { warn "could not restore link ${m%%"$TAB"*} (kept: ${m#*"$TAB"})"; failed=1; }
+  done
+  # staged worktrees go back in reverse order (main worktree before scratch)
+  i=0
+  [ -z "${SETUP_MOVES+x}" ] || i=${#SETUP_MOVES[@]}
+  while [ "$i" -gt 0 ]; do
+    i=$((i - 1))
+    IFS=$TAB read -r c path to _ <<<"${SETUP_MOVES[$i]}"
+    git --git-dir="$c" worktree move "$to" "$path" ||
+      { warn "could not move worktree $to back to $path"; failed=1; }
   done
   for i in "${!SETUP_FILES[@]}"; do
     path=${SETUP_FILES[$i]}
@@ -41,6 +53,50 @@ setup_link() { # target destination
   fi
   ln -s "$1" "$2" || return 1
   SETUP_LINKS+=("$2")
+}
+
+# Moves a metadata link into the backup; setup_abort moves it back. A
+# missing link is fine.
+setup_unlink() { # path
+  local keep="$setup_backup/link.${#SETUP_UNLINKS[@]}"
+  if [ -L "$1" ]; then
+    mv "$1" "$keep" || return 1
+    SETUP_UNLINKS+=("$1$TAB$keep")
+  elif [ -e "$1" ]; then
+    warn "not a symlink: $1"
+    return 1
+  fi
+}
+
+# Moves a worktree aside (dirty files and all) instead of removing it, so
+# setup_abort can move it back; setup_commit_staged removes it once the
+# transaction is committed. <force> 1 removes it even if dirty.
+setup_stage() { # common path force repo
+  local to="$2.collie-staged.$$"
+  if [ -e "$to" ] || [ -L "$to" ]; then
+    warn "staging path already exists: $to"
+    return 1
+  fi
+  git --git-dir="$1" worktree move "$2" "$to" </dev/null || return 1
+  SETUP_MOVES+=("$1$TAB$2$TAB$to$TAB$3$TAB$4")
+}
+
+# After the commit point: removes the staged worktrees, logging each. One that
+# cannot be removed is kept where it was staged, with a warning: the commit
+# stands, and nothing in it is lost.
+setup_commit_staged() { # id
+  local m c from to force name args
+  for m in ${SETUP_MOVES[@]+"${SETUP_MOVES[@]}"}; do
+    IFS=$TAB read -r c from to force name <<<"$m"
+    args=(worktree remove)
+    [ "$force" != 1 ] || args+=(--force)
+    [ ! -L "$to/.collie" ] || rm -f "$to/.collie"
+    if git --git-dir="$c" "${args[@]}" "$to"; then
+      log_event "$1" worktree_removed "repo=$name path=$from"
+    else
+      warn "kept the old worktree of $name at $to; check it, then: git --git-dir='$c' worktree remove --force '$to'"
+    fi
+  done
 }
 
 # Creates one worktree; sets CREATED_BRANCH=1 if the branch is new.
@@ -73,9 +129,15 @@ add_worktree() { # common path branch from
 }
 
 # Plans, preflights and creates worktrees for SPECS (newline-separated) into
-# task <id>; all-or-nothing. Appends to repos.tsv and links on success.
+# task <id>; all-or-nothing. Appends to repos.tsv and links on success. With
+# EDIT_SWITCH=1 (add), "repo:branch" of an attached repo switches it: a new
+# worktree on that branch replaces the old one, which is staged aside with its
+# scratch worktrees and removed only after the commit (the old branch stays;
+# EDIT_FORCE=1 skips the dirty/unmerged checks). Sets NEW_PATHS, and
+# OLD_PATHS to the worktrees switched away from.
 create_repos() { # id default_branch from specs
-  local id=$1 default_branch=$2 from=$3 specs=$4 tdir plan="" spec branch path dup n
+  local id=$1 default_branch=$2 from=$3 specs=$4 tdir plan="" spec branch path n
+  local row oc ob op busy="" busy_read=0
   tdir="$TASKS_DIR/$id"
 
   while IFS= read -r spec; do
@@ -83,24 +145,36 @@ create_repos() { # id default_branch from specs
     resolve_spec "$spec"
     branch=${SPEC_BRANCH:-$default_branch}
     path="$R_ROOT/${branch//\//-}"
-    dup=0
-    case $'\n'$plan in *$'\n'"$R_NAME$TAB"*) dup=1 ;; esac
-    if [ -f "$tdir/repos.tsv" ]; then
-      while IFS=$TAB read -r n _; do [ "$n" != "$R_NAME" ] || dup=1; done <"$tdir/repos.tsv"
-    fi
-    [ "$dup" -eq 0 ] || die "repo '$R_NAME' is already part of task '$id'"
-    if [ "$R_FOLDER" = 1 ]; then
+    case $'\n'$plan in *$'\n'"$R_NAME$TAB"*) die "repo '$R_NAME' is given twice" ;; esac
+    row=""
+    [ ! -f "$tdir/repos.tsv" ] ||
+      row=$(awk -F'\t' -v n="$R_NAME" '$1 == n { print $2 "\t" $3 "\t" $4; exit }' "$tdir/repos.tsv")
+    if [ -n "$row" ]; then
+      { [ "${EDIT_SWITCH:-0}" = 1 ] && [ -n "$SPEC_BRANCH" ]; } ||
+        die "repo '$R_NAME' is already part of task '$id'"
+      IFS=$TAB read -r oc ob op <<<"$row"
+      [ "$oc" != - ] || die "add: '$R_NAME' is a folder; it has no branch to switch"
+      [ "$R_FOLDER" = 0 ] && [ "$oc" = "$R_COMMON" ] || die "add: '$R_NAME' in task '$id' is attached from $oc"
+      [ "$ob" != "$branch" ] || die "add: repo '$R_NAME' is already on branch '$branch'"
+      if [ "$busy_read" = 0 ]; then
+        busy=$(busy_paths "$id")
+        busy_read=1
+      fi
+      detach_check "$id" "$R_NAME" "$oc" "$ob" "$op" "${EDIT_FORCE:-0}" add "$busy"
+    elif [ "$R_FOLDER" = 1 ]; then
       warn_shared_folder "$id" "$R_ROOT"
-      plan="$plan$R_NAME$TAB-$TAB-$TAB$R_ROOT"$'\n'
+      plan="$plan$R_NAME$TAB-$TAB-$TAB$R_ROOT$TAB-$TAB-"$'\n'
       continue
+    else
+      ob=- op=-
     fi
     checked_out "$R_COMMON" "$R_NAME" "$branch"
     [ ! -e "$path" ] && [ ! -L "$path" ] || die "$path already exists"
-    plan="$plan$R_NAME$TAB$R_COMMON$TAB$branch$TAB$path"$'\n'
+    plan="$plan$R_NAME$TAB$R_COMMON$TAB$branch$TAB$path$TAB$ob$TAB$op"$'\n'
   done <<<"$specs"
 
   local name c b p created="" setup_backup setup_had_repos=0
-  local -a SETUP_FILES=() SETUP_LINKS=()
+  local -a SETUP_FILES=() SETUP_LINKS=() SETUP_UNLINKS=() SETUP_MOVES=()
   [ ! -d "$tdir/repos" ] || setup_had_repos=1
   setup_backup=$(mktemp -d) || return 1
   if ! { mkdir -p "$tdir/repos" &&
@@ -108,7 +182,7 @@ create_repos() { # id default_branch from specs
     setup_abort
     return 1
   fi
-  while IFS=$TAB read -r name c b p; do
+  while IFS=$TAB read -r name c b p ob op; do
     [ -n "$name" ] || continue
     [ "$c" != - ] || continue
     fetch_origin "$c" "$name" || true
@@ -119,17 +193,38 @@ create_repos() { # id default_branch from specs
     fi
     created="$created$c$TAB$p$TAB$b$TAB$CREATED_BRANCH$TAB$CREATED_PARENT"$'\n'
   done <<<"$plan"
-
-  NEW_PATHS=""
-  while IFS=$TAB read -r name c b p; do
-    [ -n "$name" ] || continue
-    NEW_PATHS="$NEW_PATHS${NEW_PATHS:+$'\n'}$p"
-    if ! { link_worktree "$id" "$name" "$c" "$b" "$p" &&
-      printf '%s\t%s\t%s\t%s\n' "$name" "$c" "$b" "$p" >>"$tdir/repos.tsv"; }; then
+  # the switched-away worktrees step aside before anything links the new ones
+  OLD_PATHS=""
+  while IFS=$TAB read -r name c b p ob op; do
+    [ -n "$name" ] && [ "$op" != - ] || continue
+    OLD_PATHS="$OLD_PATHS${OLD_PATHS:+$'\n'}$op"
+    if ! stage_repo "$id" "$name" "$c" "$op" "${EDIT_FORCE:-0}"; then
       setup_abort
-      NEW_PATHS=""
+      OLD_PATHS=""
       return 1
     fi
+  done <<<"$plan"
+
+  NEW_PATHS=""
+  while IFS=$TAB read -r name c b p ob op; do
+    [ -n "$name" ] || continue
+    NEW_PATHS="$NEW_PATHS${NEW_PATHS:+$'\n'}$p"
+    if [ "$op" = - ]; then
+      link_worktree "$id" "$name" "$c" "$b" "$p" &&
+        printf '%s\t%s\t%s\t%s\n' "$name" "$c" "$b" "$p" >>"$tdir/repos.tsv"
+    else
+      # the row keeps its place; written through, so a linked repos.tsv stays linked
+      setup_unlink "$tdir/repos/$name" &&
+        log_event "$id" repo_switched "repo=$name from=$ob branch=$b path=$p old=$op" &&
+        link_worktree "$id" "$name" "$c" "$b" "$p" &&
+        awk -F'\t' -v n="$name" -v b="$b" -v p="$p" 'BEGIN { OFS = "\t" } $1 == n { $3 = b; $4 = p } { print }' \
+          "$tdir/repos.tsv" >"$setup_backup/repos.tsv" &&
+        cat "$setup_backup/repos.tsv" >"$tdir/repos.tsv"
+    fi || {
+      setup_abort
+      NEW_PATHS="" OLD_PATHS=""
+      return 1
+    }
   done <<<"$plan"
   if [ "$#" -gt 4 ]; then
     if ! { setup_snapshot "$tdir/TASK.md" &&
@@ -140,6 +235,8 @@ create_repos() { # id default_branch from specs
     fi
   fi
   rm -rf "$setup_backup" || warn "could not remove setup backup $setup_backup"
+  # committed: only now are the old worktrees removed
+  setup_commit_staged "$id"
   return 0
 }
 
@@ -286,4 +383,68 @@ scratch_remove() { # id
       warn "could not remove scratch worktree $p"
     fi
   done < <(scratch_list "$d")
+}
+
+# --- detaching a repo (drop, add -r repo:branch) ----------------------------
+
+# Where the task's working or waiting agent runs are: their windows'
+# @collie_path, one per line.
+busy_paths() { # id
+  local st wid
+  while IFS=$TAB read -r _ _ st wid; do
+    case $st in working | waiting) ;; *) continue ;; esac
+    [ -n "$wid" ] && [ "$wid" != - ] || continue
+    tmux show-option -wqv -t "$wid" @collie_path 2>/dev/null || true
+  done < <(task_runs "$1")
+}
+
+# Dies unless a repo (its worktree and scratch worktrees) can leave the task:
+# no busy agent run or current directory in it, nothing locked; without
+# <force>, also a clean worktree and a branch merged into the default base.
+# <busy> is busy_paths' output; <verb> prefixes messages.
+detach_check() { # id name common branch path force verb busy
+  local id=$1 name=$2 c=$3 b=$4 p=$5 force=$6 v=$7 busy=$'\n'$8$'\n' here r sn sp gd
+  here=$(pwd -P)/
+  case $here in "$p/"*) die "currently inside $p; cd elsewhere first" ;; esac
+  case $busy in *$'\n'"$p"$'\n'*) die "$v: an agent run is working or waiting in '$name'" ;; esac
+  [ "$c" != - ] || return 0
+  [ -d "$p" ] || die "$v: missing worktree $p"
+  [ ! -e "$p/.collie" ] || [ -L "$p/.collie" ] || die "$v: $p/.collie is not a symlink"
+  gd=$(git -C "$p" rev-parse --absolute-git-dir) || die "$v: not a git worktree: $p"
+  [ ! -e "$gd/locked" ] || die "$v: worktree is locked: $p"
+  while IFS=$TAB read -r r sn sp; do
+    [ "$sn" = "$name" ] && [ -n "$sp" ] && [ -d "$sp" ] || continue
+    case $here in "$sp/"*) die "currently inside $sp; cd elsewhere first" ;; esac
+    case $busy in *$'\n'"$sp"$'\n'*) die "$v: run $r is working or waiting in scratch worktree $sp" ;; esac
+    gd=$(git -C "$sp" rev-parse --absolute-git-dir) || die "$v: invalid scratch worktree $sp"
+    [ ! -e "$gd/locked" ] || die "$v: scratch worktree is locked: $sp"
+  done < <(scratch_list "$TASKS_DIR/$id")
+  [ "$force" != 1 ] || return 0
+  [ -z "$(git -C "$p" status --porcelain)" ] || die "$v: refusing dirty worktree $p (use --force)"
+  git --git-dir="$c" show-ref -q --verify "refs/heads/$b" || return 0
+  fetch_origin "$c" "$name" || true
+  default_base "$c" || true
+  merged_into "$c" "$b" "$BASE" || die "$v: refusing unmerged branch '$b' in $name (use --force; the branch is kept)"
+}
+
+# Stages a repo's scratch worktrees (always removable), then its worktree;
+# see setup_stage.
+stage_repo() { # id name common path force
+  local r sn sp
+  while IFS=$TAB read -r r sn sp; do
+    [ "$sn" = "$2" ] && [ -n "$sp" ] && [ -d "$sp" ] || continue
+    setup_stage "$3" "$sp" 1 "$2" || return 1
+  done < <(scratch_list "$TASKS_DIR/$1")
+  setup_stage "$3" "$4" "$5" "$2"
+}
+
+# Closes the task's plain (non-agent) windows at the given paths.
+close_windows() { # id paths
+  local wid wp r
+  has_session "$1" || return 0
+  tmux list-windows -t "=$1" -F '#{window_id}|#{@collie_path}|#{@collie_run}' |
+    while IFS='|' read -r wid wp r; do
+      [ -n "$wp" ] && [ -z "$r" ] || continue
+      case $'\n'$2$'\n' in *$'\n'"$wp"$'\n'*) tmux kill-window -t "$wid" ;; esac
+    done
 }
