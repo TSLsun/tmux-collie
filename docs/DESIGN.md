@@ -46,6 +46,14 @@ parallel across several repositories.
    (`collie doctor`), never rewritten.
 6. **No runtime dependencies** beyond bash 3.2, git, tmux and fzf.
 
+Library helper out-variables and shared process state are inventoried at the top
+of `lib/runtime.sh` without initializing them: Bash 3.2 `declare` changes unset
+to set. Helpers document output variables at their definitions. Worktree setup
+helpers also use the calling transaction's dynamically scoped journal locals,
+documented in
+`lib/worktree.sh`. ShellCheck checks library files individually, so intentional
+cross-file uses have targeted suppressions at the affected statements.
+
 ### Non-goals
 
 - Not an agent; never calls an LLM API.
