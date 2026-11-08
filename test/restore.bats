@@ -104,6 +104,36 @@ agent_windows() { tmux list-windows -t "=$1" -F '#{@collie_run}' | grep -c .; }
   [ "$output" = "x run 3: claude in A: --resume $id1"$'\n'"x run 4: claude in A: --resume $id2" ]
 }
 
+@test "restore: a removed and re-added repo does not resume its old run" {
+  make_normal_repo B
+  collie add x -r B --no-window
+  collie run x -r A --agent claude
+  wait_for 'sessions_logged 1'
+  server_dies
+  collie drop x -r A
+  collie add x -r A --no-window
+  run collie restore -n x
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"skipped: repo removed"* ]]
+  run collie restore x
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"skipped: repo removed"* ]]
+  ! grep -q "run_restored" "$(task_dir x)/events.log"
+}
+
+@test "restore: a run in a repo switched to another branch is not resumed there" {
+  make_normal_repo B
+  collie add x -r B --no-window
+  collie run x -r A --agent claude
+  wait_for 'sessions_logged 1'
+  server_dies
+  collie add x -r A:other --no-window
+  run collie restore x
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"skipped: repo removed or switched since"* ]]
+  ! grep -q "run_restored" "$(task_dir x)/events.log"
+}
+
 @test "wait: follows a restored run, and its done signal carries over" {
   collie run x --agent claude -p ''
   collie run x --agent claude -p ''
