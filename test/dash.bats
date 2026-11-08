@@ -487,7 +487,7 @@ branch_of() { awk -F'\t' -v r="$2" '$1 == r { print $3 }' "$(task_dir "$1")/repo
   tmux send-keys -t "$p" Enter
   export COLLIE_DASH="$TMP/dash"
   mkdir -p "$COLLIE_DASH"
-  printf x >"$COLLIE_DASH/runs"
+  printf 'x\n' >"$COLLIE_DASH/runs"
   wait_for "tmux capture-pane -p -t '$p' | grep -q dashboard-preview-marker"
   [[ "$(collie _preview 1)" == *dashboard-preview-marker* ]]
   tmux kill-window -t "$p"
