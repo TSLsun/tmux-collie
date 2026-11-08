@@ -439,6 +439,8 @@ the runs a lead starts only need `collie signal done`, which works there.
 | Priority / title | `collie set` | — | — |
 | Task dependencies | `collie set <id> after=…`, `new --after` | — | preview (`after:`, `blocks:`) |
 | Extra repo mid-task | `collie add` | — | — |
+| Switch an attached repo's branch | `collie add <id> -r repo:branch` | — | — |
+| Remove repos, keeping their branches | `collie drop <id> -r repo... [--force]` | — | — |
 | Branch off dirty work | `collie spike` | — | — |
 
 The menu's task entries (`r a e v d x s`) appear only inside a task's session,
@@ -456,6 +458,8 @@ filter, in which every key types; `?` lists every action.
 | Several repos in one task | `collie new <id> -r api -r web`, or `-w <workspace>` |
 | A different branch per repo | `-r api:release/v2` |
 | Add a repo later | `collie add <id> -r infra` |
+| Switch an attached repo to another branch | `collie add <id> -r infra:release/v2` (keeps the old branch; mixes with new `-r`, all-or-nothing) |
+| Remove a repo | `collie drop <id> -r infra` (refuses dirty/unmerged worktrees, active agents, cwd inside, or last repo; `--force` skips dirty/unmerged checks) |
 | A second agent on the same task | `collie run <id> --agent codex [-r repo]` (one window per run) |
 | Continue another agent's work with explicit context | `collie handoff <id> --from <run> --agent <claude\|codex> --note <file>` |
 | Send a follow-up, fix or pause request to a running agent | `collie send <id> [--run N] [--wait] <text>` or `-f <file>` (refuses while it works: exit 2) |

@@ -169,12 +169,13 @@ cmd_new() {
 }
 
 cmd_add() {
-  local id="" specs="" from="" window=1
+  local id="" specs="" from="" window=1 EDIT_FORCE=0 EDIT_SWITCH=1
   while [ $# -gt 0 ]; do
     case $1 in
       -r) specs="$specs${2:?-r needs a repo}"$'\n'; shift ;;
       --from) from=${2:?--from needs a ref}; shift ;;
       --no-window) window=0 ;;
+      --force) EDIT_FORCE=1 ;;
       -*) die "add: unknown option $1" ;;
       *) [ -z "$id" ] || die "add: too many arguments"; id=$1 ;;
     esac
@@ -192,7 +193,68 @@ cmd_add() {
       case $'\n'$NEW_PATHS$'\n' in *$'\n'"$p"$'\n'*) open_window "$id" "$name" "$p" ;; esac
     done <"$TASKS_DIR/$id/repos.tsv"
   fi
+  [ -z "$OLD_PATHS" ] || close_windows "$id" "$OLD_PATHS"
 }
+
+# Removes repos from a task, all-or-nothing: each worktree (staged aside with
+# its scratch worktrees, removed after the commit; the branch stays), its
+# links and repos.tsv row. A folder only loses its row and link.
+cmd_drop() {
+  local id="" names="" force=0 n
+  while [ $# -gt 0 ]; do
+    case $1 in
+      -r) n=${2:?-r needs a repo}; names="$names$n"$'\n'; shift ;;
+      --force) force=1 ;;
+      -*) die "drop: unknown option $1" ;;
+      *) [ -z "$id" ] || die "drop: too many arguments"; id=$1 ;;
+    esac
+    shift
+  done
+  task_id "$id"
+  [ -n "$names" ] || die "usage: collie drop [<id>] -r repo... [--force]"
+  local d="$TASKS_DIR/$id" name c b p plan="" busy left
+  busy=$(busy_paths "$id")
+  while IFS= read -r n; do
+    [ -n "$n" ] || continue
+    case $'\n'$plan in *$'\n'"$n$TAB"*) die "drop: repo '$n' is given twice" ;; esac
+    IFS=$TAB read -r name c b p < <(awk -F'\t' -v n="$n" '$1 == n { print; exit }' "$d/repos.tsv") || name=""
+    [ "$name" = "$n" ] || die "drop: repo '$n' is not part of task '$id'"
+    detach_check "$id" "$name" "$c" "$b" "$p" "$force" drop "$busy"
+    plan="$plan$name$TAB$c$TAB$b$TAB$p"$'\n'
+  done <<<"$names"
+  left=$(awk -F'\t' -v drop="${names//$'\n'/ }" 'BEGIN { split(drop, a, " "); for (i in a) gone[a[i]] = 1 } !($1 in gone) { n++ } END { print n + 0 }' "$d/repos.tsv")
+  [ "$left" -gt 0 ] || die "drop: cannot remove the last repo; use done or archive"
+
+  local tdir=$d created="" setup_backup setup_had_repos=1 old=""
+  local -a SETUP_FILES=() SETUP_LINKS=() SETUP_UNLINKS=() SETUP_MOVES=()
+  setup_backup=$(mktemp -d) || return 1
+  if ! { setup_snapshot "$d/repos.tsv" && setup_snapshot "$d/events.log"; }; then
+    setup_abort
+    die "drop: nothing changed"
+  fi
+  while IFS=$TAB read -r name c b p; do
+    [ -n "$name" ] || continue
+    old="$old${old:+$'\n'}$p"
+    if [ "$c" = - ]; then
+      setup_unlink "$d/repos/$name" && log_event "$id" repo_dropped "repo=$name path=$p"
+    else
+      stage_repo "$id" "$name" "$c" "$p" "$force" &&
+        setup_unlink "$d/repos/$name" && log_event "$id" repo_dropped "repo=$name path=$p branch=$b"
+    fi || {
+      setup_abort
+      die "drop: failed; every repo, link and record restored"
+    }
+  done <<<"$plan"
+  if ! { awk -F'\t' -v drop="${names//$'\n'/ }" 'BEGIN { split(drop, a, " "); for (i in a) gone[a[i]] = 1 } !($1 in gone)' \
+    "$d/repos.tsv" >"$setup_backup/repos.tsv" && cat "$setup_backup/repos.tsv" >"$d/repos.tsv"; }; then
+    setup_abort
+    die "drop: failed; every repo, link and record restored"
+  fi
+  rm -rf "$setup_backup" || warn "could not remove setup backup $setup_backup"
+  setup_commit_staged "$id"
+  close_windows "$id" "$old"
+}
+
 
 # Whether a task's REVIEW.md has open findings: it was written after
 # REPORT.md (the implementer's last turn; or there is none) and has an

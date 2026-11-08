@@ -26,6 +26,7 @@ _collie() {
   cmds=(
     'new:create a task'
     'add:attach repos to a task'
+    'drop:remove a repo from a task'
     'ls:list tasks'
     'brief:what waits on you'
     'show:show a task'
@@ -90,7 +91,9 @@ _collie() {
     pick) compadd {1..9}; _collie_tasks ;;
     verify) compadd -- -r; _collie_tasks ;;
     run) compadd -- --agent --model --effort -r -p -s --scratch; _collie_tasks ;;
-    add | edit | go | adopt | done | archive) _collie_tasks ;;
+    edit | go | adopt | done | archive) _collie_tasks ;;
+    add) compadd -- -r --from --no-window --force; _collie_tasks ;;
+    drop) compadd -- -r --force; _collie_tasks ;;
     help) compadd concepts workflows all; _describe command cmds ;;
   esac
 }

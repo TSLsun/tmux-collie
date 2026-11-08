@@ -12,7 +12,8 @@ usage: collie <command> [args]
 
 tasks:
   new [<id>]          create a task: branch + worktree per repo, tmux session
-  add [<id>] -r repo  attach more repos to an existing task
+  add [<id>] -r repo  attach repos, or switch one's branch (-r repo:branch)
+  drop [<id>] -r repo remove repos from a task, keeping their branches
   ls [-a]             list tasks: id, status, priority, session, agent, needs
   brief               what waits on you: one line per task, with the command
   show [<id>]         fields, TASK.md, repos, agent runs, events, REPORT.md
@@ -206,11 +207,31 @@ EOF
     add)
       cat <<'EOF'
 usage: collie add [<id>] -r repo[:branch]... [--from ref] [--no-window]
+                  [--force]
 
-Attach more repos to an existing task: a branch + worktree and a session
-window for each. Fetches origin first.
+Attach repos to an existing task, or switch an attached repo to another (new
+or existing) branch with -r repo:branch; several -r, attaching and switching
+mixed, apply all-or-nothing. A switch replaces the repo's worktree (and its
+scratch worktrees) but keeps the old branch; it refuses a working or waiting
+agent or the current directory there, and, unless --force, a dirty worktree
+or a branch not merged into the default branch. --from is the base of new
+branches. Fetches origin first.
 
   collie add deploy-v2 -r infra
+  collie add deploy-v2 -r infra:release/v2 -r web
+EOF
+      ;;
+    drop)
+      cat <<'EOF'
+usage: collie drop [<id>] -r repo... [--force]
+
+Remove repos from a task, all-or-nothing: the worktree and its scratch
+worktrees, links and repos.tsv row; the branch is kept. A folder only loses
+its row and link. Refuses a working or waiting agent or the current
+directory in it, and the task's last repo (use done or archive); unless
+--force, also a dirty worktree or a branch not merged into the default branch.
+
+  collie drop deploy-v2 -r infra
 EOF
       ;;
     race)
@@ -631,7 +652,7 @@ EOF
 }
 
 # the public commands, in overview order
-HELP_COMMANDS='new add ls brief show history log edit go dash set review verify spike race pick gc sync done archive reopen run handoff send pause adopt restore wait signal state status doctor repos workspaces'
+HELP_COMMANDS='new add drop ls brief show history log edit go dash set review verify spike race pick gc sync done archive reopen run handoff send pause adopt restore wait signal state status doctor repos workspaces'
 
 cmd_help() {
   local c

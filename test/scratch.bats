@@ -78,6 +78,32 @@ A  junk" ]
   [ ! -e "$w.scratch-1" ] && [ ! -e "$w" ]
 }
 
+@test "drop and branch switch refuse an active scratch run" {
+  make_normal_repo B
+  cd "$TMP"
+  collie new x -r A -r B --no-window
+  collie run x -r A --scratch --agent sleep -- 300
+  hook x working
+  run collie drop x -r A --force
+  [ "$status" -ne 0 ]
+  [ -d "$TMP/repos/A/feat-x.scratch-1" ]
+  run collie add x -r A:other --force
+  [ "$status" -ne 0 ]
+  [ -d "$TMP/repos/A/feat-x" ]
+  hook x idle
+  git -C "$TMP/repos/A" worktree lock "$TMP/repos/A/feat-x.scratch-1"
+  run collie drop x -r A
+  [ "$status" -ne 0 ]
+  [ -d "$TMP/repos/A/feat-x" ]
+  run collie add x -r A:other
+  [ "$status" -ne 0 ]
+  [ -d "$TMP/repos/A/feat-x" ]
+  git -C "$TMP/repos/A" worktree unlock "$TMP/repos/A/feat-x.scratch-1"
+  collie drop x -r A
+  [ ! -e "$TMP/repos/A/feat-x.scratch-1" ]
+  git -C "$TMP/repos/A" show-ref -q --verify refs/heads/feat/x
+}
+
 @test "run --scratch: a folder has no branch to check out" {
   mkdir "$TMP/notes"
   collie new f -r "$TMP/notes" --no-window
