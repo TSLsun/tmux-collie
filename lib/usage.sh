@@ -38,6 +38,7 @@ agents:
   run [<id>]          start an agent in a new window of the task session
   handoff [<id>]      continue a claude/codex run with the other agent
   send <id> <text>    type into an idle or waiting agent run and submit
+  peek [<id>]         read the tail of an agent run's pane without switching
   pause <id>          ask an idle agent run to pause and leave RESUME.md
   adopt [<id>] [-y]   restart a hand-started agent under collie run
   restore [<id>] [-n] restart the agents lost with the tmux server
@@ -54,7 +55,7 @@ discovery:
   workspaces          named repo sets from ~/.config/collie/workspaces
 
 Omitted <id> falls back to $COLLIE_TASK, set in every pane of a task session.
-Read-only: ls brief show history review dash status doctor repos workspaces,
+Read-only: ls brief show history review dash peek status doctor repos workspaces,
 and -n.
 Status: todo -> active -> review -> done | archived (derived; see concepts).
 Agents: read .collie/TASK.md first, write .collie/REPORT.md when finished.
@@ -500,6 +501,24 @@ link between both runs. The source agent keeps running: stop it first if
 edits could conflict. No branches are merged.
 
   collie handoff fix-retry --from 1 --agent codex --note handoff.md
+EOF
+      ;;
+    peek)
+      cat <<'EOF'
+usage: collie peek [<id>] [--run N | -r repo] [-n lines]
+
+Print the last lines of a live run's pane without switching windows. Wrapped
+lines are joined and trailing blank lines dropped; default: 40 lines.
+The target is the task's only live run; with several, pick one.
+
+  -r repo         the only live run in that repo
+  --run N         run N (numbers from `collie show`)
+  -n lines        number of pane lines to capture
+
+Read-only: does not log or store the screen, which may contain secrets.
+Exit 0 printed; 3 no live pane; 1 other errors.
+
+  collie peek fix-retry --run 2 -n 15
 EOF
       ;;
     send)

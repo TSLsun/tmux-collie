@@ -275,6 +275,16 @@ recorded, so they are not restored.
 `--model`/`--effort`, codex `-m`/`-c model_reasoning_effort`); other agents
 refuse them.
 
+### Reading a run's screen
+
+`collie peek [<id>] [--run N | -r repo] [-n lines]` prints the last 40
+lines of a live pane by default, joining wrapped lines and dropping trailing
+blank lines. It works in any run state and does not switch windows, log an
+event, or store the screen (which may contain secrets). As with `send`,
+multiple live runs require a selection. Exit codes: `0` printed, `3` no live
+pane, `1` other errors. The dashboard run preview also shows the tail of a
+live pane.
+
 ### Waiting for a run
 
 A script or coordinating agent can block on a run instead of watching it:
@@ -418,6 +428,7 @@ the runs a lead starts only need `collie signal done`, which works there.
 | Run default agent | `collie run` | `R` | `R` or `?` `R` |
 | Continue with another agent | `collie handoff` | — | `u`, then `h` on the run (note in `$EDITOR`) |
 | Type into an idle agent | `collie send` | — | — |
+| Read an agent screen without switching | `collie peek` | — | run preview |
 | Pause an idle agent (leaves RESUME.md) | `collie pause` | — | — |
 | Adopt hand-started agent | `collie adopt` | `a` | `?` `a` |
 | Restore agents after the server died | `collie restore` | — | — |
@@ -463,6 +474,7 @@ filter, in which every key types; `?` lists every action.
 | A second agent on the same task | `collie run <id> --agent codex [-r repo]` (one window per run) |
 | Continue another agent's work with explicit context | `collie handoff <id> --from <run> --agent <claude\|codex> --note <file>` |
 | Send a follow-up, fix or pause request to a running agent | `collie send <id> [--run N] [--wait] <text>` or `-f <file>` (refuses while it works: exit 2) |
+| Read a running agent's screen | `collie peek <id> [--run N \| -r repo] [-n lines]` |
 | Pause an agent and pick up later | `collie pause <id> [--run N] [-p <request>]`: it writes `.collie/RESUME.md`, which `show` and the preview mention and the next `run`, `handoff` or `adopt` reads |
 | The agent to push, open a PR and watch CI | `collie new --ship` or `set -g @collie-ship on` |
 | Move uncommitted experiments out of the way | `collie spike <id>` inside the worktree (new `exp/<id>` task, tracked changes only) |

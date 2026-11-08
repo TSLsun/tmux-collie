@@ -57,6 +57,7 @@ works in both.
 | `collie wait <id> --run N --done --timeout S` | until run N signalled done and is idle: 0 done, 1 timeout, 2 run gone without signal |
 | `collie signal done` | run by the agent as the last step of each turn; put it in every prompt |
 | `collie send <id> --run N -f <file>` | type into run N's own conversation: 0 sent, 2 still working, 3 no live run |
+| `collie peek <id> --run N` | read a live run's screen without switching; 3 means no live pane |
 | `collie log <phase> <decision> <why> <evidence> <result>` | append a row to `.collie/decisions.tsv` |
 | `collie verify <id>` | run TASK.md `## Verify` blocks in the worktree; non-zero on failure |
 | `collie review <id>` | commits since the branch started, diff stat, dirty files, REPORT.md |
@@ -106,10 +107,10 @@ N=<run number>
 collie wait <id> --run $N --done --timeout 3600
 ```
 
-- exit 1, early: a first run in a new folder can sit at a trust dialog
-  (claude folder trust; codex folder trust, then "Hooks need review"); no
-  hook fires there, so the state stays `working`. Tell the human which
-  window waits.
+- exit 1, early: use `collie peek <id> --run $N` to distinguish real work
+  from a first-run trust dialog (claude folder trust; codex folder trust,
+  then "Hooks need review"). No hook fires at the dialog, so state stays
+  `working`; if the dialog is visible, tell the human which window waits.
 - exit 1, later: `collie show`; still working → wait again; waiting on a
   question inside the contract → answer with `collie send`; else stop.
 - exit 2: the run is gone; `collie handoff --from $N` or a new run, logged.
