@@ -69,6 +69,7 @@ collie run --agent aider -- --model x  # any command works (no state hooks)
 collie handoff deploy-v2 --from 1 --agent omp --note handoff.md
                                       # new conversation, preserving run 1's context
 collie send deploy-v2 'rerun the tests'  # type into its idle agent (--run N, --wait, -f file)
+collie ci deploy-v2 --send             # failing CI logs to .collie/CI.md, then tell its agent
 collie pause deploy-v2                 # idle agent saves work, leaves .collie/RESUME.md
 collie run deploy-v2 --model opus --effort high  # per-run model/effort (claude, codex, omp)
 collie run deploy-v2 --agent codex --scratch -p 'review ...'  # own worktree at the branch head
