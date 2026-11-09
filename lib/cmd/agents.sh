@@ -291,7 +291,7 @@ cmd_peek() {
   IFS=$TAB read -r run agent st win <<<"$t"
   pane=$(agent_pane "$id" "$win")
   [ -n "$pane" ] || { warn "peek: pane of run $run ($agent) is gone"; exit 3; }
-  screen=$(tmux capture-pane -p -J -t "$pane" -S "-$lines" 2>/dev/null) || {
+  screen=$(tmux capture-pane -p -J -t "$pane" -S - 2>/dev/null) || {
     warn "peek: pane of run $run ($agent) is gone"; exit 3
   }
   [ -z "$screen" ] || printf '%s\n' "$screen" | tail -n "$lines"

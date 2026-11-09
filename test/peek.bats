@@ -30,6 +30,22 @@ teardown() { teardown_env; }
   [ "$(wc -l <"$(task_dir p)/events.log")" -eq "$before" ]
 }
 
+@test "peek: wrapped history returns exactly the requested complete lines" {
+  collie new p
+  collie run p
+  pane=$(run_pane p)
+  long=$(printf '%0400d' 0)
+  for i in $(seq 1 12); do
+    tmux send-keys -t "$pane" -l "$long"
+    tmux send-keys -t "$pane" Enter
+  done
+  wait_for "[ \"\$(tmux capture-pane -p -J -S - -t '$pane' | grep -c '^$long$')\" -ge 12 ]"
+  run --separate-stderr collie peek p -n 4
+  [ "$status" -eq 0 ]
+  [ "${#lines[@]}" -eq 4 ]
+  for line in "${lines[@]}"; do [ "$line" = "$long" ]; done
+}
+
 @test "peek: -n, --run, and repo targeting" {
   collie new p -r A -r B
   collie run p -r A
