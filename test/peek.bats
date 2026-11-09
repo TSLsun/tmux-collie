@@ -138,6 +138,13 @@ teardown() { teardown_env; }
   [[ "$output" != *wrong-screen-marker* ]]
 }
 
+@test "peek: oversized line counts exit 1" {
+  collie new p
+  run --separate-stderr collie peek p -n 99999999999
+  [ "$status" -eq 1 ]
+  [[ "$stderr" == *"must not exceed 100000"* ]]
+}
+
 @test "peek: reads panes regardless of run state" {
   collie new p
   collie run p

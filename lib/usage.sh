@@ -513,7 +513,7 @@ The target is the task's only live run; with several, pick one.
 
   -r repo         the only live run in that repo
   --run N         run N (numbers from `collie show`)
-  -n lines        number of pane lines to capture
+  -n lines        number of pane lines to capture (maximum 100000)
 
 Read-only: does not log or store the screen, which may contain secrets.
 Exit 0 printed; 3 no live pane; 1 other errors.

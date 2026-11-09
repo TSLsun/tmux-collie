@@ -277,6 +277,7 @@ cmd_peek() {
   task_id "$id"
   [[ $run =~ ^[1-9][0-9]*$ ]] || [ -z "$run" ] || die "peek: --run needs a run number"
   [[ $lines =~ ^[1-9][0-9]*$ ]] || die "peek: -n needs a positive line count"
+  [ "${#lines}" -le 6 ] && [ "$lines" -le 100000 ] || die "peek: -n must not exceed 100000"
   [ -z "$run" ] || [ -z "$repo" ] || die "peek: give -r or --run, not both"
   command -v tmux >/dev/null || die "peek: tmux required"
   if [ -n "$repo" ] && ! awk -F'\t' -v r="$repo" '$1 == r { f = 1 } END { exit !f }' "$TASKS_DIR/$id/repos.tsv"; then

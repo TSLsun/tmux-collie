@@ -281,8 +281,9 @@ refuse them.
 lines of a live pane by default, joining wrapped lines and dropping trailing
 blank lines. It works in any run state and does not switch windows, log an
 event, or store the screen (which may contain secrets). As with `send`,
-multiple live runs require a selection. Exit codes: `0` printed, `3` no live
-pane, `1` other errors. The dashboard run preview also shows the tail of a
+multiple live runs require a selection. `-n` accepts up to 100000 lines.
+Exit codes: `0` printed, `3` no live pane, `1` other errors. The dashboard run
+preview also shows the tail of a
 live pane.
 
 ### Waiting for a run
