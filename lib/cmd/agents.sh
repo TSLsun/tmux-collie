@@ -263,7 +263,7 @@ run_target() { # id run repo [include_exited]
 # Prints the last N joined lines from a live run pane, without logging or
 # changing tmux state. Runs in any state are readable.
 cmd_peek() {
-  local id="" repo="" run="" lines=40 t agent st win pane screen
+  local id="" repo="" run="" lines=40 t agent st win pane
   while [ $# -gt 0 ]; do
     case $1 in
       -r) need_value peek "-r needs a repo" "${2:-}"; repo=$2; shift ;;
@@ -291,10 +291,9 @@ cmd_peek() {
   IFS=$TAB read -r run agent st win <<<"$t"
   pane=$(agent_pane "$id" "$win")
   [ -n "$pane" ] || { warn "peek: pane of run $run ($agent) is gone"; exit 3; }
-  screen=$(tmux capture-pane -p -J -t "$pane" -S - 2>/dev/null) || {
+  pane_tail "$pane" "$lines" || {
     warn "peek: pane of run $run ($agent) is gone"; exit 3
   }
-  [ -z "$screen" ] || printf '%s\n' "$screen" | tail -n "$lines"
 }
 
 # Types text into the agent of a collie run while it is idle or waiting, and

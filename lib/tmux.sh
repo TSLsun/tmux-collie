@@ -56,6 +56,21 @@ ensure_session() {
 
 tmux_opt() { tmux show-options -gqv "$1" 2>/dev/null || true; }
 
+# Print the last N joined lines, dropping trailing whitespace-only rows.
+pane_tail() { # pane lines
+  local screen
+  screen=$(tmux capture-pane -p -J -t "$1" -S - 2>/dev/null) || return 1
+  [ -n "$screen" ] || return 0
+  printf '%s\n' "$screen" | awk -v n="$2" '
+    { line[NR] = $0 }
+    END {
+      while (NR && line[NR] ~ /^[[:space:]]*$/) NR--
+      first = NR - n + 1
+      if (first < 1) first = 1
+      for (i = first; i <= NR; i++) print line[i]
+    }'
+}
+
 # Types text into a pane and submits it: a line as keys, several lines as one
 # paste (bracketed when the program asked for it, newlines kept as LF, so they
 # do not submit early). A pause before Enter, so agents that detect pastes

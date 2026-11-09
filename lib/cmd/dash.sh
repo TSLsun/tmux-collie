@@ -356,7 +356,7 @@ cmd__target() {
 # window): agent, repo, state, start, session, handoff/restore links, and the
 # handoff packet it came from.
 run_preview() { # id run|window
-  local d="$TASKS_DIR/$1" r pane screen
+  local d="$TASKS_DIR/$1" r pane
   r=$(run_history "$1" | awk -F'\t' -v k="$2" '$1 == k || ($1 == "-" && $5 == k) { print; exit }')
   [ -n "$r" ] || return 0
   awk -F'\t' -v ev="$d/events.log" "$AWK_KV"'
@@ -383,8 +383,7 @@ run_preview() { # id run|window
   case $(cut -f2 <<<"$r") in claude | codex) [ "${2#@}" != "$2" ] || echo "h: hand off to $([ "$(cut -f2 <<<"$r")" = claude ] && echo codex || echo claude)" ;; esac
   pane=$(agent_pane "$1" "$(cut -f5 <<<"$r")")
   [ -n "$pane" ] || return 0
-  screen=$(tmux capture-pane -p -J -t "$pane" 2>/dev/null) || return 0
-  [ -z "$screen" ] || printf '%s\n' "$screen" | tail -n 15
+  pane_tail "$pane" 15 || true
 }
 
 # The task's title, status and priority, its live agents and last event's

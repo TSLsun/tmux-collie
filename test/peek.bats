@@ -46,6 +46,25 @@ teardown() { teardown_env; }
   for line in "${lines[@]}"; do [ "$line" = "$long" ]; done
 }
 
+@test "peek and dashboard trim whitespace-only trailing rows" {
+  collie new p
+  collie run p
+  pane=$(run_pane p)
+  tmux send-keys -t "$pane" trim-marker Enter
+  tmux send-keys -t "$pane" -l '      '
+  tmux send-keys -t "$pane" Enter
+  wait_for "tmux capture-pane -p -J -t '$pane' | grep -q trim-marker"
+  run --separate-stderr collie peek p -n 1
+  [ "$status" -eq 0 ]
+  [ "$output" = trim-marker ]
+  export COLLIE_DASH="$TMP/dash"
+  mkdir -p "$COLLIE_DASH"
+  printf 'p\n' >"$COLLIE_DASH/runs"
+  run collie _preview 1
+  [ "$status" -eq 0 ]
+  [ "${lines[${#lines[@]}-1]}" = trim-marker ]
+}
+
 @test "peek: -n, --run, and repo targeting" {
   collie new p -r A -r B
   collie run p -r A
