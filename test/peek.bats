@@ -117,6 +117,27 @@ teardown() { teardown_env; }
   [ "$status" -eq 3 ]
 }
 
+@test "gone run never resolves the previous legacy run window" {
+  collie new p --no-window
+  collie run p
+  collie run p
+  p1=$(run_pane p 1)
+  p2=$(run_pane p 2)
+  tmux send-keys -t "$p2" wrong-screen-marker Enter
+  wait_for "tmux capture-pane -p -t '$p2' | grep -q wrong-screen-marker"
+  tmux set-option -wu -t "$p2" @collie_pane
+  tmux kill-window -t "$p1"
+  run --separate-stderr collie peek p --run 1
+  [ "$status" -eq 3 ]
+  [[ "$output" != *wrong-screen-marker* ]]
+  export COLLIE_DASH="$TMP/dash"
+  mkdir -p "$COLLIE_DASH"
+  printf 'p\n' >"$COLLIE_DASH/runs"
+  run collie _preview 1
+  [ "$status" -eq 0 ]
+  [[ "$output" != *wrong-screen-marker* ]]
+}
+
 @test "peek: reads panes regardless of run state" {
   collie new p
   collie run p
