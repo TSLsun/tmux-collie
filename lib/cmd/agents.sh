@@ -577,7 +577,7 @@ cmd__exec() { # id run argv...
   done
   trap : INT
   # `collie signal done` tells its run by these
-  COLLIE_TASK=$id COLLIE_RUN=$run "$@" || code=$?
+  PATH="$PLUGIN_DIR/bin:$PATH" COLLIE_TASK=$id COLLIE_RUN=$run "$@" || code=$?
   trap - INT
   log_event "$id" run_exited "run=$run code=$code"
   set_state "${TMUX_PANE:-}" exited
