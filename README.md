@@ -183,9 +183,9 @@ repo's branch and PR. It sits right of the list when the rows fit beside it,
 below it otherwise, and wraps long lines. The header's key hints wrap instead
 of being cut.
 
-`prefix h` opens a menu (dashboard, lazygit, terminal, new
-task, run agent, run default agent, adopt agent, edit task, review, done, archive, sync, jump to alert, gc merged tasks) for the current session's task; outside a
-task session it keeps only dashboard, lazygit, terminal, new task, jump to alert and gc merged tasks.
+`prefix h` opens a menu (dashboard, brief, lazygit, terminal, new
+task, peek, run agent, run default agent, adopt agent, edit task, review, done, archive, sync, jump to alert, gc merged tasks) for the current session's task; outside a
+task session it keeps only dashboard, brief, lazygit, terminal, new task, jump to alert and gc merged tasks.
 `run agent` (`r`) lists the agents (default first), then switches you to the
 new agent window; `run default agent` (`R`) skips the list;
 plain `collie run` leaves it in the background (`-s` switches). `jump to alert` (`j`) switches to the pane of the last agent that notified. `prefix h h` goes straight to the
@@ -276,7 +276,7 @@ priority and title (the directory for agents outside a task). Picking one jumps 
 `MouseUp1Status` unless you already bound it). Hovering cannot show anything:
 tmux has no mouse move events.
 
-Windows carry `@collie_state`, usable in `window-status-format`.
+For per-window agent state, opt in with `set -g window-status-format '#I:#W #{collie_window}'` (see [usage](docs/USAGE.md#4-agent-state-per-run)).
 
 Configuration:
 

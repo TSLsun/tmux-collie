@@ -225,6 +225,20 @@ turn ends (a background task's result). The state
 itself, `collie wait` and the status bar follow the hooks at once. omp's
 task-tool subagents do not report state; only the main session does.
 
+For an opt-in indicator in each window tab, include `#{collie_window}` in
+`window-status-format` and/or `window-status-current-format` before loading
+the plugin:
+
+```tmux
+set -g window-status-format '#I:#W #{collie_window}'
+set -g window-status-current-format '#I:#W #{collie_window}'
+```
+
+It reads the window's `@collie_state` directly: red `●` for waiting, yellow
+for idle, green for working, and nothing for other windows. It preserves the
+surrounding window style and adds no shell calls on redraw. Without the
+placeholder, window formats are unchanged.
+
 A task's `agent` column shows its most urgent run (`waiting` > `idle` >
 `working` > `exited` > `unknown`). Status and agent fold into one *needs*
 value (`ls`'s last column, the dashboard's STATE), first match:
@@ -282,7 +296,8 @@ uses its own configured default.
 lines of a live pane by default, joining wrapped lines and dropping trailing
 blank lines. It works in any run state and does not switch windows, log an
 event, or store the screen (which may contain secrets). As with `send`,
-multiple live runs require a selection. `-n` accepts up to 100000 lines.
+multiple live runs require a selection. The task menu's `p` popup displays
+the screen or the selection guidance; `-n` accepts up to 100000 lines.
 Exit codes: `0` printed, `3` no live pane, `1` other errors. The dashboard run
 preview also shows the tail of a
 live pane.
@@ -424,13 +439,14 @@ the runs a lead starts only need `collie signal done`, which works there.
 | Action | CLI | `prefix h` menu | Dashboard (`prefix h h`) |
 |---|---|---|---|
 | Dashboard | `collie dash` | `h` | — |
+| What waits on you | `collie brief` | `b` (popup) | sorted task list |
 | New task | `collie new` | `c` (prompts, switches to it) | `?` `c` |
 | Edit TASK.md | `collie edit` | `e` | `e` or `?` `e` |
 | Run agent | `collie run --agent` | `r` (menu of agents, default first) | `r` or `?` `r` (digit picks, `enter` the default) |
 | Run default agent | `collie run` | `R` | `R` or `?` `R` |
 | Continue with another agent | `collie handoff` | — | `u`, then `h` on the run (note in `$EDITOR`) |
 | Type into an idle agent | `collie send` | — | — |
-| Read an agent screen without switching | `collie peek` | — | run preview |
+| Read an agent screen without switching | `collie peek` | `p` (task session popup) | run preview |
 | Failing CI logs, optionally sent to the agent | `collie ci` | — | — |
 | Pause an idle agent (leaves RESUME.md) | `collie pause` | — | — |
 | Adopt hand-started agent | `collie adopt` | `a` | `?` `a` |
