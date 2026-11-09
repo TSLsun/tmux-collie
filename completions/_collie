@@ -70,7 +70,7 @@ _collie() {
     -r) _collie_repos; return ;;
     -w) _collie_workspaces; return ;;
     -t) compadd feat fix chore docs refactor test exp; return ;;
-    --agent) compadd claude codex gemini omp; return ;;
+    --agent) if [[ ${words[2]} == handoff ]]; then compadd claude codex omp; else compadd claude codex gemini omp; fi; return ;;
     --state) compadd working idle waiting exited; return ;;
     --after) _collie_tasks; return ;;
   esac

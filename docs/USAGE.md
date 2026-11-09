@@ -267,13 +267,14 @@ Any other command (`--agent aider`) runs without hooks. Agents you start by
 hand in a task's session are detected by process (working/idle only, no
 notifications); `collie adopt` restarts a hand-started claude, codex or omp under
 `collie run` with its conversation resumed. `collie restore` restarts the
-runs lost with a dead tmux server (claude and codex by their logged session id, omp by
-the worktree's latest conversation); agents started by hand are not
-recorded, so they are not restored.
+runs lost with a dead tmux server (claude, codex and omp by logged session ID;
+omp falls back to the worktree's latest conversation when no ID was logged).
+Agents started by hand are not recorded, so they are not restored.
 
 `--model` and `--effort` pick a run's model and reasoning effort (claude
-`--model`/`--effort`, codex `-m`/`-c model_reasoning_effort`); other agents
-refuse them.
+`--model`/`--effort`, codex `-m`/`-c model_reasoning_effort`, omp
+`--model`/`--thinking`); other agents refuse them. Without `--model`, omp
+uses its own configured default.
 
 ### Waiting for a run
 
@@ -297,13 +298,13 @@ For Codex setup and limitations, see [Agent details](https://github.com/TSLsun/t
 
 ### Cross-agent handoff
 
-To continue Claude work with Codex, or vice versa, choose the source run from
-`collie show` and write a nonempty note with completed work, decisions,
-verification, unresolved issues, and the next action:
+To continue a Claude, Codex, or omp run with a different one of those agents,
+choose the source run from `collie show` and write a nonempty note with
+completed work, decisions, verification, unresolved issues, and the next action:
 
 ```sh
 collie show fix-retry
-collie handoff fix-retry --from 1 --agent codex --note handoff.md
+collie handoff fix-retry --from 1 --agent omp --note handoff.md
 ```
 
 The destination starts a fresh conversation in a separate run/window using
@@ -462,7 +463,7 @@ filter, in which every key types; `?` lists every action.
 | Switch an attached repo to another branch | `collie add <id> -r infra:release/v2` (keeps the old branch; mixes with new `-r`, all-or-nothing) |
 | Remove a repo | `collie drop <id> -r infra` (refuses dirty/unmerged worktrees, active agents, cwd inside, or last repo; `--force` skips dirty/unmerged checks) |
 | A second agent on the same task | `collie run <id> --agent codex [-r repo]` (one window per run) |
-| Continue another agent's work with explicit context | `collie handoff <id> --from <run> --agent <claude\|codex> --note <file>` |
+| Continue another agent's work with explicit context | `collie handoff <id> --from <run> --agent <claude\|codex\|omp> --note <file>` |
 | Send a follow-up, fix or pause request to a running agent | `collie send <id> [--run N] [--wait] <text>` or `-f <file>` (refuses while it works: exit 2) |
 | Give an agent its failing CI | `collie ci <id> [--lines N]` prints failing checks and log tails (exit 0 none failing, 2 pending, 3 failing, 1 errors); `--send [--run N] [--wait]` writes `.collie/CI.md` and prompts the run through `collie send`. Cancelled or timed-out checks only print the `gh run rerun` command |
 | Pause an agent and pick up later | `collie pause <id> [--run N] [-p <request>]`: it writes `.collie/RESUME.md`, which `show` and the preview mention and the next `run`, `handoff` or `adopt` reads |

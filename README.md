@@ -66,12 +66,12 @@ collie run deploy-v2                   # claude in a new window of the task sess
 collie run deploy-v2 -r B -p 'fix CI'  # in repo B's worktree, custom first prompt
 collie run deploy-v2 --agent codex      # also: gemini, omp; state hooks injected per run
 collie run --agent aider -- --model x  # any command works (no state hooks)
-collie handoff deploy-v2 --from 1 --agent codex --note handoff.md
+collie handoff deploy-v2 --from 1 --agent omp --note handoff.md
                                       # new conversation, preserving run 1's context
 collie send deploy-v2 'rerun the tests'  # type into its idle agent (--run N, --wait, -f file)
 collie ci deploy-v2 --send             # failing CI logs to .collie/CI.md, then tell its agent
 collie pause deploy-v2                 # idle agent saves work, leaves .collie/RESUME.md
-collie run deploy-v2 --model opus --effort high  # per-run model/effort (claude, codex)
+collie run deploy-v2 --model opus --effort high  # per-run model/effort (claude, codex, omp)
 collie run deploy-v2 --agent codex --scratch -p 'review ...'  # own worktree at the branch head
 collie wait deploy-v2 --done --timeout 3600     # until the run signals done and stops
 collie doctor                          # deps, agents, task/worktree consistency
@@ -240,16 +240,15 @@ Claude, Codex or omp with the same conversation and hooks. For Codex, start it
 with `--no-daemon` and have `lsof` installed. If Collie cannot identify the
 conversation, it leaves the process running.
 
-`collie handoff` continues Claude work with Codex, or vice versa, in a fresh
-run with a preserved handoff note and task context. The source agent stays
-running; see the [handoff workflow](docs/USAGE.md#cross-agent-handoff).
+`collie handoff` continues a Claude, Codex or omp run with a different one
+of those agents, in a fresh run with a preserved handoff note and task context.
+The source agent stays running; see the [handoff workflow](docs/USAGE.md#cross-agent-handoff).
 
 When the tmux server dies, `collie restore` (`-n` to list) restarts every
-agent run that was live, each resuming its own conversation: claude by the
-session id its `SessionStart` hook logged (`--resume <id>`), Codex by its logged
-id (`resume <id>`), omp by the
-latest one in its worktree (`-c`, one run per worktree); other agents are
-skipped. Codex without a captured identity is skipped with a diagnostic, never
+agent run that was live: claude and Codex by their logged session IDs, omp by
+its logged ID (`-r <id>`) or, for older runs without one, the latest conversation
+in its worktree (`-c`, one fallback run per worktree); other agents are skipped.
+Codex without a captured identity is skipped with a diagnostic, never
 resumed using the latest conversation. `set -g @collie-restore on` runs restore
 when the plugin loads. Run `collie doctor` for version and setup diagnostics.
 
