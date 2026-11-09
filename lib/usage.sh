@@ -124,7 +124,7 @@ changes   creates branch + worktree   new, add, spike, reopen (worktree only)
           appends decisions.tsv       log
           runs your commands          verify (TASK.md ## Verify blocks)
           never deletes branches or the task record
-          read-only                   ls brief show history review dash
+          read-only                   ls brief show history review dash peek
                                       status doctor repos workspaces; -n
                                       variants (gc -n still fetches origin)
 EOF
