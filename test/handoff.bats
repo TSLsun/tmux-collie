@@ -8,7 +8,7 @@ setup() {
   make_bare_repo A
   cd "$REPO/main"
   mkdir -p "$TMP/bin"
-  for agent in claude codex; do
+  for agent in claude codex omp; do
     cat >"$TMP/bin/$agent" <<'EOF'
 #!/bin/sh
 printf '%s\n' "$@" >"$COLLIE_STATE_DIR/$(basename "$0").args"
@@ -73,6 +73,26 @@ teardown() {
   [ "$(tmux display -p -t "$(run_pane x 3)" '#{pane_current_path}')" = "$TMP/repos/A/feat-x" ]
 }
 
+@test "handoff: omp and Claude can hand off in either direction" {
+  collie run x --agent omp
+  wait_for '[ -s "$COLLIE_STATE_DIR/omp.args" ]'
+  run collie handoff x --from 1 --agent claude --note "$TMP/note file"
+  [ "$status" -eq 0 ]
+  packet=$output
+  wait_for '[ -s "$COLLIE_STATE_DIR/claude.args" ]'
+  grep -qF "$packet/HANDOFF.md" "$COLLIE_STATE_DIR/claude.args"
+  grep -q 'source_agent=omp destination_agent=claude' "$packet/HANDOFF.md"
+  rm -f "$COLLIE_STATE_DIR/omp.args"
+
+  run collie handoff x --from 2 --agent omp --note "$TMP/note file"
+  [ "$status" -eq 0 ]
+  packet=$output
+  wait_for '[ -s "$COLLIE_STATE_DIR/omp.args" ]'
+  grep -qF "$packet/HANDOFF.md" "$COLLIE_STATE_DIR/omp.args"
+  grep -q 'source_agent=claude destination_agent=omp' "$packet/HANDOFF.md"
+}
+
+
 @test "handoff: invalid arguments never create a destination run" {
   collie run x --agent claude
   for source in 0 99 ../1 1x; do
@@ -85,7 +105,7 @@ teardown() {
   [[ "$output" == *'different'* ]]
   run collie handoff x --from 1 --agent gemini --note "$TMP/note file"
   [ "$status" -ne 0 ]
-  [[ "$output" == *'claude or codex'* ]]
+  [[ "$output" == *'claude, codex, or omp'* ]]
   run collie handoff x --from 1 --agent codex --note "$TMP/missing"
   [ "$status" -ne 0 ]
   [[ "$output" == *'note'* ]]

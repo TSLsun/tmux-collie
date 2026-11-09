@@ -40,6 +40,7 @@ _collie() {
     'handoff:continue another agent run with preserved context'
     'send:type into an idle agent run'
     'peek:read an agent run pane without switching'
+    'ci:failing CI logs of a task, optionally sent to its agent'
     'pause:ask an idle agent run to pause'
     'adopt:restart an agent started by hand under collie run'
     'restore:restart agents lost with the tmux server'
@@ -70,7 +71,7 @@ _collie() {
     -r) _collie_repos; return ;;
     -w) _collie_workspaces; return ;;
     -t) compadd feat fix chore docs refactor test exp; return ;;
-    --agent) compadd claude codex gemini omp; return ;;
+    --agent) if [[ ${words[2]} == handoff ]]; then compadd claude codex omp; else compadd claude codex gemini omp; fi; return ;;
     --state) compadd working idle waiting exited; return ;;
     --after) _collie_tasks; return ;;
   esac
@@ -87,6 +88,7 @@ _collie() {
     handoff) compadd -- --from --agent --note -r; _collie_tasks ;;
     send) compadd -- -r --run --wait -f; _collie_tasks ;;
     peek) compadd -- -r --run -n; _collie_tasks ;;
+    ci) compadd -- --lines --send --run --wait; _collie_tasks ;;
     pause) compadd -- -r --run -p -f; _collie_tasks ;;
     show | review) _collie_tasks -a ;;
     race) compadd -- -n --agent --model --effort -r -p; _collie_tasks ;;

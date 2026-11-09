@@ -36,9 +36,10 @@ tasks:
 
 agents:
   run [<id>]          start an agent in a new window of the task session
-  handoff [<id>]      continue a claude/codex run with the other agent
+  handoff [<id>]      continue a claude/codex/omp run with a different agent
   send <id> <text>    type into an idle or waiting agent run and submit
   peek [<id>]         read the tail of an agent run's pane without switching
+  ci [<id>] [--send]  failing CI logs of its PRs; --send tells its agent
   pause <id>          ask an idle agent run to pause and leave RESUME.md
   adopt [<id>] [-y]   restart a hand-started agent under collie run
   restore [<id>] [-n] restart the agents lost with the tmux server
@@ -277,8 +278,10 @@ usage: collie brief
 What waits on you, most urgent first (answer, reply, findings, review,
 stalled; then priority, id): one line per task with what it waits on and
 the command to act. review shows REPORT.md's first line and the PR with its
-state and CI from the cache the dashboard keeps (never calls gh). Prints
-"nothing waits on you" when nothing does. Read-only.
+state and CI from the cache the dashboard keeps (never calls gh). A task whose
+open PR has failing CI in that cache also gets a ci line at the end, pointing
+at `collie ci <id> --send`. Prints "nothing waits on you" when nothing does.
+Read-only.
 EOF
       ;;
     show)
@@ -465,9 +468,9 @@ per run; any other command runs without them.
 
   --agent name   agent command (default: $COLLIE_AGENT, @collie-agent, else
                  claude)
-  --model m      model for this run (claude --model, codex -m)
+  --model m      model for this run (claude/omp --model, codex -m)
   --effort e     reasoning effort (claude --effort, codex
-                 model_reasoning_effort); values are the agent's own
+                 model_reasoning_effort, omp --thinking); agent-specific values
   -r repo        which repo's worktree to start in
   -p prompt      first prompt instead of the default; -p '' sends none
   -s             switch the current client (or -c client) to the window
@@ -482,15 +485,15 @@ EOF
       ;;
     handoff)
       cat <<'EOF'
-usage: collie handoff [<id>] --from run --agent claude|codex --note file
+usage: collie handoff [<id>] --from run --agent claude|codex|omp --note file
                       [-r repo]
 
-Continue claude run N with codex, or vice versa, in a fresh conversation:
-a new run window like `collie run`, in the source run's repo (-r: another
-repo of the task). Run numbers come from `collie show`.
+Continue a claude, codex or omp run with a different one in a fresh
+conversation: a new run window like `collie run`, in the source run's repo
+(-r: another repo of the task). Run numbers come from `collie show`.
 
-  --from run      source run number (must be claude or codex)
-  --agent name    destination agent, the other of claude/codex
+  --from run      source run number (must be claude, codex or omp)
+  --agent name    destination agent, a different one of claude/codex/omp
   --note file     nonempty note: done, decisions, verification, open issues,
                   next action
   -r repo         start in that repo's worktree instead
@@ -500,7 +503,7 @@ NOTE.md, TASK.md and REPORT.md snapshots) and prints its path; logs the
 link between both runs. The source agent keeps running: stop it first if
 edits could conflict. No branches are merged.
 
-  collie handoff fix-retry --from 1 --agent codex --note handoff.md
+  collie handoff fix-retry --from 1 --agent omp --note handoff.md
 EOF
       ;;
     peek)
@@ -544,6 +547,30 @@ gone); 1 other errors, e.g. several live runs without --run.
   collie send fix-retry --run 2 --wait -f review.md
 EOF
       ;;
+    ci)
+      cat <<'EOF'
+usage: collie ci [<id>] [--lines N] [--send [--run N] [--wait]]
+
+For each open PR of the task's repos: the failing checks (name, URL) and, for
+GitHub Actions, the end of each failed job's log (`gh run view --log-failed`)
+without timestamps or ANSI escapes. Cancelled and timed-out checks are listed
+as "no result, rerun" with the `gh run rerun` command: they are not failures.
+
+  --lines N       log lines kept per job (default 80)
+  --send          when a check fails, write the report to .collie/CI.md and
+                  tell the agent run to read it, through `collie send`
+  --run N         with --send: run N, as in `collie send`
+  --wait          with --send: wait for the agent's turn to end
+
+Never starts a run; only cancelled checks send nothing.
+Exit 0 no failing checks; 2 pending and none failing; 3 at least one failing;
+1 errors (no gh, no open PR). With --send and a failing check, as `collie send`:
+0 sent; 2 the agent is working; 3 no live run; 1 other errors.
+
+  collie ci fix-retry
+  collie ci fix-retry --send --wait
+EOF
+      ;;
     pause)
       cat <<'EOF'
 usage: collie pause <id> [-r repo | --run N] [-p request | -f file]
@@ -582,9 +609,10 @@ EOF
 usage: collie restore [<id>] [-n]
 
 After the tmux server died: restart every agent run that was live (all tasks
-if no id), each resuming its own conversation (claude and codex by logged
-session id, omp by the worktree's latest). Never guesses: runs without a
-known conversation are skipped. -n lists them; read-only.
+if no id), using each run's logged session id when available. Otherwise, agents
+that support latest-session resume (including omp) resume the latest in their
+worktree; agents that require an id are skipped if none is known. -n lists
+them; read-only.
 EOF
       ;;
     wait)
@@ -671,7 +699,7 @@ EOF
 }
 
 # the public commands, in overview order
-HELP_COMMANDS='new add drop ls brief show history log edit go dash set review verify spike race pick gc sync done archive reopen run handoff send peek pause adopt restore wait signal state status doctor repos workspaces'
+HELP_COMMANDS='new add drop ls brief show history log edit go dash set review verify spike race pick gc sync done archive reopen run handoff send peek ci pause adopt restore wait signal state status doctor repos workspaces'
 
 cmd_help() {
   local c

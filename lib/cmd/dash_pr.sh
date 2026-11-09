@@ -7,55 +7,49 @@
 # in the background once it is PR_TTL minutes old; sync and gc refresh inline.
 PR_TTL=5
 
-# Refreshes <task>/pr.tsv; a failed repository lookup keeps all its old rows.
-# A cross-branch restoration is admitted only when its body explicitly says
-# "restore ... from #N" on one line, referring to a PR on the task branch.
-cmd__pr() { # id
-  local d="$TASKS_DIR/$1" name c b p line related number state candidate detail out="" failed filter
+# The PRs of branch $2 in checkout $1 as number<TAB>state<TAB>CI lines, one per
+# PR; fails on any gh error. A cross-branch restoration is admitted only when
+# its body explicitly says "restore ... from #N" on one line, referring to a PR
+# on the task branch.
+pr_lookup() { # path branch
+  local line related="" number state candidate detail filter
   filter='"\(.number)\t\(if .isDraft and .state == "OPEN" then "draft" else .state | ascii_downcase end)\t\(
     [.statusCheckRollup[]? | if (.conclusion // "") != "" then .conclusion else (.state // .status) end]
     | if length == 0 then "-"
       elif any(. == "FAILURE" or . == "ERROR" or . == "CANCELLED" or . == "TIMED_OUT" or . == "ACTION_REQUIRED" or . == "STARTUP_FAILURE") then "fail"
       elif all(. == "SUCCESS" or . == "NEUTRAL" or . == "SKIPPED") then "pass"
       else "pending" end)"'
+  line=$(cd "$1" && gh pr list --state all --head "$2" --limit 1000 --json number,state,isDraft,statusCheckRollup \
+    --jq ".[] | $filter" \
+    </dev/null 2>/dev/null) || return 1
+  while IFS=$TAB read -r number state; do
+    [ -n "$number" ] || continue
+    state=$(cd "$1" && gh api --paginate -X GET search/issues \
+      -F "q=repo:{owner}/{repo} is:pr \"$number\" in:body" -F per_page=100 \
+      --jq "if .incomplete_results or .total_count > 1000 then error(\"incomplete search\") else .items[] | select((.body // \"\") | test(\"(?i)restore[^\\\\n]* from #$number([^0-9]|$)\")) | .number end" \
+      </dev/null 2>/dev/null) || return 1
+    while IFS= read -r candidate; do
+      [ -n "$candidate" ] || continue
+      detail=$(cd "$1" && gh pr view "$candidate" --json number,state,isDraft,statusCheckRollup \
+        --jq "$filter" </dev/null 2>/dev/null) || return 1
+      related="$related$detail"$'\n'
+    done <<<"$state"
+  done <<<"$line"
+  [ -z "$related" ] || line="$line"$'\n'"${related%$'\n'}"
+  [ -z "$line" ] || printf '%s\n' "$line" | awk -F'\t' '!seen[$1]++'
+}
+
+# Refreshes <task>/pr.tsv; a failed repository lookup keeps all its old rows.
+cmd__pr() { # id
+  local d="$TASKS_DIR/$1" name c b p line state out=""
   command -v gh >/dev/null || return 0
   [ -f "$d/repos.tsv" ] || return 0
   while IFS=$TAB read -r name c b p; do
     [ "$c" != - ] || continue
-    failed=0
-    if [ ! -d "$p" ] || ! line=$(cd "$p" && gh pr list --state all --head "$b" --limit 1000 --json number,state,isDraft,statusCheckRollup \
-      --jq ".[] | $filter" \
-      </dev/null 2>/dev/null); then
-      failed=1
-    else
-      related=""
-      while IFS=$TAB read -r number state; do
-        [ -n "$number" ] || continue
-        if ! state=$(cd "$p" && gh api --paginate -X GET search/issues \
-          -F "q=repo:{owner}/{repo} is:pr \"$number\" in:body" -F per_page=100 \
-          --jq "if .incomplete_results or .total_count > 1000 then error(\"incomplete search\") else .items[] | select((.body // \"\") | test(\"(?i)restore[^\\\\n]* from #$number([^0-9]|$)\")) | .number end" \
-          </dev/null 2>/dev/null); then
-          failed=1
-          break
-        fi
-        while IFS= read -r candidate; do
-          [ -n "$candidate" ] || continue
-          if ! detail=$(cd "$p" && gh pr view "$candidate" --json number,state,isDraft,statusCheckRollup \
-            --jq "$filter" </dev/null 2>/dev/null); then
-            failed=1
-            break
-          fi
-          related="$related$detail"$'\n'
-        done <<<"$state"
-        [ "$failed" -eq 0 ] || break
-      done <<<"$line"
-      [ -z "$related" ] || line="$line"$'\n'"${related%$'\n'}"
-    fi
-    if [ "$failed" -eq 1 ]; then
+    if [ ! -d "$p" ] || ! line=$(pr_lookup "$p" "$b"); then
       line=$(awk -F'\t' -v n="$name" '$1 == n { sub(/^[^\t]*\t/, ""); print }' "$d/pr.tsv" 2>/dev/null) || line=""
     fi
     if [ -n "$line" ]; then
-      line=$(printf '%s\n' "$line" | awk -F'\t' '!seen[$1]++')
       while IFS= read -r state; do out="$out$name$TAB$state"$'\n'; done <<<"$line"
     fi
   done <"$d/repos.tsv"

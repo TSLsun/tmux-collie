@@ -61,7 +61,7 @@ works in both.
 | `collie log <phase> <decision> <why> <evidence> <result>` | append a row to `.collie/decisions.tsv` |
 | `collie verify <id>` | run TASK.md `## Verify` blocks in the worktree; non-zero on failure |
 | `collie review <id>` | commits since the branch started, diff stat, dirty files, REPORT.md |
-| `collie handoff <id> --from N --agent claude\|codex --note f` | continue a stuck or gone run with the other agent, fresh conversation |
+| `collie handoff <id> --from N --agent claude\|codex\|omp --note f` | continue a stuck or gone run with another agent, fresh conversation |
 | `collie race <id> -n N [--agent A,B]` | create independent candidate tasks from one base; wait for each with `collie wait <id>-<n> --done` |
 | `collie review <id>` | compare race candidates' diff stats and REPORT.md |
 | `collie pick <id> <n>` | keep candidate N's work on the task branch, only when clean and still at the race base |
@@ -79,8 +79,8 @@ signal.
 ## The loop
 
 Phases for `collie log`: `start`, `implement`, `review`, `fix`, `verify`,
-`ship`, `stop`. Default agents: claude implements, codex reviews. Any two
-different agents work; the reviewer must not be the implementer's
+`ship`, `stop`. Default to claude as implementer and an installed different
+agent (omp or codex) as reviewer. The reviewer must not be the implementer's
 conversation. Keep paths in prompts short and relative (`.collie/...`): long
 absolute paths typed into a TUI can arrive broken.
 
@@ -124,10 +124,13 @@ collie wait <id> --run $N --done --timeout 3600
 
 ### 3. Review
 
+Choose an installed reviewer different from the implementer, then:
+
 ```sh
+REVIEWER=omp # or codex
 git -C <worktree> rev-parse HEAD > .collie/pre-review.head
 git -C <worktree> status --porcelain > .collie/pre-review.status
-collie run <id> --agent codex --scratch -p 'Task <id>. You are the reviewer,
+collie run <id> --agent "$REVIEWER" --scratch -p 'Task <id>. You are the reviewer,
 not the implementer. You are in a scratch worktree at the branch head: run
 builds and repros here freely, but commit nothing. Review the branch against
 its base for correctness against .collie/TASK.md. For every finding write one

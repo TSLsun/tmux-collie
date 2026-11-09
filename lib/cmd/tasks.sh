@@ -327,8 +327,9 @@ cmd_ls() {
 # what it waits on and the command that acts on it. Reads local state and the
 # cached PRs (pr.tsv) only: never gh or the network.
 cmd_brief() {
-  local rows id pri top needs what act d head pr n=0 _
-  rows=$(cmd_ls | awk -F'\t' '
+  local all rows id pri top needs what act d head pr n=0 _
+  all=$(cmd_ls)
+  rows=$(printf '%s\n' "$all" | awk -F'\t' '
     BEGIN { split("answer reply findings review stalled", o, " "); for (i in o) r[o[i]] = i }
     $7 in r { print r[$7] "\t" $0 }' | sort -t "$TAB" -k1,1n -k4,4 -k2,2)
   while IFS=$TAB read -r _ id _ pri _ top _ needs; do
@@ -370,6 +371,15 @@ cmd_brief() {
     printf '%-8s %s (%s): %s  ->  %s\n' "$needs" "$id" "$pri" "$what" "$act"
     n=$((n + 1))
   done <<<"$rows"
+  # open PRs with failing CI, after the rows above and whatever the task needs
+  while IFS=$TAB read -r id _ pri _; do
+    [ -n "$id" ] || continue
+    pr=$(awk -F'\t' '($3 == "open" || $3 == "draft") && $4 == "fail" { s = s (s == "" ? "" : ", ") "#" $2 }
+      END { print s }' "$TASKS_DIR/$id/pr.tsv" 2>/dev/null) || pr=""
+    [ -n "$pr" ] || continue
+    printf '%-8s %s (%s): PR %s has failing CI  ->  collie ci %s --send\n' ci "$id" "$pri" "$pr" "$id"
+    n=$((n + 1))
+  done < <(printf '%s\n' "$all" | sort -t "$TAB" -k3,3 -k1,1)
   [ "$n" -gt 0 ] || echo "nothing waits on you"
 }
 

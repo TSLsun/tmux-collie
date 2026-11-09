@@ -48,7 +48,8 @@ reply    c (P2): an agent finished its turn without a REPORT.md  ->  collie go c
 review   h (P1): All green. | PR #9 draft  ->  collie review h
 review   d (P2): Added the thing. | PR https://github.com/o/r/pull/7 (open, CI fail)  ->  collie review d
 stalled  e (P2): its agents were lost with the tmux server  ->  collie restore e
-stalled  f (P2): no agent running and no REPORT.md since the last run  ->  collie run f" ]
+stalled  f (P2): no agent running and no REPORT.md since the last run  ->  collie run f
+ci       d (P2): PR #7 has failing CI  ->  collie ci d --send" ]
   [ ! -s "$TMP/gh.log" ]
 }
 
@@ -69,4 +70,16 @@ STUB
   printf '# report\n\nPR: https://github.com/o/r/pull/7\n\nReady.\n' >"$(task_dir x)/REPORT.md"
   printf 'A\t7\tmerged\tpass\nA\t83\topen\tfail\n' >"$(task_dir x)/pr.tsv"
   [[ "$(collie brief)" == *'PR https://github.com/o/r/pull/7; #7 merged, CI pass; #83 open, CI fail'* ]]
+}
+
+@test "brief: a ci row for open and draft PRs with cached CI fail, without calling gh" {
+  printf '#!/bin/sh\necho "$*" >>"%s/gh.log"\nexit 1\n' "$TMP" >"$TMP/stub/gh"
+  for t in a b c; do collie new "$t" --no-window; done
+  printf 'A\t7\tmerged\tfail\nA\t8\tdraft\tfail\nA\t9\topen\tfail\n' >"$(task_dir a)/pr.tsv"
+  printf 'A\t5\topen\tpass\n' >"$(task_dir b)/pr.tsv"
+  printf 'A\t6\tclosed\tfail\n' >"$(task_dir c)/pr.tsv"
+  run collie brief
+  [ "$status" -eq 0 ]
+  [ "$output" = "ci       a (P2): PR #8, #9 has failing CI  ->  collie ci a --send" ]
+  [ ! -s "$TMP/gh.log" ]
 }
