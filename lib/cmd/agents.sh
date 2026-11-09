@@ -187,7 +187,7 @@ cmd_handoff() {
   done
   task_id "$id"
   [[ $from =~ ^[1-9][0-9]*$ ]] || die "handoff: --from needs a positive source run number"
-  case $agent in claude | codex) ;; *) die "handoff: --agent must be claude or codex" ;; esac
+  case $agent in claude | codex | omp) ;; *) die "handoff: --agent must be claude, codex, or omp" ;; esac
   if [ ! -f "$note" ] || [ ! -r "$note" ] || ! grep -q '[^[:space:]]' "$note"; then
     die "handoff: --note needs a readable, nonempty note file"
   fi
@@ -196,7 +196,7 @@ cmd_handoff() {
     $2 == "run_started" && kv("run") == r { print kv("agent") "\t" kv("repo"); exit }' "$d/events.log")
   [ -n "$source" ] || die "handoff: source run $from does not belong to task '$id'"
   IFS=$TAB read -r source_agent source_repo <<<"$source"
-  case $source_agent in claude | codex) ;; *) die "handoff: source run must use claude or codex" ;; esac
+  case $source_agent in claude | codex | omp) ;; *) die "handoff: source run must use claude, codex, or omp" ;; esac
   [ "$source_agent" != "$agent" ] || die "handoff: destination agent must be different from source"
   repo=${repo:-$source_repo}
   while IFS=$TAB read -r name c b path; do

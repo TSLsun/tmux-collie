@@ -25,7 +25,14 @@ cmd=$(printf '%s' "$settings" | sed -n 's/.*"SessionStart":\[{"hooks":\[{"type":
 printf '{"session_id":"%s","hook_event_name":"SessionStart","source":"startup"}\n' "$sid" | sh -c "$cmd"
 exec sleep 300
 EOF
-  printf '#!/bin/sh\necho "omp $*" >>"$ARGS"\nexec sleep 300\n' >"$TMP/bin/omp"
+  cat >"$TMP/bin/omp" <<'EOF'
+#!/bin/sh
+echo "omp $*" >>"$ARGS"
+if [ -f "$ARGS.log-session" ]; then
+  printf '{"session_id":"omp-%s"}\n' "$$" | "$COLLIE_BIN" _session
+fi
+exec sleep 300
+EOF
   chmod +x "$TMP/bin/claude" "$TMP/bin/omp"
   make_bare_repo A
   cd "$REPO/main"
@@ -66,6 +73,18 @@ agent_windows() { tmux list-windows -t "=$1" -F '#{@collie_run}' | grep -c .; }
   echo 'not json' | TMUX_PANE=$p collie _session
   echo '{"session_id":"elsewhere"}' | TMUX_PANE= collie _session
   sessions_logged 2
+}
+
+@test "restore: omp logs and resumes its active session id" {
+  touch "$ARGS.log-session"
+  collie run x --agent omp -p ''
+  wait_for 'sessions_logged 1'
+  sid=$(sed -n 's/.*agent_session	run=1 id=//p' "$(task_dir x)/events.log")
+  [[ "$sid" == omp-* ]]
+  server_dies
+  run collie restore -n x
+  [ "$status" -eq 0 ]
+  [ "$output" = "x run 1: omp in A: -r $sid" ]
 }
 
 @test "restore: resumes each run lost with the server by its id, once" {

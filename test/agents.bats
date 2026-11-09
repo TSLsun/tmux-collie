@@ -140,6 +140,32 @@ EOF
   grep -q 'run_started.*agent=omp' "$(task_dir x)/events.log"
 }
 
+@test "omp run: maps model and effort flags without changing configured defaults" {
+  cat >"$TMP/bin/omp" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$@" >"$ARGS"
+exec sleep 300
+EOF
+  chmod +x "$TMP/bin/omp"
+  collie run x --agent omp --model 'openai-codex/gpt-6.1-terra:medium' --effort high
+  wait_for '[ -s "$ARGS" ]'
+  [ "$(grep -A1 -xF -- '--model' "$ARGS" | tail -n 1)" = 'openai-codex/gpt-6.1-terra:medium' ]
+  [ "$(grep -A1 -xF -- '--thinking' "$ARGS" | tail -n 1)" = high ]
+}
+
+@test "omp run: adds no model or thinking flags when not requested" {
+  cat >"$TMP/bin/omp" <<'EOF'
+#!/bin/sh
+printf '%s\n' "$@" >"$ARGS"
+exec sleep 300
+EOF
+  chmod +x "$TMP/bin/omp"
+  collie run x --agent omp
+  wait_for '[ -s "$ARGS" ]'
+  ! grep -qxF -- '--model' "$ARGS"
+  ! grep -qxF -- '--thinking' "$ARGS"
+}
+
 @test "omp run: configured default starts a todo task from the dashboard" {
   cat >"$TMP/bin/omp" <<'EOF'
 #!/bin/sh

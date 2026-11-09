@@ -36,7 +36,7 @@ tasks:
 
 agents:
   run [<id>]          start an agent in a new window of the task session
-  handoff [<id>]      continue a claude/codex run with the other agent
+  handoff [<id>]      continue a claude/codex/omp run with a different agent
   send <id> <text>    type into an idle or waiting agent run and submit
   pause <id>          ask an idle agent run to pause and leave RESUME.md
   adopt [<id>] [-y]   restart a hand-started agent under collie run
@@ -464,9 +464,9 @@ per run; any other command runs without them.
 
   --agent name   agent command (default: $COLLIE_AGENT, @collie-agent, else
                  claude)
-  --model m      model for this run (claude --model, codex -m)
+  --model m      model for this run (claude/omp --model, codex -m)
   --effort e     reasoning effort (claude --effort, codex
-                 model_reasoning_effort); values are the agent's own
+                 model_reasoning_effort, omp --thinking); agent-specific values
   -r repo        which repo's worktree to start in
   -p prompt      first prompt instead of the default; -p '' sends none
   -s             switch the current client (or -c client) to the window
@@ -481,15 +481,15 @@ EOF
       ;;
     handoff)
       cat <<'EOF'
-usage: collie handoff [<id>] --from run --agent claude|codex --note file
+usage: collie handoff [<id>] --from run --agent claude|codex|omp --note file
                       [-r repo]
 
-Continue claude run N with codex, or vice versa, in a fresh conversation:
-a new run window like `collie run`, in the source run's repo (-r: another
-repo of the task). Run numbers come from `collie show`.
+Continue a claude, codex or omp run with a different one in a fresh
+conversation: a new run window like `collie run`, in the source run's repo
+(-r: another repo of the task). Run numbers come from `collie show`.
 
-  --from run      source run number (must be claude or codex)
-  --agent name    destination agent, the other of claude/codex
+  --from run      source run number (must be claude, codex or omp)
+  --agent name    destination agent, a different one of claude/codex/omp
   --note file     nonempty note: done, decisions, verification, open issues,
                   next action
   -r repo         start in that repo's worktree instead
@@ -499,7 +499,7 @@ NOTE.md, TASK.md and REPORT.md snapshots) and prints its path; logs the
 link between both runs. The source agent keeps running: stop it first if
 edits could conflict. No branches are merged.
 
-  collie handoff fix-retry --from 1 --agent codex --note handoff.md
+  collie handoff fix-retry --from 1 --agent omp --note handoff.md
 EOF
       ;;
     send)
@@ -563,9 +563,10 @@ EOF
 usage: collie restore [<id>] [-n]
 
 After the tmux server died: restart every agent run that was live (all tasks
-if no id), each resuming its own conversation (claude and codex by logged
-session id, omp by the worktree's latest). Never guesses: runs without a
-known conversation are skipped. -n lists them; read-only.
+if no id), using each run's logged session id when available. Otherwise, agents
+that support latest-session resume (including omp) resume the latest in their
+worktree; agents that require an id are skipped if none is known. -n lists
+them; read-only.
 EOF
       ;;
     wait)
