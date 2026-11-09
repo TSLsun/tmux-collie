@@ -276,6 +276,17 @@ Agents started by hand are not recorded, so they are not restored.
 `--model`/`--thinking`); other agents refuse them. Without `--model`, omp
 uses its own configured default.
 
+### Reading a run's screen
+
+`collie peek [<id>] [--run N | -r repo] [-n lines]` prints the last 40
+lines of a live pane by default, joining wrapped lines and dropping trailing
+blank lines. It works in any run state and does not switch windows, log an
+event, or store the screen (which may contain secrets). As with `send`,
+multiple live runs require a selection. `-n` accepts up to 100000 lines.
+Exit codes: `0` printed, `3` no live pane, `1` other errors. The dashboard run
+preview also shows the tail of a
+live pane.
+
 ### Waiting for a run
 
 A script or coordinating agent can block on a run instead of watching it:
@@ -419,6 +430,7 @@ the runs a lead starts only need `collie signal done`, which works there.
 | Run default agent | `collie run` | `R` | `R` or `?` `R` |
 | Continue with another agent | `collie handoff` | — | `u`, then `h` on the run (note in `$EDITOR`) |
 | Type into an idle agent | `collie send` | — | — |
+| Read an agent screen without switching | `collie peek` | — | run preview |
 | Failing CI logs, optionally sent to the agent | `collie ci` | — | — |
 | Pause an idle agent (leaves RESUME.md) | `collie pause` | — | — |
 | Adopt hand-started agent | `collie adopt` | `a` | `?` `a` |
@@ -465,6 +477,7 @@ filter, in which every key types; `?` lists every action.
 | A second agent on the same task | `collie run <id> --agent codex [-r repo]` (one window per run) |
 | Continue another agent's work with explicit context | `collie handoff <id> --from <run> --agent <claude\|codex\|omp> --note <file>` |
 | Send a follow-up, fix or pause request to a running agent | `collie send <id> [--run N] [--wait] <text>` or `-f <file>` (refuses while it works: exit 2) |
+| Read a running agent's screen | `collie peek <id> [--run N \| -r repo] [-n lines]` |
 | Give an agent its failing CI | `collie ci <id> [--lines N]` prints failing checks and log tails (exit 0 none failing, 2 pending, 3 failing, 1 errors); `--send [--run N] [--wait]` writes `.collie/CI.md` and prompts the run through `collie send`. Cancelled or timed-out checks only print the `gh run rerun` command |
 | Pause an agent and pick up later | `collie pause <id> [--run N] [-p <request>]`: it writes `.collie/RESUME.md`, which `show` and the preview mention and the next `run`, `handoff` or `adopt` reads |
 | The agent to push, open a PR and watch CI | `collie new --ship` or `set -g @collie-ship on` |

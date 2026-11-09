@@ -39,6 +39,7 @@ _collie() {
     'run:start an agent'
     'handoff:continue another agent run with preserved context'
     'send:type into an idle agent run'
+    'peek:read an agent run pane without switching'
     'ci:failing CI logs of a task, optionally sent to its agent'
     'pause:ask an idle agent run to pause'
     'adopt:restart an agent started by hand under collie run'
@@ -86,6 +87,7 @@ _collie() {
     sync | restore) compadd -- -n; _collie_tasks ;;
     handoff) compadd -- --from --agent --note -r; _collie_tasks ;;
     send) compadd -- -r --run --wait -f; _collie_tasks ;;
+    peek) compadd -- -r --run -n; _collie_tasks ;;
     ci) compadd -- --lines --send --run --wait; _collie_tasks ;;
     pause) compadd -- -r --run -p -f; _collie_tasks ;;
     show | review) _collie_tasks -a ;;

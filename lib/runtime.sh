@@ -139,6 +139,7 @@ run_history() { # id
 # Never the window's active pane: in a split window that may be a shell.
 agent_pane() { # id window
   local panes pane
+  [ -n "$2" ] && [ "$2" != - ] || return 0
   panes=$(tmux list-panes -t "$2" -F '#{pane_id}' 2>/dev/null) || return 0
   pane=$(tmux show-options -wqv -t "$2" @collie_pane 2>/dev/null || true)
   if [ -z "$pane" ]; then

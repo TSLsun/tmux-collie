@@ -230,14 +230,13 @@ cmd_handoff() {
   printf '%s\n' "$packet"
 }
 
-# The collie run of task $1 that send types into, as "run<TAB>agent<TAB>state
-# <TAB>window": run $2 if given, else the one live run (of repo $3 if given).
-# Agents started by hand are never targets. Prints "none", "many <runs>" or
-# "nosuch" instead when there is no such run or no single one.
-send_target() { # id run repo
-  local wins=""
+# Resolve a run target shared by send and peek, as
+# "run<TAB>agent<TAB>state<TAB>window". Explicit runs resolve even when their
+# state is exited; callers decide whether state matters.
+run_target() { # id run repo [include_exited]
+  local wins="" all=${4:-0}
   ! has_session "$1" || wins=$(win_states -t "=$1" | awk -F'\t' '$3 != "-" { print $3 "\t" $4 "\t" $5 "\t" $2 }')
-  awk -F'\t' -v want="$2" -v repo="$3" "$AWK_KV"'
+  awk -F'\t' -v want="$2" -v repo="$3" -v all="$all" "$AWK_KV"'
     FNR == NR { if ($1 != "") { line[$1] = $0; st[$1] = $3; order[++m] = $1 }; next }
     $2 == "run_started" { r = kv("run"); known[r] = 1; rp[r] = kv("repo"); ag[r] = kv("agent") }
     END {
@@ -248,11 +247,54 @@ send_target() { # id run repo
       }
       for (i = 1; i <= m; i++) {
         r = order[i]
-        if (st[r] == "exited" || (repo != "" && rp[r] != repo)) continue
+        if (repo != "" && rp[r] != repo) continue
+        if (st[r] == "exited") {
+          if (all) { ec++; epick = line[r]; eruns = eruns " " r }
+          continue
+        }
         c++; pick = line[r]; runs = runs " " r
       }
+      if (!c && all) { c = ec; pick = epick; runs = eruns }
       print (c == 1 ? pick : c ? "many" runs : "none")
     }' - "$TASKS_DIR/$1/events.log" <<<"$wins"
+}
+
+
+# Prints the last N joined lines from a live run pane, without logging or
+# changing tmux state. Runs in any state are readable.
+cmd_peek() {
+  local id="" repo="" run="" lines=40 t agent st win pane
+  while [ $# -gt 0 ]; do
+    case $1 in
+      -r) need_value peek "-r needs a repo" "${2:-}"; repo=$2; shift ;;
+      --run) need_value peek "--run needs a run number" "${2:-}"; run=$2; shift ;;
+      -n) need_value peek "-n needs a line count" "${2:-}"; lines=$2; shift ;;
+      -*) die "peek: unknown option $1" ;;
+      *) [ -z "$id" ] || die "peek: too many arguments"; id=$1 ;;
+    esac
+    shift
+  done
+  task_id "$id"
+  [[ $run =~ ^[1-9][0-9]*$ ]] || [ -z "$run" ] || die "peek: --run needs a run number"
+  [[ $lines =~ ^[1-9][0-9]*$ ]] || die "peek: -n needs a positive line count"
+  [ "${#lines}" -le 6 ] && [ "$lines" -le 100000 ] || die "peek: -n must not exceed 100000"
+  [ -z "$run" ] || [ -z "$repo" ] || die "peek: give -r or --run, not both"
+  command -v tmux >/dev/null || die "peek: tmux required"
+  if [ -n "$repo" ] && ! awk -F'\t' -v r="$repo" '$1 == r { f = 1 } END { exit !f }' "$TASKS_DIR/$id/repos.tsv"; then
+    die "repo '$repo' is not part of task '$id'"
+  fi
+  t=$(run_target "$id" "$run" "$repo" 1)
+  case $t in
+    nosuch) die "peek: task '$id' has no run $run" ;;
+    none) warn "peek: no live agent run in task '$id'${repo:+ for repo $repo}"; exit 3 ;;
+    many*) die "peek: several live runs in task '$id' (${t#many }); pick one with --run" ;;
+  esac
+  IFS=$TAB read -r run agent st win <<<"$t"
+  pane=$(agent_pane "$id" "$win")
+  [ -n "$pane" ] || { warn "peek: pane of run $run ($agent) is gone"; exit 3; }
+  pane_tail "$pane" "$lines" || {
+    warn "peek: pane of run $run ($agent) is gone"; exit 3
+  }
 }
 
 # Types text into the agent of a collie run while it is idle or waiting, and
@@ -293,7 +335,7 @@ cmd_send() {
   fi
 
   while :; do
-    t=$(send_target "$id" "$run" "$repo")
+    t=$(run_target "$id" "$run" "$repo")
     case $t in
       nosuch) die "send: task '$id' has no run $run" ;;
       none) warn "send: no live agent run in task '$id'${repo:+ for repo $repo}; not sent"; exit 3 ;;
@@ -338,7 +380,7 @@ cmd_pause() {
   [ -n "$text$file" ] || text=${PAUSE_PROMPT//.collie\//$TASKS_DIR/$id/}
   # send reports a missing, ambiguous or exited run; pause also spares a
   # waiting one, whose prompt the request would answer
-  t=$(send_target "$id" "$run" "$repo")
+  t=$(run_target "$id" "$run" "$repo")
   case $t in
     nosuch | none | many*) ;;
     *)
@@ -797,3 +839,4 @@ cmd__status-menu() { # range client [x]
   done
   tmux display-menu ${2:+-c "$2"} -T "#[align=centre] $st " -x "${3:-R}" -y S "${items[@]}"
 }
+ 
