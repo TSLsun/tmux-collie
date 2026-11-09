@@ -56,6 +56,24 @@ teardown() { teardown_env; }
   [[ "$stderr" == *"several live runs"* ]]
 }
 
+@test "peek: implicit selection prefers a live run over an exited run" {
+  collie new p
+  collie run p
+  p1=$(run_pane p 1)
+  tmux send-keys -t "$p1" C-d
+  wait_for "grep -q 'run_exited.*run=1 ' '$(task_dir p)/events.log'"
+  collie run p
+  p2=$(run_pane p 2)
+  tmux send-keys -t "$p2" live-marker Enter
+  wait_for "tmux capture-pane -p -t '$p2' | grep -q live-marker"
+  run --separate-stderr collie peek p
+  [ "$status" -eq 0 ]
+  [[ "$output" == *live-marker* ]]
+  run --separate-stderr collie peek p -r B
+  [ "$status" -eq 0 ]
+  [[ "$output" == *live-marker* ]]
+}
+
 @test "peek: a gone pane exits 3" {
   collie new p
   collie run p

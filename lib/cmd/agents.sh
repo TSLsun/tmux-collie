@@ -247,9 +247,14 @@ run_target() { # id run repo [include_exited]
       }
       for (i = 1; i <= m; i++) {
         r = order[i]
-        if ((!all && st[r] == "exited") || (repo != "" && rp[r] != repo)) continue
+        if (repo != "" && rp[r] != repo) continue
+        if (st[r] == "exited") {
+          if (all) { ec++; epick = line[r]; eruns = eruns " " r }
+          continue
+        }
         c++; pick = line[r]; runs = runs " " r
       }
+      if (!c && all) { c = ec; pick = epick; runs = eruns }
       print (c == 1 ? pick : c ? "many" runs : "none")
     }' - "$TASKS_DIR/$1/events.log" <<<"$wins"
 }
