@@ -51,9 +51,10 @@ teardown() { teardown_env; }
   collie run p
   pane=$(run_pane p)
   tmux send-keys -t "$pane" trim-marker Enter
+  # tty echo, then cat's copy: spaces typed sooner would share cat's row
+  wait_for "[ \"\$(tmux capture-pane -p -J -t '$pane' | grep -c trim-marker)\" -ge 2 ]"
   tmux send-keys -t "$pane" -l '      '
   tmux send-keys -t "$pane" Enter
-  wait_for "tmux capture-pane -p -J -t '$pane' | grep -q trim-marker"
   run --separate-stderr collie peek p -n 1
   [ "$status" -eq 0 ]
   [ "$output" = trim-marker ]
