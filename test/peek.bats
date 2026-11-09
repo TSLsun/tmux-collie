@@ -40,9 +40,9 @@ teardown() { teardown_env; }
     tmux send-keys -t "$pane" Enter
   done
   wait_for "[ \"\$(tmux capture-pane -p -J -S - -t '$pane' | grep -c '^$long$')\" -ge 12 ]"
-  run --separate-stderr collie peek p -n 4
+  run --separate-stderr collie peek p -n 12
   [ "$status" -eq 0 ]
-  [ "${#lines[@]}" -eq 4 ]
+  [ "${#lines[@]}" -eq 12 ]
   for line in "${lines[@]}"; do [ "$line" = "$long" ]; done
 }
 
@@ -122,12 +122,15 @@ teardown() { teardown_env; }
   collie new p --no-window
   collie run p
   collie run p
+  collie run p
   p1=$(run_pane p 1)
   p2=$(run_pane p 2)
+  p3=$(run_pane p 3)
   tmux send-keys -t "$p2" wrong-screen-marker Enter
   wait_for "tmux capture-pane -p -t '$p2' | grep -q wrong-screen-marker"
-  tmux set-option -wu -t "$p2" @collie_pane
   tmux kill-window -t "$p1"
+  tmux set-option -wu -t "$p3" @collie_pane
+  tmux select-window -t "$p3"
   run --separate-stderr collie peek p --run 1
   [ "$status" -eq 3 ]
   [[ "$output" != *wrong-screen-marker* ]]
