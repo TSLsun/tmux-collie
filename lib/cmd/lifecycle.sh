@@ -461,7 +461,7 @@ cmd__gc() {
 # typed into it if idle, else a new run if it exited; else left untouched.
 # Tasks with an agent working or waiting are skipped. -n only predicts.
 cmd_sync() {
-  local dry=0 ids="" all=0 id d runs busy win pane agent name c b p bname n files msg out
+  local dry=0 ids="" all=0 id d runs busy win pane agent name c b p bname n files msg out rc
   while [ $# -gt 0 ]; do
     case $1 in
       -n) dry=1 ;;
@@ -547,8 +547,13 @@ cmd_sync() {
         if [ -n "$win" ]; then
           pane=$(agent_pane "$id" "$win")
           if [ -n "$pane" ]; then
-            type_into "$pane" "$msg"
-            out="sent to the agent in $win"
+            rc=0
+            type_into "$pane" "$msg" || rc=$?
+            case $rc in
+              0) out="sent to the agent in $win" ;;
+              2) out="$win is at a startup dialog that needs a human, resolve it in $p" ;;
+              *) return "$rc" ;;
+            esac
           else
             out="agent pane not found, resolve it in $p"
           fi

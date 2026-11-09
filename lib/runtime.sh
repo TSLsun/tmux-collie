@@ -314,8 +314,8 @@ notify() { # title body [pane]
 }
 
 # Records a state change for the window of a pane; ignores non-collie windows.
-set_state() { # pane state [expected-codex-pending-token]
-  local info id run old wid agent active attached msg applied grace=0 tok
+set_state() { # pane state [expected-token [token-option]]
+  local info id run old wid agent active attached msg applied grace=0 tok opt=${4:-@collie_codex_pending}
   info=$(tmux display-message -p -t "$1" '#{@collie_task}|#{@collie_run}|#{@collie_state}|#{window_id}|#{@collie_agent}|#{window_active}|#{session_attached}' 2>/dev/null) || return 0
   IFS='|' read -r id run old wid agent active attached <<<"$info"
   [ -n "$id" ] && [ -f "$TASKS_DIR/$id/TASK.md" ] || return 0
@@ -327,7 +327,7 @@ set_state() { # pane state [expected-codex-pending-token]
   if [ -n "${3:-}" ]; then
     # Compare and update on the tmux server: Stop cannot invalidate an
     # observer between its token check and a stale waiting state write.
-    applied=$(tmux if-shell -F -t "$1" "#{==:#{@collie_codex_pending},$3}" \
+    applied=$(tmux if-shell -F -t "$1" "#{==:#{$opt},$3}" \
       "set-option -w -t $wid @collie_state $2 ; set-option -w -t $wid @collie_state_at $NOW ; set-option -w -t $wid @collie_state_tok $tok ; display-message -p changed" 2>/dev/null) || return 0
     [ "$applied" = changed ] || return 0
   else
@@ -352,7 +352,7 @@ set_state() { # pane state [expected-codex-pending-token]
     [ "$grace" = 0 ] || sleep "$grace"
     # A hook may have resolved this state before notification delivery.
     [ "$(tmux show-options -wqv -t "$wid" @collie_state_tok 2>/dev/null)" = "$tok" ] || exit 0
-    [ -z "${3:-}" ] || [ "$(tmux show-options -wqv -t "$wid" @collie_codex_pending 2>/dev/null)" = "$3" ] || exit 0
+    [ -z "${3:-}" ] || [ "$(tmux show-options -wqv -t "$wid" "$opt" 2>/dev/null)" = "$3" ] || exit 0
     # target of `collie _jump` (menu: jump to alert)
     tmux set-option -g @collie-last-pane "$1" 2>/dev/null || true
     notify "collie: $id" "${agent:-agent} $msg" "$1"

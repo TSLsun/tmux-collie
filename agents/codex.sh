@@ -11,6 +11,18 @@ AGENT_RESUME_ID=(resume)
 # shellcheck disable=SC2034  # RUN_MODEL -> -m, RUN_EFFORT -> model_reasoning_effort
 AGENT_MODELS=1
 
+# Startup dialogs in the pane's bottom rows (seen in Codex 0.166.0): folder
+# trust, "Hooks need review", and the review screen it opens, where a typed
+# `t` trusts every hook.
+agent_startup_dialog() {
+  case $1 in
+    *'Trust and continue'*'enter continue'*'esc quit'*) return 0 ;;
+    *'Trust all and continue'*'enter confirm'*'esc skip'*) return 0 ;;
+    *'t trust all'*'enter review'*'esc close'*) return 0 ;;
+  esac
+  return 1
+}
+
 agent_session() { # pid: exactly one open rollout; shared daemons are ambiguous
   local ids
   ids=$(lsof -a -p "$1" -Fn 2>/dev/null | sed -n 's|^n.*/rollout-.*-\([a-f0-9]\{8\}-[a-f0-9]\{4\}-[a-f0-9]\{4\}-[a-f0-9]\{4\}-[a-f0-9]\{12\}\)\.jsonl$|\1|p' | sort -u) || true
