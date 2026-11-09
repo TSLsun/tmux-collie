@@ -357,6 +357,25 @@ append-only and never committed: correct a row by logging a new one.
 `collie history` searches the file. The default run prompt points agents at
 `collie log`; when and what to log is up to the team's workflow.
 
+### Progress notes
+
+At phase changes—such as finishing a slice, hitting a blocker, or moving from
+implementation to verification—an agent can record one short checkpoint:
+
+```sh
+collie note 'retry fix implemented; starting verification'
+collie note -t fix-retry 'blocked on the upstream API decision'
+collie note                       # print the latest note and its age
+```
+
+With no explicit task id, the command uses `$COLLIE_TASK`; `-t` selects a task
+from outside its session. Arguments are joined into one line, sanitized, and
+capped at 200 characters. The latest note appears in `collie show` and the
+dashboard preview. Notes are display-only: they are never included in agent
+prompts. The default run prompt asks agents to leave a note at phase changes;
+if the command fails, they should continue their work.
+
+
 ### Leading a task with an agent
 
 The [`collie-lead`](https://github.com/TSLsun/tmux-collie/blob/main/skills/collie-lead/SKILL.md) skill makes the agent that
@@ -416,8 +435,12 @@ what counts as a finding is up to the reviewer and the lead.
 ```
 
 The lead needs the tmux socket, so run it in claude (or any agent without a
-socket-blocking sandbox). Codex's workspace-write sandbox blocks the socket;
-the runs a lead starts only need `collie signal done`, which works there.
+socket-blocking sandbox). Codex's workspace-write sandbox blocks the tmux
+socket, so a lead cannot drive collie there. A run's `collie signal done` and
+`collie note` use the same task-event logging path without controlling tmux;
+they remain callable from the agent run (using the collie executable provided
+to the run), though sandbox filesystem policy can still deny writes to task
+state outside permitted locations.
 
 ## 5. Where each action lives
 
@@ -448,6 +471,7 @@ the runs a lead starts only need `collie signal done`, which works there.
 | Sync task branch with base | `collie sync` | `s` (confirms, shows output) | `?` `s` (confirms, `space` marks several) |
 | Finish merged tasks | `collie gc` | `G` (lists them, confirms) | — |
 | Show details | `collie show` | — | preview pane (Objective) |
+| Log a progress note | `collie note` | — | preview pane (latest note) |
 | Log a decision | `collie log` | — | preview pane (last decision) |
 | Group by status / priority / repo | — | — | `tab` / `shift-tab` |
 | Priority / title | `collie set` | — | — |
