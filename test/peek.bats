@@ -12,7 +12,7 @@ setup() {
 }
 teardown() { teardown_env; }
 
-@test "peek: default count, joined lines, and trailing blanks without an event" {
+@test "peek: default count without an event" {
   collie new p
   collie run p
   pane=$(run_pane p)
@@ -75,6 +75,7 @@ teardown() { teardown_env; }
   wait_for "tmux capture-pane -p -t '$(run_pane p 2)' | grep -q other"
   run --separate-stderr collie peek p -n 2 --run 1
   [ "$status" -eq 0 ]
+  [ "${#lines[@]}" -eq 2 ]
   [[ "$output" == *gamma* ]]
   [[ "$output" != *alpha* ]]
   run --separate-stderr collie peek p -r B -n 10
