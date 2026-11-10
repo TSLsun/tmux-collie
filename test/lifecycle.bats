@@ -226,6 +226,43 @@ squash_upstream() {
   [[ "$output" == *"skipped f: no own commits on A"*"no merged tasks"* && "$output" != *"(y/n)"* ]]
 }
 
+@test "gc: multi-repo: partly merged is reported per repo; an untouched repo does not hold back a merged task" {
+  make_bare_repo B
+  make_bare_repo C
+  cd "$TMP"
+  collie new x -r A -r B -r C --no-window
+  commit_in "$TMP/repos/A/feat-x" a
+  commit_in "$TMP/repos/B/feat-x" b
+  REPO=$TMP/repos/A merge_upstream feat/x
+  printf 'A\t3\tmerged\tpass\nB\t4\topen\tfail\n' >"$(task_dir x)/pr.tsv"
+  run --separate-stderr collie gc -n
+  [ "$status" -eq 0 ]
+  [ "$output" = "skipped x: merged: A; not merged: B (PR #4 open)" ]
+  run --separate-stderr collie gc
+  [ "$output" = "skipped x: merged: A; not merged: B (PR #4 open)" ]
+  [ -z "$(fm x status)" ]
+  # B lands too; C never had commits
+  git -C "$TMP/origin-B" fetch -q "$TMP/repos/B/.bare" feat/x
+  git -C "$TMP/origin-B" merge -q --ff-only FETCH_HEAD
+  printf 'A\t3\tmerged\tpass\nB\t4\tmerged\tpass\n' >"$(task_dir x)/pr.tsv"
+  run --separate-stderr collie gc
+  [ "$status" -eq 0 ] && [ "${lines[0]}" = "done x" ]
+  [ "$(fm x status)" = done ]
+  [ ! -d "$TMP/repos/C/feat-x" ]
+}
+
+@test "gc: multi-repo: no repo with commits of its own is never finished" {
+  make_bare_repo B
+  cd "$TMP"
+  collie new x -r A -r B --no-window
+  commit_in "$TMP/origin-A" later
+  git -C "$TMP/repos/A" fetch -q origin
+  git -C "$TMP/repos/A/feat-x" merge -q --no-ff -m "merge main" origin/main
+  run --separate-stderr collie gc
+  [ "$output" = "skipped x: no own commits on A" ]
+  [ -z "$(fm x status)" ]
+}
+
 @test "gc: without the reflog, a fast-forward merge counts only with a merged PR" {
   collie new p --no-window
   commit_in "$TMP/repos/A/feat-p" p

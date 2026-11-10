@@ -384,12 +384,15 @@ cmd_spike() {
   log_event "$id" spiked_from "task=${owner:--} path=$src head=$head"
 }
 
-# A task is merged when every branch moved past where its worktree started,
-# has commits of its own (see own_commits) and that tip is merged into the
-# base branch (see merged_into). Merged tasks whose agent is working or
-# waiting are skipped.
+# A task is merged when at least one branch moved past where its worktree
+# started, has commits of its own (see own_commits) and that tip is merged
+# into the base branch (see merged_into), and every other branch is merged
+# too or untouched: still at its start, or merged without commits of its own
+# (it only gained base commits). A task with some branches merged and others
+# not is reported per repo. Merged tasks whose agent is working or waiting
+# are skipped.
 cmd_gc() {
-  local dry=0 d id name c b p start tip merged note busy err total=0 found=0
+  local dry=0 d id name c b p start tip landed unmerged own stop pr err total=0 found=0
   [ "${1:-}" != -n ] || dry=1
   load_tmux_state
   for d in "$TASKS_DIR"/*; do
@@ -399,29 +402,34 @@ cmd_gc() {
     id=${d##*/}
     cmd__pr "$id" || true
     # folders have no branch: a task needs at least one merged repo
-    merged=0 note=""
+    landed="" unmerged="" own="" stop=0
     while IFS=$TAB read -r name c b p; do
       [ "$c" != - ] || continue
-      merged=1
       repo_start "$d" "$name"
       start=$START
-      tip=$(git --git-dir="$c" rev-parse -q --verify "refs/heads/$b") || { merged=0; break; }
+      tip=$(git --git-dir="$c" rev-parse -q --verify "refs/heads/$b") && [ -n "$start" ] || { stop=1; break; }
+      [ "$tip" != "$start" ] || continue
       fetch_origin "$c" "$name" || true
-      if [ -z "$start" ] || [ "$tip" = "$start" ] || ! { default_base "$c" || true; merged_into "$c" "$b" "$BASE"; }; then
-        merged=0
-        break
-      fi
-      if ! awk -F'\t' -v n="$name" '$1 == n && $3 == "merged" { f = 1 } END { exit !f }' "$d/pr.tsv" 2>/dev/null &&
-        ! own_commits "$c" "$b" "$start" "$BASE"; then
-        merged=0 note="no own commits on $name"
-        break
+      default_base "$c" || true
+      if ! merged_into "$c" "$b" "$BASE"; then
+        pr=$(awk -F'\t' -v n="$name" '$1 == n { s = s " #" $2 " " $3 } END { print s }' "$d/pr.tsv" 2>/dev/null) || pr=""
+        unmerged="$unmerged${unmerged:+, }$name${pr:+ (PR${pr})}"
+      elif awk -F'\t' -v n="$name" '$1 == n && $3 == "merged" { f = 1 } END { exit !f }' "$d/pr.tsv" 2>/dev/null ||
+        own_commits "$c" "$b" "$start" "$BASE"; then
+        landed="$landed${landed:+, }$name"
+      else
+        own="$own${own:+, }$name"
       fi
     done <"$d/repos.tsv"
-    if [ -n "$note" ]; then
-      echo "skipped $id: $note"
+    [ "$stop" -eq 0 ] || continue
+    if [ -z "$landed" ]; then
+      [ -z "$own" ] || [ -n "$unmerged" ] || echo "skipped $id: no own commits on $own"
       continue
     fi
-    [ "$merged" -eq 1 ] || continue
+    if [ -n "$unmerged" ]; then
+      echo "skipped $id: merged: $landed; not merged: $unmerged"
+      continue
+    fi
     busy=$(task_runs "$id" | awk -F'\t' '$3 == "working" || $3 == "waiting" { print $3; exit }')
     if [ -n "$busy" ]; then
       echo "skipped $id: agent $busy (see: collie done $id)"
