@@ -500,7 +500,7 @@ cmd__gc() {
 # typed into it if idle, else a new run if it exited; else left untouched.
 # Tasks with an agent working or waiting are skipped. -n only predicts.
 cmd_sync() {
-  local dry=0 ids="" all=0 id d runs busy win pane agent name c b p bname n files msg out
+  local dry=0 ids="" all=0 id d runs busy win agent name c b p bname n files msg out conf
   while [ $# -gt 0 ]; do
     case $1 in
       -n) dry=1 ;;
@@ -522,6 +522,7 @@ cmd_sync() {
   while IFS= read -r id; do
     [ -n "$id" ] || continue
     d="$TASKS_DIR/$id"
+    conf=""
     runs=$(task_runs "$id")
     busy=$(awk -F'\t' '$3 == "working" || $3 == "waiting" { print "busy"; exit }' <<<"$runs")
     win=$(awk -F'\t' '$3 == "idle" { print $4; exit }' <<<"$runs")
@@ -582,25 +583,12 @@ cmd_sync() {
           continue
         fi
         git -C "$p" merge -q -m "Merge $bname into $b" "$BASE" >/dev/null 2>&1 || true
-        msg="collie sync merged $bname into $b in $p and stopped on conflicts in: $files. Resolve them keeping the intent of both sides, run the Verify checks from .collie/TASK.md, commit the merge (do not rebase or abort it), and push if the branch has an upstream."
-        if [ -n "$win" ]; then
-          pane=$(agent_pane "$id" "$win")
-          if [ -n "$pane" ]; then
-            type_into "$pane" "$msg"
-            out="sent to the agent in $win"
-          else
-            out="agent pane not found, resolve it in $p"
-          fi
-        elif "$BASH" "$PLUGIN_DIR/bin/collie" run "$id" -r "$name" --agent "$agent" \
-          -p "Your task contract is .collie/TASK.md. $msg" >/dev/null 2>&1; then
-          out="started a $agent run"
-        else
-          out="could not start $agent; resolve it in $p"
-        fi
         log_event "$id" sync_conflict "repo=$name base=$(git --git-dir="$c" rev-parse --short "$BASE") files=${files// /,}"
-        echo "$id $name: conflict in $files; $out"
+        # handed to the agent once per task, after every repo is merged
+        conf="$conf$name$TAB$p$TAB$bname$TAB$b$TAB$files"$'\n'
       fi
     done <"$d/repos.tsv"
+    [ -z "$conf" ] || sync_handoff "$id" "$win" "$agent" "$conf"
     cmd__pr "$id" || true
   done <<<"$ids"
   if [ "$dry" -eq 0 ]; then
@@ -617,6 +605,43 @@ cmd_sync() {
   else
     echo "between tasks: no conflicts"
   fi
+}
+
+# Hands a task's sync conflicts to its agent in one message, so repos that
+# conflict together reach one agent run: typed into the idle agent's window
+# if given, else a new run of the last agent in the first conflicting repo
+# (it sees the other worktrees). Prints one line per conflicting repo.
+sync_handoff() { # id window agent conflicts (repo, path, base, branch, files lines)
+  local id=$1 win=$2 agent=$3 name p bname b files items="" first="" n=0 msg pane out
+  while IFS=$TAB read -r name p bname b files; do
+    [ -n "$name" ] || continue
+    [ -n "$first" ] || first=$name
+    items="$items${items:+; }merged $bname into $b in $p and stopped on conflicts in: $files"
+    n=$((n + 1))
+  done <<<"$4"
+  if [ "$n" -eq 1 ]; then
+    msg="collie sync $items. Resolve them keeping the intent of both sides, run the Verify checks from .collie/TASK.md, commit the merge (do not rebase or abort it), and push if the branch has an upstream."
+  else
+    msg="collie sync, in $n repos: $items. Resolve them in each repo keeping the intent of both sides, run the Verify checks from .collie/TASK.md, commit each merge (do not rebase or abort them), and push the branches that have an upstream."
+  fi
+  if [ -n "$win" ]; then
+    pane=$(agent_pane "$id" "$win")
+    if [ -n "$pane" ]; then
+      type_into "$pane" "$msg"
+      out="sent to the agent in $win"
+    else
+      out="agent pane not found, resolve it in {path}"
+    fi
+  elif "$BASH" "$PLUGIN_DIR/bin/collie" run "$id" -r "$first" --agent "$agent" \
+    -p "Your task contract is .collie/TASK.md. $msg" >/dev/null 2>&1; then
+    out="started a $agent run"
+  else
+    out="could not start $agent; resolve it in {path}"
+  fi
+  while IFS=$TAB read -r name p bname b files; do
+    [ -n "$name" ] || continue
+    echo "$id $name: conflict in $files; ${out//\{path\}/$p}"
+  done <<<"$4"
 }
 
 # Predicts merge conflicts between active tasks without touching worktrees or

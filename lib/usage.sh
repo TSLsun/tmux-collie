@@ -427,8 +427,10 @@ usage: collie sync [<id>...] [-n]
 Merge the base branch (fetched first) into active task branches (all, or the
 given ids), committing and pushing clean merges when the branch has an
 upstream. On a conflict the merge is started and the task's agent is told
-the files (typed in if idle, a new run if exited). Skips tasks whose agent
-is working or waiting, dirty worktrees, and branches without own commits.
+the files (typed in if idle, a new run if exited); conflicts in several
+repos of a task go to it in one message. Each repo is synced and reported
+on its own line; exits 0 whatever they report. Skips tasks whose agent is
+working or waiting, dirty worktrees, and branches without own commits.
 -n predicts only, including conflicts between tasks; read-only.
 EOF
       ;;
