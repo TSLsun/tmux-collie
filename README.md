@@ -49,6 +49,8 @@ collie add deploy-v2 -r C:release/v2   # switch C to another branch, keep feat/d
 collie drop deploy-v2 -r C             # remove C's worktree; keep its branch
 collie ls                              # id  status  priority  session(*|-)  agent  repos  needs
 collie brief                           # what waits on you and the command to act, per task
+collie todo                            # the same queue in fzf: enter goes there, reviews or sends CI logs
+collie next                            # switch to the next task that waits on you (prefix h n)
 collie show deploy-v2                  # fields, TASK.md contract, repos, runs, last decision, events
 collie log build 'use ln' 'atomic' test/log.bats ok   # agent: a row in .collie/decisions.tsv
 collie edit deploy-v2                  # adjust TASK.md in $EDITOR (also: dash e, prefix h e)
@@ -183,9 +185,9 @@ repo's branch and PR. It sits right of the list when the rows fit beside it,
 below it otherwise, and wraps long lines. The header's key hints wrap instead
 of being cut.
 
-`prefix h` opens a menu (dashboard, brief, lazygit, terminal, new
-task, peek, run agent, run default agent, adopt agent, edit task, review, done, archive, sync, jump to alert, gc merged tasks) for the current session's task; outside a
-task session it keeps only dashboard, brief, lazygit, terminal, new task, jump to alert and gc merged tasks.
+`prefix h` opens a menu (dashboard, to-do, next for you, lazygit, terminal, new
+task, peek, run agent, run default agent, adopt agent, edit task, review, done, archive, sync, jump to alert, back to last session, gc merged tasks) for the current session's task; outside a
+task session it keeps only dashboard, to-do, next for you, lazygit, terminal, new task, jump to alert, back to last session and gc merged tasks.
 `run agent` (`r`) lists the agents (default first), then switches you to the
 new agent window; `run default agent` (`R`) skips the list;
 plain `collie run` leaves it in the background (`-s` switches). `jump to alert` (`j`) switches to the pane of the last agent that notified. `prefix h h` goes straight to the

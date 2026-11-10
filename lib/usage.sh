@@ -16,6 +16,8 @@ tasks:
   drop [<id>] -r repo remove repos from a task, keeping their branches
   ls [-a]             list tasks: id, status, priority, session, agent, needs
   brief               what waits on you and the command to act per task
+  todo                fzf to-do of what waits on you; enter acts on a row
+  next [-c client]    switch to the next task that waits on you
   show [<id>]         fields, TASK.md, repos, agent runs, events, REPORT.md
   history [-n] [pat]  finished tasks, newest first; searches TASK.md/REPORT.md
   log <5 fields>      append a row to the task's decision log (decisions.tsv)
@@ -282,6 +284,33 @@ from the cache the dashboard keeps (never calls gh). A task whose open PR
 has failing CI in that cache also gets a ci block at the end, pointing
 at `collie ci <id> --send`. Prints "nothing waits on you" when nothing does.
 Read-only.
+EOF
+      ;;
+    todo)
+      cat <<'EOF'
+usage: collie todo
+
+brief's rows in fzf (prefix h i opens it in a popup). enter acts on a row:
+
+  answer, reply     go to the task's most urgent agent window
+  findings, review  show collie review in a pager, then back to the list
+  stalled           go to the task session; lost agents: collie restore
+  ci                collie ci <id> --send, then back to the list
+
+The preview shows the agent's screen or the review. ctrl-a lists every
+open task instead, to find one by name; ctrl-t goes back. Needs fzf.
+EOF
+      ;;
+    next)
+      cat <<'EOF'
+usage: collie next [-c client]
+
+Switch to the next task in brief's order after the current session's task,
+wrapping around; one stop per task. Agent rows go to the agent window,
+others to the task session. Nothing is stored: a row left unresolved comes
+round again. Says "nothing waits on you" when nothing does.
+
+  -c client       the tmux client to switch (prefix h n passes it)
 EOF
       ;;
     show)
@@ -699,7 +728,7 @@ EOF
 }
 
 # the public commands, in overview order
-HELP_COMMANDS='new add drop ls brief show history log edit go dash set review verify spike race pick gc sync done archive reopen run handoff send peek ci pause adopt restore wait signal state status doctor repos workspaces'
+HELP_COMMANDS='new add drop ls brief todo next show history log edit go dash set review verify spike race pick gc sync done archive reopen run handoff send peek ci pause adopt restore wait signal state status doctor repos workspaces'
 
 cmd_help() {
   local c

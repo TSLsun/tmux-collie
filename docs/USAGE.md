@@ -270,8 +270,18 @@ lists with `+N`; the preview and `dash -n` show the complete cached list.
 `collie brief` is the short form: a block per task that needs you, in the
 same order, with separate reason, PR details and next command. It reads only
 local state and the dashboard's PR cache, so it never touches the network.
-The `prefix h b` popup uses a pager: scroll with the arrow keys and press `q`
-to close it.
+`collie todo` (`prefix h i`, a popup) lists the same rows in fzf. `enter`
+acts on a row: an agent row goes to its agent window, review and findings
+show `collie review` in a pager (`q` returns to the list), stalled goes to
+the task session, a lost run runs `collie restore`, ci runs
+`collie ci <id> --send`. The preview shows the agent's screen or the review.
+`ctrl-a` lists every open task, to find one by name; `ctrl-t` goes back.
+
+`collie next` (`prefix h n`) switches to the next task in that order after
+the one you are in, wrapping around, with one stop per task: an agent row
+to its agent window, others to the task session. Nothing is stored, so a
+row you leave unresolved comes round again. `prefix h l` returns to the
+session you came from.
 
 ```text
 answer  login (P1)
@@ -450,7 +460,8 @@ the runs a lead starts only need `collie signal done`, which works there.
 | Action | CLI | `prefix h` menu | Dashboard (`prefix h h`) |
 |---|---|---|---|
 | Dashboard | `collie dash` | `h` | — |
-| What waits on you | `collie brief` | `b` (popup) | sorted task list |
+| What waits on you | `collie brief`, `collie todo` | `i` (to-do popup) | sorted task list |
+| Next task that waits on you | `collie next` | `n` | — |
 | New task | `collie new` | `c` (prompts, switches to it) | `?` `c` |
 | Edit TASK.md | `collie edit` | `e` | `e` or `?` `e` |
 | Run agent | `collie run --agent` | `r` (menu of agents, default first) | `r` or `?` `r` (digit picks, `enter` the default) |
@@ -466,6 +477,7 @@ the runs a lead starts only need `collie signal done`, which works there.
 | Go to task | `collie go` | — | `enter` (most urgent agent window) |
 | Runs of a task | `collie show` | — | `u` (`enter`: its window, `esc`: back) |
 | Jump to last alert | — | `j` | — |
+| Back to the last session | — | `l` | — |
 | Review | `collie review` | `v` | `v` or `?` `v` |
 | Run TASK.md Verify blocks | `collie verify` | — | — (last result in the preview) |
 | Shell in worktree | — | `t` (popup at the pane's path) | `?` `t` (task's first worktree) |
