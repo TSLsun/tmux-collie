@@ -53,6 +53,22 @@ squash_upstream() {
   [[ "$output" == *"+one"* ]]
 }
 
+@test "review: multi-repo: each repo shows its cached PRs and whether it has no commits or is merged" {
+  make_bare_repo B
+  make_bare_repo C
+  cd "$TMP"
+  collie new x -r A -r B -r C --no-window
+  commit_in "$TMP/repos/A/feat-x" one
+  commit_in "$TMP/repos/B/feat-x" two
+  REPO=$TMP/repos/A squash_upstream feat/x
+  printf 'A\t3\tmerged\tpass\nB\t4\topen\tfail\nB\t2\tclosed\t-\n' >"$(task_dir x)/pr.tsv"
+  run collie review x
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"== A  feat/x  1 ahead of origin/HEAD, merged"$'\n'"PR #3 merged, CI pass"$'\n'* ]]
+  [[ "$output" == *"== B  feat/x  1 ahead of origin/HEAD"$'\n'"PR #4 open, CI fail"$'\n'"PR #2 closed"$'\n'* ]]
+  [[ "$output" == *"== C  feat/x  0 ahead of origin/HEAD, no commits"* ]]
+}
+
 # --- spike ------------------------------------------------------------------
 
 @test "spike: copies uncommitted changes to an exp/ task; source untouched" {

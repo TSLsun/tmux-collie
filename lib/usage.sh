@@ -372,8 +372,9 @@ EOF
       cat <<'EOF'
 usage: collie review [<id>] [-p]
 
-Per repo: commits since the branch started, diff stat (-p: the full patch),
-dirty files; then REPORT.md. Folders list files modified since the first
+Per repo: commits since the branch started (marked "no commits" or
+"merged"), its cached PRs with state and CI, diff stat (-p: the full
+patch), dirty files; then REPORT.md. Folders list files modified since the first
 run. Read-only.
 EOF
       ;;

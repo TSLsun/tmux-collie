@@ -216,7 +216,7 @@ race_review() { # parent task_dir
 }
 
 cmd_review() {
-  local id="" patch=0 d name c b p base
+  local id="" patch=0 d name c b p base n note
   while [ $# -gt 0 ]; do
     case $1 in
       -p) patch=1 ;;
@@ -236,8 +236,17 @@ cmd_review() {
     fi
     default_base "$c"
     base=$BASE
-    printf '== %s  %s  %s ahead of %s\n' "$name" "$b" \
-      "$(git --git-dir="$c" rev-list --count "$base..refs/heads/$b")" "${base#refs/heads/}"
+    # how far the repo got: no commits, merged (squash merges stay "ahead")
+    n=$(git --git-dir="$c" rev-list --count "$base..refs/heads/$b")
+    note=""
+    if [ "$n" -eq 0 ]; then
+      note=", no commits"
+    elif merged_into "$c" "$b" "$base"; then
+      note=", merged"
+    fi
+    printf '== %s  %s  %s ahead of %s%s\n' "$name" "$b" "$n" "${base#refs/heads/}" "$note"
+    # its PRs from the cache (see cmd__pr): number, state, CI
+    awk -F'\t' -v n="$name" '$1 == n && NF >= 3 { print "PR #" $2 " " $3 ($4 != "" && $4 != "-" ? ", CI " $4 : "") }' "$d/pr.tsv" 2>/dev/null || true
     git --git-dir="$c" log --oneline "$base..refs/heads/$b"
     if [ "$patch" -eq 1 ]; then
       git --git-dir="$c" diff "$base...refs/heads/$b"
