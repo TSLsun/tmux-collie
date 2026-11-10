@@ -365,13 +365,14 @@ cmd__actions() { # id key
 cmd__menu() { # session [client]
   local C="$PLUGIN_DIR/bin/collie" T=$1 popup="display-popup -E -w 90% -h 85%" items k l a
   items=(dashboard h "$popup '$C _popup $C dash'"
+    brief b "$popup '$C _popup \"$C brief | LESS= less -R\"'"
     lazygit g "$popup -d '#{pane_current_path}' '$C _popup lazygit'"
     terminal t "$popup -d '#{pane_current_path}'"
     "new task" c "display-popup -EE -w 80% -h 70% -d '#{pane_current_path}' '$C new'")
   if valid_id "$T" && [ -f "$TASKS_DIR/$T/TASK.md" ]; then
     # the dashboard's task actions (action_items), same keys and labels;
     # terminal and new task are the global items above
-    items+=("")
+    items+=("" "peek task" p "display-popup -E -w 90% -h 85% '$C _popup -w $C peek $T'")
     while read -r k l; do
       case $k in
         r) a="run-shell '$C _runpick $T${2:+ $2}'" ;;

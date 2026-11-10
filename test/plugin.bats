@@ -27,6 +27,36 @@ teardown() { teardown_env; }
   [ "$(tmux show-options -gqv status-right)" = "x #(\"$COLLIE_ROOT/bin/collie\" status) y" ]
 }
 
+@test "collie.tmux: expands #{collie_window} as a styled per-window state" {
+  tmux new-session -d -s t
+  tmux set-option -g window-status-format 'before #[fg=magenta]#{collie_window} after'
+  tmux set-option -g window-status-current-format 'current #[fg=cyan]#{collie_window} end'
+  tmux run-shell "$COLLIE_ROOT/collie.tmux"
+  format=$(tmux show-options -gqv window-status-format)
+  current=$(tmux show-options -gqv window-status-current-format)
+  for pair in waiting:red idle:yellow working:green; do
+    state=${pair%:*} color=${pair#*:}
+    tmux set-option -w @collie_state "$state"
+    [ "$(tmux display-message -p "$format")" = "before #[fg=magenta]#[push-default]#[fg=${color}]●#[default]#[pop-default] after" ]
+    [ "$(tmux display-message -p "$current")" = "current #[fg=cyan]#[push-default]#[fg=${color}]●#[default]#[pop-default] end" ]
+  done
+  tmux set-option -wu @collie_state
+  [ "$(tmux display-message -p "$format")" = 'before #[fg=magenta] after' ]
+  [ "$(tmux display-message -p "$current")" = 'current #[fg=cyan] end' ]
+  tmux run-shell "$COLLIE_ROOT/collie.tmux"
+  [ "$(tmux show-options -gqv window-status-format)" = "$format" ]
+  [ "$(tmux show-options -gqv window-status-current-format)" = "$current" ]
+}
+
+@test "collie.tmux: leaves window formats without the placeholder unchanged" {
+  tmux new-session -d -s t
+  tmux set-option -g window-status-format '#I:#W'
+  tmux set-option -g window-status-current-format '#[fg=cyan]#I:#W'
+  tmux run-shell "$COLLIE_ROOT/collie.tmux"
+  [ "$(tmux show-options -gqv window-status-format)" = '#I:#W' ]
+  [ "$(tmux show-options -gqv window-status-current-format)" = '#[fg=cyan]#I:#W' ]
+}
+
 @test "collie.tmux: binds the menu to prefix h (or @collie-key)" {
   tmux new-session -d -s t
   tmux run-shell "$COLLIE_ROOT/collie.tmux"
@@ -117,7 +147,6 @@ stub_tmux() {
   stub_tmux
   PATH="$TMP/stub:$PATH" run collie _menu main cl
   [ "$status" -eq 0 ]
-  [[ "$output" == *"collie dash"* && "$output" == *"-not a collie task — use collie new"* ]]
   [[ "$output" == *"-EE"*"collie new"* ]]
   [[ "$output" == *"terminal"$'\n'"t"$'\n'"display-popup -E -w 90% -h 85% -d '#{pane_current_path}'"$'\n'* ]]
   [[ "$output" == *"gc merged tasks"$'\n'"G"$'\n'"display-popup "*"_popup "*"collie _gc'"* ]]

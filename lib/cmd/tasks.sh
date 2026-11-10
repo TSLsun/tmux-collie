@@ -322,12 +322,17 @@ cmd_ls() {
   done
 }
 
-# What waits on you: one line per task that needs you (answer, reply,
-# findings, review, stalled), most urgent first, then by priority and id:
-# what it waits on and the command that acts on it. Reads local state and the
-# cached PRs (pr.tsv) only: never gh or the network.
+# What waits on you, most urgent first, then by priority and id.
+# Reads local state and the cached PRs (pr.tsv) only: never gh or the network.
+brief_detail() { # label text width
+  printf '%s: %s\n' "$1" "$2" | fold -s -w "$(($3 - 4))" | awk 'NR == 1 { print "  " $0; next } { print "    " $0 }'
+}
+
 cmd_brief() {
-  local all rows id pri top needs what act d head pr n=0 _
+  local all rows id pri top needs what act d head pr n=0 _ width=${COLUMNS:-}
+  [ -n "$width" ] || [ ! -t 0 ] || { width=$(stty size </dev/tty 2>/dev/null) && width=${width#* }; } || width=""
+  case $width in '' | *[!0-9]*) width=80 ;; esac
+  [ "$width" -ge 24 ] || width=24
   all=$(cmd_ls)
   rows=$(printf '%s\n' "$all" | awk -F'\t' '
     BEGIN { split("answer reply findings review stalled", o, " "); for (i in o) r[o[i]] = i }
@@ -335,6 +340,7 @@ cmd_brief() {
   while IFS=$TAB read -r _ id _ pri _ top _ needs; do
     [ -n "$id" ] || continue
     d="$TASKS_DIR/$id"
+    pr=""
     case $needs in
       answer) what="an agent waits for your answer" act="collie go $id" ;;
       reply) what="an agent finished its turn without a REPORT.md" act="collie go $id" ;;
@@ -358,7 +364,7 @@ cmd_brief() {
               else if (s != "") print "PR " s
             }
           }' "$d/pr.tsv" 2>/dev/null) || pr=""
-        what="${head:-REPORT.md written}${pr:+ | $pr}" act="collie review $id"
+        what="${head:-REPORT.md written}" act="collie review $id"
         ;;
       stalled)
         if [ "$top" = unknown ]; then
@@ -368,7 +374,11 @@ cmd_brief() {
         fi
         ;;
     esac
-    printf '%-8s %s (%s): %s  ->  %s\n' "$needs" "$id" "$pri" "$what" "$act"
+    [ "$n" -eq 0 ] || printf '\n'
+    printf '%s  %s (%s)\n' "$needs" "$id" "$pri"
+    brief_detail "Why" "$what" "$width"
+    [ -z "$pr" ] || brief_detail "PR" "${pr#PR }" "$width"
+    brief_detail "Next" "$act" "$width"
     n=$((n + 1))
   done <<<"$rows"
   # open PRs with failing CI, after the rows above and whatever the task needs
@@ -377,7 +387,10 @@ cmd_brief() {
     pr=$(awk -F'\t' '($3 == "open" || $3 == "draft") && $4 == "fail" { s = s (s == "" ? "" : ", ") "#" $2 }
       END { print s }' "$TASKS_DIR/$id/pr.tsv" 2>/dev/null) || pr=""
     [ -n "$pr" ] || continue
-    printf '%-8s %s (%s): PR %s has failing CI  ->  collie ci %s --send\n' ci "$id" "$pri" "$pr" "$id"
+    [ "$n" -eq 0 ] || printf '\n'
+    printf 'ci  %s (%s)\n' "$id" "$pri"
+    brief_detail "Why" "PR $pr has failing CI" "$width"
+    brief_detail "Next" "collie ci $id --send" "$width"
     n=$((n + 1))
   done < <(printf '%s\n' "$all" | sort -t "$TAB" -k3,3 -k1,1)
   [ "$n" -gt 0 ] || echo "nothing waits on you"
