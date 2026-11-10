@@ -322,17 +322,16 @@ cmd_ls() {
   done
 }
 
-# What waits on you, most urgent first, then by priority and id.
-# Reads local state and the cached PRs (pr.tsv) only: never gh or the network.
 brief_detail() { # label text width
   printf '%s: %s\n' "$1" "$2" | fold -s -w "$(($3 - 4))" | awk 'NR == 1 { print "  " $0; next } { print "    " $0 }'
 }
 
-cmd_brief() {
-  local all rows id pri top needs what act d head pr n=0 _ width=${COLUMNS:-}
-  [ -n "$width" ] || [ ! -t 0 ] || { width=$(stty size </dev/tty 2>/dev/null) && width=${width#* }; } || width=""
-  case $width in '' | *[!0-9]*) width=80 ;; esac
-  [ "$width" -ge 24 ] || width=24
+# What waits on you, most urgent first, then by priority and id: one TSV row
+# per item, needs, id, priority, action (go review restore run ci), why and
+# PR ("" when none). brief prints them; todo and next act on them.
+# Reads local state and the cached PRs (pr.tsv) only: never gh or the network.
+brief_rows() {
+  local all rows id pri top needs what act d head pr _
   all=$(cmd_ls)
   rows=$(printf '%s\n' "$all" | awk -F'\t' '
     BEGIN { split("answer reply findings review stalled", o, " "); for (i in o) r[o[i]] = i }
@@ -342,13 +341,14 @@ cmd_brief() {
     d="$TASKS_DIR/$id"
     pr=""
     case $needs in
-      answer) what="an agent waits for your answer" act="collie go $id" ;;
-      reply) what="an agent finished its turn without a REPORT.md" act="collie go $id" ;;
-      findings) what="the review has open findings" act="collie review $id" ;;
+      answer) what="an agent waits for your answer" act=go ;;
+      reply) what="an agent finished its turn without a REPORT.md" act=go ;;
+      findings) what="the review has open findings" act=review ;;
       review)
         # the report's first line of prose, then its PR (link from REPORT.md,
         # state and CI from the cache)
         head=$(awk -v re="$PR_RE" 'NF && !/^#/ && $0 !~ re { sub(/^[-*>] /, ""); print; exit }' "$d/REPORT.md")
+        head=${head//"$TAB"/ }
         [ "${#head}" -le 100 ] || head="${head:0:97}..."
         pr=$(grep -oE -m1 "$PR_RE" "$d/REPORT.md") || pr=""
         pr=$(awk -F'\t' -v url="$pr" '
@@ -364,22 +364,17 @@ cmd_brief() {
               else if (s != "") print "PR " s
             }
           }' "$d/pr.tsv" 2>/dev/null) || pr=""
-        what="${head:-REPORT.md written}" act="collie review $id"
+        what="${head:-REPORT.md written}" act=review
         ;;
       stalled)
         if [ "$top" = unknown ]; then
-          what="its agents were lost with the tmux server" act="collie restore $id"
+          what="its agents were lost with the tmux server" act=restore
         else
-          what="no agent running and no REPORT.md since the last run" act="collie run $id"
+          what="no agent running and no REPORT.md since the last run" act=run
         fi
         ;;
     esac
-    [ "$n" -eq 0 ] || printf '\n'
-    printf '%s  %s (%s)\n' "$needs" "$id" "$pri"
-    brief_detail "Why" "$what" "$width"
-    [ -z "$pr" ] || brief_detail "PR" "${pr#PR }" "$width"
-    brief_detail "Next" "$act" "$width"
-    n=$((n + 1))
+    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$needs" "$id" "$pri" "$act" "$what" "$pr"
   done <<<"$rows"
   # open PRs with failing CI, after the rows above and whatever the task needs
   while IFS=$TAB read -r id _ pri _; do
@@ -387,12 +382,26 @@ cmd_brief() {
     pr=$(awk -F'\t' '($3 == "open" || $3 == "draft") && $4 == "fail" { s = s (s == "" ? "" : ", ") "#" $2 }
       END { print s }' "$TASKS_DIR/$id/pr.tsv" 2>/dev/null) || pr=""
     [ -n "$pr" ] || continue
-    [ "$n" -eq 0 ] || printf '\n'
-    printf 'ci  %s (%s)\n' "$id" "$pri"
-    brief_detail "Why" "PR $pr has failing CI" "$width"
-    brief_detail "Next" "collie ci $id --send" "$width"
-    n=$((n + 1))
+    printf 'ci\t%s\t%s\tci\tPR %s has failing CI\t\n' "$id" "$pri" "$pr"
   done < <(printf '%s\n' "$all" | sort -t "$TAB" -k3,3 -k1,1)
+}
+
+cmd_brief() {
+  local rows needs id pri act what pr n=0 width=${COLUMNS:-}
+  [ -n "$width" ] || [ ! -t 0 ] || { width=$(stty size </dev/tty 2>/dev/null) && width=${width#* }; } || width=""
+  case $width in '' | *[!0-9]*) width=80 ;; esac
+  [ "$width" -ge 24 ] || width=24
+  rows=$(brief_rows)
+  while IFS=$TAB read -r needs id pri act what pr; do
+    [ -n "$id" ] || continue
+    [ "$n" -eq 0 ] || printf '\n'
+    printf '%s  %s (%s)\n' "$needs" "$id" "$pri"
+    brief_detail "Why" "$what" "$width"
+    [ -z "$pr" ] || brief_detail "PR" "${pr#PR }" "$width"
+    [ "$act" = ci ] && act="collie ci $id --send" || act="collie $act $id"
+    brief_detail "Next" "$act" "$width"
+    n=$((n + 1))
+  done <<<"$rows"
   [ "$n" -gt 0 ] || echo "nothing waits on you"
 }
 
