@@ -405,6 +405,114 @@ cmd_brief() {
   [ "$n" -gt 0 ] || echo "nothing waits on you"
 }
 
+# Goes to a queue item: an agent row (action go) to the task's most urgent
+# agent window (as dash enter does), any other to the task session.
+nav_go() { # id action [client]
+  local wid=-
+  [ "$2" != go ] || wid=$(cmd__target "$1")
+  if [ -z "${3:-}" ] && [ -z "${TMUX:-}" ]; then
+    [ "$wid" = - ] || tmux select-window -t "$wid" 2>/dev/null || true
+    cmd_go "$1"
+    return
+  fi
+  ensure_session "$1"
+  [ "$wid" = - ] || tmux select-window -t "$wid" 2>/dev/null || true
+  tmux switch-client ${3:+-c "$3"} -t "=$1"
+}
+
+# In tmux the status line, else stdout.
+nav_msg() { # client text
+  if [ -n "$1${TMUX:-}" ]; then
+    tmux display-message ${1:+-c "$1"} "$2" 2>/dev/null || true
+  else
+    printf '%s\n' "$2"
+  fi
+}
+
+# The next queue item after the current session's task, wrapping around: no
+# cursor is stored, so an item left unresolved comes round again.
+cmd_next() {
+  local client="" cur="" pick id act needs
+  while [ $# -gt 0 ]; do
+    case $1 in
+      -c) need_value next "-c needs a client" "${2:-}"; client=$2; shift ;;
+      *) die "usage: collie next [-c client]" ;;
+    esac
+    shift
+  done
+  if [ -n "$client${TMUX:-}" ]; then
+    cur=$(tmux display-message -p ${client:+-c "$client"} '#{client_session}' 2>/dev/null) || cur=""
+  fi
+  pick=$(brief_rows | awk -F'\t' -v cur="$cur" '
+    NF && !seen[$2]++ { n++; id[n] = $2; a[n] = $4; nd[n] = $1; if ($2 == cur) at = n }
+    END { if (n) { i = at % n + 1; print id[i] "\t" a[i] "\t" nd[i] } }')
+  if [ -z "$pick" ]; then
+    nav_msg "$client" "collie: nothing waits on you"
+    return 0
+  fi
+  IFS=$TAB read -r id act needs <<<"$pick"
+  nav_go "$id" "$act" "$client"
+  nav_msg "$client" "collie: $needs $id"
+}
+
+# todo's rows: id, action, then the shown text. -a: every open task.
+cmd__todo_rows() { # [-a]
+  local needs id pri act what _ st top repos
+  if [ "${1:-}" = -a ]; then
+    cmd_ls | while IFS=$TAB read -r id st pri _ top repos needs; do
+      [ -n "$id" ] || continue
+      printf '%s\tgo\t%-9s %s (%s)  %s, %s\n' "$id" "$needs" "$id" "$pri" "$st" "$repos"
+    done
+    return 0
+  fi
+  brief_rows | while IFS=$TAB read -r needs id pri act what _; do
+    [ -n "$id" ] || continue
+    printf '%s\t%s\t%-9s %s (%s)  %s\n' "$id" "$act" "$needs" "$id" "$pri" "$what"
+  done
+}
+
+# todo's preview: an agent row's pane, a review row's review, else the task.
+cmd__todo_preview() { # id action
+  local C=("$BASH" "$PLUGIN_DIR/bin/collie") wid pane
+  case $2 in
+    go)
+      wid=$(cmd__target "$1")
+      pane=$(agent_pane "$1" "$wid")
+      if [ -n "$pane" ] && pane_tail "$pane" "${FZF_PREVIEW_LINES:-40}"; then return 0; fi
+      ;;
+    review) "${C[@]}" review "$1" 2>&1; return 0 ;;
+  esac
+  "${C[@]}" show "$1" 2>&1
+}
+
+# What waits on you, to act on: enter goes to an agent or task, shows a
+# review, restores lost agents or sends failing CI logs, then comes back.
+cmd_todo() {
+  command -v fzf >/dev/null || die "todo: fzf required"
+  local self="'$BASH' '$PLUGIN_DIR/bin/collie'" C=("$BASH" "$PLUGIN_DIR/bin/collie") rows hdr sel id act rc
+  while :; do
+    rows=$(cmd__todo_rows)
+    hdr="enter: act · ctrl-a: all tasks · ctrl-t: to-do · esc: close"
+    [ -n "$rows" ] || hdr="nothing waits on you · ctrl-a: all tasks · esc: close"
+    rc=0
+    sel=$(printf '%s' "$rows" | fzf --delimiter='\t' --with-nth=3.. --no-sort --prompt='to-do> ' \
+      --header="$hdr" \
+      --preview="$self _todo_preview {1} {2}" --preview-window=right,55%,wrap \
+      --bind="ctrl-a:reload($self _todo_rows -a)" --bind="ctrl-t:reload($self _todo_rows)") || rc=$?
+    [ "$rc" -eq 0 ] && [ -n "$sel" ] || return 0
+    IFS=$TAB read -r id act _ <<<"$sel"
+    case $act in
+      review) "${C[@]}" review "$id" 2>&1 | LESS='' less -R ;;
+      restore) cmd__popup -w "$self restore '$id'" || true ;;
+      ci) cmd__popup -w "$self ci '$id' --send" || true ;;
+      *)
+        nav_go "$id" "$act"
+        return
+        ;;
+    esac
+  done
+}
+
 cmd_show() {
   local id d name c b p mark top a gone=missing fin=0
   task_id "${1:-}"
