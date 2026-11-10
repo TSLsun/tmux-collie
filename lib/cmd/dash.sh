@@ -413,6 +413,8 @@ cmd__preview() {
     line="$line${line:+ · }last event $a"
   fi
   [ -z "$line" ] || echo "$line"
+  latest_note "$id"
+  [ -z "$NOTE_AT" ] || printf 'note: %s (%s)\n' "$NOTE_TEXT" "$(note_age "$NOTE_AT")"
   [ ! -f "$d/RESUME.md" ] || printf 'resume note: %s\n' "$d/RESUME.md"
   case $STATUS in done | archived) printf 'finished %s\n' "$(finished_at "$id")" ;; esac
   echo
