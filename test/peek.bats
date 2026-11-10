@@ -89,8 +89,8 @@ teardown() { teardown_env; }
   collie run p
   collie run p
   run --separate-stderr collie peek p
-  [ "$status" -eq 1 ]
   [[ "$stderr" == *"several live runs"* ]]
+  [[ "$stderr" == *"Choose one with --run N"* && "$stderr" == *"collie peek p --run 1"* ]]
 }
 
 @test "peek: implicit selection prefers a live run over an exited run" {
