@@ -18,6 +18,7 @@ tasks:
   brief               what waits on you and the command to act per task
   show [<id>]         fields, TASK.md, repos, agent runs, events, REPORT.md
   history [-n] [pat]  finished tasks, newest first; searches TASK.md/REPORT.md
+  note [-t <id>] [text...] record or print the latest one-line progress note
   log <5 fields>      append a row to the task's decision log (decisions.tsv)
   edit [<id>]         open the task's TASK.md in $EDITOR
   go [<id>]           switch to the task session (fzf picker if omitted)
@@ -632,6 +633,19 @@ happen any more (the run is gone; for --done, gone without the signal).
   collie wait fix-x --run 2 --done --timeout 3600
 EOF
       ;;
+    note)
+      cat <<'EOF'
+usage: collie note [-t <id>] [text...]
+
+Record a one-line progress checkpoint for a task; without text, print the
+latest note and its age. The task defaults to $COLLIE_TASK; -t selects one
+explicitly. Text arguments are joined, sanitized to one line and capped at
+200 characters. Notes are display-only and are never added to agent prompts.
+
+  collie note implementing retry handling
+  collie note -t fix-retry
+EOF
+      ;;
     signal)
       cat <<'EOF'
 usage: collie signal done
@@ -700,7 +714,7 @@ EOF
 }
 
 # the public commands, in overview order
-HELP_COMMANDS='new add drop ls brief show history log edit go dash set review verify spike race pick gc sync done archive reopen run handoff send peek ci pause adopt restore wait signal state status doctor repos workspaces'
+HELP_COMMANDS='new add drop ls brief show history note log edit go dash set review verify spike race pick gc sync done archive reopen run handoff send peek ci pause adopt restore wait signal state status doctor repos workspaces'
 
 cmd_help() {
   local c
