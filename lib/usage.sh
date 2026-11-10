@@ -15,7 +15,7 @@ tasks:
   add [<id>] -r repo  attach repos, or switch one's branch (-r repo:branch)
   drop [<id>] -r repo remove repos from a task, keeping their branches
   ls [-a]             list tasks: id, status, priority, session, agent, needs
-  brief               what waits on you: one line per task, with the command
+  brief               what waits on you and the command to act per task
   show [<id>]         fields, TASK.md, repos, agent runs, events, REPORT.md
   history [-n] [pat]  finished tasks, newest first; searches TASK.md/REPORT.md
   note [-t <id>] [text...] record or print the latest one-line progress note
@@ -277,10 +277,10 @@ EOF
 usage: collie brief
 
 What waits on you, most urgent first (answer, reply, findings, review,
-stalled; then priority, id): one line per task with what it waits on and
-the command to act. review shows REPORT.md's first line and the PR with its
-state and CI from the cache the dashboard keeps (never calls gh). A task whose
-open PR has failing CI in that cache also gets a ci line at the end, pointing
+stalled; then priority, id): a block per task with its reason and the command
+to act. review shows REPORT.md's first line and the PR with its state and CI
+from the cache the dashboard keeps (never calls gh). A task whose open PR
+has failing CI in that cache also gets a ci block at the end, pointing
 at `collie ci <id> --send`. Prints "nothing waits on you" when nothing does.
 Read-only.
 EOF

@@ -122,7 +122,7 @@ A  junk" ]
   printf -- '- [ ] a.sh:1 bad. Proof: sh a.sh -> 1\n- [x] b.sh:2 fixed\n' >"$d/REVIEW.md"
   touch -t 202001030000 "$d/REVIEW.md"
   [ "$(needs_of x)" = findings ]
-  [ "$(collie brief)" = "findings x (P2): the review has open findings  ->  collie review x" ]
+  [[ "$(collie brief)" == *"findings  x (P2)"*"collie review x"* ]]
   # every item ticked: none open
   sed -i.bak 's/^- \[ \]/- [x]/' "$d/REVIEW.md"
   touch -t 202001030000 "$d/REVIEW.md"

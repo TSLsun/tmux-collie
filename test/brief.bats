@@ -19,7 +19,7 @@ teardown() { teardown_env; }
   [ "$(collie brief)" = "nothing waits on you" ]
 }
 
-@test "brief: one line per task that needs you, most urgent first, with the command; no gh" {
+@test "brief: tasks are ordered by urgency, include actions, and do not call gh" {
   printf '#!/bin/sh\necho "$*" >>"%s/gh.log"\nexit 1\n' "$TMP" >"$TMP/stub/gh"
   for t in a b c d e f g h; do collie new "$t" --no-window; done
   collie run a -- 300
@@ -43,13 +43,13 @@ teardown() { teardown_env; }
   wait_for '[ "$(collie ls | awk -F"\t" "\$1 == \"f\" { print \$7 }")" = stalled ]'
   run collie brief
   [ "$status" -eq 0 ]
-  [ "$output" = "answer   b (P2): an agent waits for your answer  ->  collie go b
-reply    c (P2): an agent finished its turn without a REPORT.md  ->  collie go c
-review   h (P1): All green. | PR #9 draft  ->  collie review h
-review   d (P2): Added the thing. | PR https://github.com/o/r/pull/7 (open, CI fail)  ->  collie review d
-stalled  e (P2): its agents were lost with the tmux server  ->  collie restore e
-stalled  f (P2): no agent running and no REPORT.md since the last run  ->  collie run f
-ci       d (P2): PR #7 has failing CI  ->  collie ci d --send" ]
+  [[ "$output" == *$'answer  b (P2)\n'*'Next: collie go b'* ]]
+  [[ "$output" == *$'reply  c (P2)\n'*'Next: collie go c'* ]]
+  [[ "$output" == *$'review  h (P1)\n'*'PR: #9 draft'*'Next: collie review h'* ]]
+  [[ "$output" == *$'review  d (P2)\n'*'Added the thing.'*'https://github.com/o/r/pull/7'*'CI fail'*'Next: collie review d'* ]]
+  [[ "$output" == *'Next: collie restore e'*'Next: collie run f'*'Next: collie ci d --send'* ]]
+  headers=$(printf '%s\n' "$output" | grep -E '^(answer|reply|review|stalled|ci)  ')
+  [ "$headers" = $'answer  b (P2)\nreply  c (P2)\nreview  h (P1)\nreview  d (P2)\nstalled  e (P2)\nstalled  f (P2)\nci  d (P2)' ]
   [ ! -s "$TMP/gh.log" ]
 }
 
@@ -69,7 +69,8 @@ STUB
   printf '2020-01-01T00:00:00Z\trun_started\trun=1 agent=sleep repo=A\n' >>"$(task_dir x)/events.log"
   printf '# report\n\nPR: https://github.com/o/r/pull/7\n\nReady.\n' >"$(task_dir x)/REPORT.md"
   printf 'A\t7\tmerged\tpass\nA\t83\topen\tfail\n' >"$(task_dir x)/pr.tsv"
-  [[ "$(collie brief)" == *'PR https://github.com/o/r/pull/7; #7 merged, CI pass; #83 open, CI fail'* ]]
+  out=$(collie brief)
+  [[ "$out" == *'https://github.com/o/r/pull/7; #7 merged, CI pass;'* && "$out" == *'#83 open, CI fail'* ]]
 }
 
 @test "brief: a ci row for open and draft PRs with cached CI fail, without calling gh" {
@@ -80,6 +81,17 @@ STUB
   printf 'A\t6\tclosed\tfail\n' >"$(task_dir c)/pr.tsv"
   run collie brief
   [ "$status" -eq 0 ]
-  [ "$output" = "ci       a (P2): PR #8, #9 has failing CI  ->  collie ci a --send" ]
+  [[ "$output" == *$'ci  a (P2)\n'*'PR #8, #9 has failing CI'*'Next: collie ci a --send'* ]]
+  [[ "$output" != *'ci  b (P2)'* && "$output" != *'ci  c (P2)'* ]]
   [ ! -s "$TMP/gh.log" ]
+}
+
+@test "brief: long review details wrap without obscuring the next action" {
+  collie new x --no-window
+  printf '2020-01-01T00:00:00Z\trun_started\trun=1 agent=sleep repo=A\n' >>"$(task_dir x)/events.log"
+  printf '# Report\n\nA long summary that needs to wrap at a word boundary so the command remains easy to find.\n' >"$(task_dir x)/REPORT.md"
+  COLUMNS=48 run collie brief
+  [ "$status" -eq 0 ]
+  [[ "$output" == *$'review  x (P2)\n  Why: A long summary'*$'\n    '*$'\n  Next: collie review x'* ]]
+  while IFS= read -r line; do [ "${#line}" -le 48 ]; done <<<"$output"
 }

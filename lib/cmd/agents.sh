@@ -287,7 +287,7 @@ cmd_peek() {
   case $t in
     nosuch) die "peek: task '$id' has no run $run" ;;
     none) warn "peek: no live agent run in task '$id'${repo:+ for repo $repo}"; exit 3 ;;
-    many*) die "peek: several live runs in task '$id' (${t#many }); pick one with --run" ;;
+    many*) t=${t#many }; die "peek: several live runs in task '$id' ($t). Choose one with --run N, e.g. collie peek $id --run ${t%% *}" ;;
   esac
   IFS=$TAB read -r run agent st win <<<"$t"
   pane=$(agent_pane "$id" "$win")

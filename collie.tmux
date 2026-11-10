@@ -34,6 +34,17 @@ for side in status-left status-right; do
   esac
 done
 
+# #{collie_window} in window-status-format/current-format shows a run's state.
+# This is a pure tmux format: window status is redrawn for every window.
+pat='#{collie_window}'
+fmt='#{?#{==:#{@collie_state},waiting},#[push-default]#[fg=red]●#[default]#[pop-default],#{?#{==:#{@collie_state},idle},#[push-default]#[fg=yellow]●#[default]#[pop-default],#{?#{==:#{@collie_state},working},#[push-default]#[fg=green]●#[default]#[pop-default],}}}'
+for side in window-status-format window-status-current-format; do
+  v=$(tmux show-options -gqv "$side")
+  case $v in
+    *"$pat"*) tmux set-option -g "$side" "${v//"$pat"/$fmt}" ;;
+  esac
+done
+
 # With the mouse on, clicking a count of collie status lists its agents
 # (bin/collie _status-menu) at the click: #{mouse_x} is passed on, since a
 # menu from run-shell has no mouse event for -x M. A MouseUp1Status binding of
