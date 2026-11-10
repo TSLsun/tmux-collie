@@ -513,6 +513,48 @@ cmd_todo() {
   done
 }
 
+latest_note() { # id; sets NOTE_AT and NOTE_TEXT, if present
+  local row
+  NOTE_AT="" NOTE_TEXT=""
+  row=$(awk -F'\t' '$2 == "note" { at = $1; text = $3; sub(/^run=[^ ]* text=/, "", text) }
+    END { if (at != "") print at "\t" text }' "$TASKS_DIR/$1/events.log")
+  [ -n "$row" ] || return 0
+  NOTE_AT=${row%%"$TAB"*}
+  NOTE_TEXT=${row#*"$TAB"}
+}
+
+note_age() { # UTC timestamp; prints short age
+  stamp %s
+  awk -v t="$1" -v now="$NOW" "$DASH_AWK_TIME"' BEGIN { a = age(now - epoch(t)); print (a == "now" ? a : a " ago") }'
+}
+
+cmd_note() {
+  local id="" text="" run=${COLLIE_RUN:--}
+  while [ $# -gt 0 ]; do
+    case $1 in
+      -t) need_value note "-t needs a task id" "${2:-}"; id=$2; shift ;;
+      -*) die "note: unknown option $1" ;;
+      *) break ;;
+    esac
+    shift
+  done
+  text="$*"
+  task_id "$id"
+  if [ -z "$text" ]; then
+    latest_note "$id"
+    [ -z "$NOTE_AT" ] || printf '%s (%s)\n' "$NOTE_TEXT" "$(note_age "$NOTE_AT")"
+    return 0
+  fi
+  text=$(printf '%s' "$text" | tr '\t\n' '  ' | LC_ALL=C tr -d '\000-\010\013-\037\177')
+  text=${text:0:200}
+  log_event "$id" note "run=$run text=$text"
+}
+
+show_latest_note() { # id
+  latest_note "$1"
+  [ -z "$NOTE_AT" ] || printf 'latest note (%s): %s\n' "$(note_age "$NOTE_AT")" "$NOTE_TEXT"
+}
+
 cmd_show() {
   local id d name c b p mark top a gone=missing fin=0
   task_id "${1:-}"
@@ -545,6 +587,7 @@ cmd_show() {
   echo
   echo "runs:"
   task_runs "$id" | sed 's/^/  /'
+  show_latest_note "$id"
   echo
   a=$(verify_results "$id")
   [ -z "$a" ] || printf 'verify:\n%s\n\n' "$a"

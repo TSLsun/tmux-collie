@@ -52,6 +52,7 @@ collie brief                           # what waits on you and the command to ac
 collie todo                            # the same queue in fzf: enter goes there, reviews or sends CI logs
 collie next                            # switch to the next task that waits on you (prefix h n)
 collie show deploy-v2                  # fields, TASK.md contract, repos, runs, last decision, events
+collie note 'finished the retry fix; starting verification' # agent: phase checkpoint
 collie log build 'use ln' 'atomic' test/log.bats ok   # agent: a row in .collie/decisions.tsv
 collie edit deploy-v2                  # adjust TASK.md in $EDITOR (also: dash e, prefix h e)
 collie go deploy-v2                    # switch/attach (fzf picker if no id)
