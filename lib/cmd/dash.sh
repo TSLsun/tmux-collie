@@ -465,7 +465,7 @@ cmd__preview() {
     base=$BASE
     a=$(awk -F'\t' -v n="$name" '
       $1 == n {
-        s = s (s == "" ? "" : ", ") "#" $2 " " $3
+        s = s (s == "" ? "" : ", ") "#" $2 " " $3 ($4 != "" && $4 != "-" ? " (CI " $4 ")" : "")
       }
       END { print s }' "$d/pr.tsv" 2>/dev/null) || a=""
     [ -z "$a" ] || a="  $a"

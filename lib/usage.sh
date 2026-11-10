@@ -279,7 +279,8 @@ usage: collie brief
 What waits on you, most urgent first (answer, reply, findings, review,
 stalled; then priority, id): a block per task with its reason and the command
 to act. review shows REPORT.md's first line and the PR with its state and CI
-from the cache the dashboard keeps (never calls gh). A task whose open PR
+from the cache the dashboard keeps (never calls gh); PRs of a task spanning
+repos read repo#N. A task whose open PR
 has failing CI in that cache also gets a ci block at the end, pointing
 at `collie ci <id> --send`. Prints "nothing waits on you" when nothing does.
 Read-only.
