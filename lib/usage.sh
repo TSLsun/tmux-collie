@@ -384,10 +384,12 @@ usage: collie verify [<id>] [-r repo]
 Run the fenced ```sh blocks under TASK.md's "## Verify" in each repo's
 worktree (-r: only that repo), in order, each with `sh -e`, stdin from
 /dev/null and your environment. A repo stops at its first failing block.
-Output goes to the terminal and to verify/<time>-<repo>.log in the task
-dir; a verify event records pass/fail, the exit code and the log. show,
-review and the dash preview print the last result per repo; it does not
-change the task's status. Exits non-zero if any repo fails. No blocks:
+A block opened with ```sh repo=<name> runs in that repo only; a repo with
+no blocks of its own or untagged ones is skipped. Output goes to the
+terminal and to verify/<time>-<repo>.log in the task dir; a verify event
+records pass/fail, the exit code and the log. show, review and the dash
+preview print the last result per repo; it does not change the task's
+status. Exits non-zero if any repo fails. No blocks:
 says so, exits 0, records nothing.
 
   collie verify login

@@ -258,11 +258,12 @@ cmd_review() {
 }
 
 # Run TASK.md's ## Verify sh blocks in each repo's worktree (-r: one repo),
-# in order with sh -e, stopping a repo at its first failing block. Output goes
+# in order with sh -e, stopping a repo at its first failing block; a
+# ```sh repo=<name> block runs in that repo only. Output goes
 # to the terminal and verify/<time>-<repo>.log; a verify event records
 # pass/fail, the exit code and the log. collie never judges the output.
 cmd_verify() {
-  local id="" only="" d tmp n i rc st fail=0 name c b p rel
+  local id="" only="" d tmp n i k m blocks rc st fail=0 name c b p rel
   while [ $# -gt 0 ]; do
     case $1 in
       -r) need_value verify "-r needs a repo" "${2:-}"; only=$2; shift ;;
@@ -282,9 +283,28 @@ cmd_verify() {
     echo "verify: no \`\`\`sh blocks under ## Verify in $d/TASK.md; nothing run or recorded"
     return 0
   fi
+  for ((i = 1; i <= n; i++)); do
+    [ -f "$tmp/$i.repo" ] || continue
+    read -r rel <"$tmp/$i.repo"
+    awk -F'\t' -v n="$rel" '$1 == n { f = 1 } END { exit !f }' "$d/repos.tsv" ||
+      warn "verify: block $i is for repo '$rel', which task '$id' does not have"
+  done
   mkdir -p "$d/verify"
   while IFS=$TAB read -r name c b p; do
     [ -z "$only" ] || [ "$name" = "$only" ] || continue
+    # the blocks for this repo: untagged ones and its own
+    blocks=""
+    for ((i = 1; i <= n; i++)); do
+      if [ -f "$tmp/$i.repo" ]; then
+        read -r rel <"$tmp/$i.repo"
+        [ "$rel" = "$name" ] || continue
+      fi
+      blocks="$blocks $i"
+    done
+    if [ -z "$blocks" ]; then
+      printf '== %s  no blocks for this repo\n\n' "$name"
+      continue
+    fi
     if [ ! -d "$p" ]; then
       warn "verify: $name: worktree missing: $p"
       fail=1
@@ -294,15 +314,17 @@ cmd_verify() {
     rel=verify/$NOW-$name.log
     : >"$d/$rel"
     printf '== %s  %s\n' "$name" "$p"
-    rc=0
-    for ((i = 1; i <= n; i++)); do
-      printf -- '--- block %s of %s\n' "$i" "$n" | tee -a "$d/$rel"
+    rc=0 k=0
+    m=$(wc -w <<<"$blocks" | tr -d ' ')
+    for i in $blocks; do
+      k=$((k + 1))
+      printf -- '--- block %s of %s\n' "$k" "$m" | tee -a "$d/$rel"
       (cd "$p" && sh -e "$tmp/$i.sh") </dev/null 2>&1 | tee -a "$d/$rel" || rc=$?
       [ "$rc" -eq 0 ] || break
     done
     st=pass
     [ "$rc" -eq 0 ] || { st=fail; fail=1; }
-    log_event "$id" verify "repo=$name result=$st exit=$rc blocks=$n log=$rel"
+    log_event "$id" verify "repo=$name result=$st exit=$rc blocks=$m log=$rel"
     printf '== %s  %s  exit %s  %s\n\n' "$name" "$st" "$rc" "$d/$rel"
   done <"$d/repos.tsv"
   rm -rf "$tmp"
