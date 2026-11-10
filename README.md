@@ -48,7 +48,7 @@ collie add deploy-v2 -r C              # pull another repo in mid-task
 collie add deploy-v2 -r C:release/v2   # switch C to another branch, keep feat/deploy-v2
 collie drop deploy-v2 -r C             # remove C's worktree; keep its branch
 collie ls                              # id  status  priority  session(*|-)  agent  repos  needs
-collie brief                           # what waits on you: one line + the command to act, per task
+collie brief                           # what waits on you and the command to act, per task
 collie show deploy-v2                  # fields, TASK.md contract, repos, runs, last decision, events
 collie log build 'use ln' 'atomic' test/log.bats ok   # agent: a row in .collie/decisions.tsv
 collie edit deploy-v2                  # adjust TASK.md in $EDITOR (also: dash e, prefix h e)

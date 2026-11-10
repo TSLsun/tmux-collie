@@ -189,7 +189,7 @@ created: 2026-01-01
 | `collie new [<id>] [-r repo[:branch]]... [-w workspace] [-t type] [--title ..] [-m objective] [--from ref] [--edit] [--no-window] [--ship\|--no-ship]` | Create task, worktrees and session; defaults to the current repo (a non-git directory becomes a folder, used in place). No id on a tty prompts for id, type, objective and ship. `-m` fills the Objective; `--ship` adds commit/push/PR/CI rules to TASK.md (default `$COLLIE_SHIP`, `@collie-ship`, else off) |
 | `collie add [<id>] -r repo[:branch]...` | Pull another repo into an existing task |
 | `collie ls [-a]` | Active tasks: id, derived status, priority, session, agent, repos, needs |
-| `collie brief` | What waits on you: one line per task that needs you, most urgent first, with what it waits on (REPORT.md headline, cached PR state and CI) and the command to act; `nothing waits on you` when empty. No network |
+| `collie brief` | What waits on you: a block per task that needs you, most urgent first, with what it waits on (REPORT.md headline, cached PR state and CI) and the command to act; `nothing waits on you` when empty. No network |
 | `collie go [<id>]` | Switch to the task session (fzf if no id); recreate it if missing |
 | `collie run [<id>] [--agent X] [-r repo] [-p prompt] [-- args]` | Launch an agent in a new task window; records a run |
 | `collie adopt [<id>] [-y]` | Restart an agent started by hand in the task's session under `collie run`, resuming its conversation (claude, codex, omp; Codex requires one identifiable open rollout) |

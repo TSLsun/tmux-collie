@@ -267,14 +267,25 @@ This conservative rule can miss differently worded restorations. A failed
 repository lookup keeps its previous cached PRs. The row abbreviates long PR
 lists with `+N`; the preview and `dash -n` show the complete cached list.
 
-`collie brief` is the short form: one line per task that needs you, in the
-same order, with what it waits on and the command to act. It reads only
-local state and the dashboard's PR cache, so it never touches the network:
+`collie brief` is the short form: a block per task that needs you, in the
+same order, with separate reason, PR details and next command. It reads only
+local state and the dashboard's PR cache, so it never touches the network.
+The `prefix h b` popup uses a pager: scroll with the arrow keys and press `q`
+to close it.
 
 ```text
-answer   login (P1): an agent waits for your answer  ->  collie go login
-review   deploy-v2 (P2): Added blue/green deploy. | PR https://github.com/o/r/pull/12 (open, CI pass)  ->  collie review deploy-v2
-stalled  cache (P2): its agents were lost with the tmux server  ->  collie restore cache
+answer  login (P1)
+  Why: an agent waits for your answer
+  Next: collie go login
+
+review  deploy-v2 (P2)
+  Why: Added blue/green deploy.
+  PR: https://github.com/o/r/pull/12 (open, CI pass)
+  Next: collie review deploy-v2
+
+stalled  cache (P2)
+  Why: its agents were lost with the tmux server
+  Next: collie restore cache
 ```
 Agents get hooks per run, nothing installed: claude, codex, gemini, omp.
 Any other command (`--agent aider`) runs without hooks. Agents you start by

@@ -20,12 +20,12 @@ stub_tmux() {
   stub_tmux
   PATH="$TMP/stub:$PATH" run collie _menu main cl
   [ "$status" -eq 0 ]
-  [[ "$output" == *"brief"$'\n'"b"$'\n'*"_popup -w"*"brief"* ]]
+  [[ "$output" == *"brief"$'\n'"b"$'\n'*"_popup "*"brief | less -R"* ]]
   [[ "$output" != *$'\n'"peek task"$'\n'* ]]
 
   collie new x -r proj --no-window
   PATH="$TMP/stub:$PATH" run collie _menu x cl
   [ "$status" -eq 0 ]
-  [[ "$output" == *"brief"$'\n'"b"$'\n'*"_popup -w"*"brief"* ]]
+  [[ "$output" == *"brief"$'\n'"b"$'\n'*"_popup "*"brief | less -R"* ]]
   [[ "$output" == *"peek task"$'\n'"p"$'\n'*"_popup -w"*"peek x"* ]]
 }

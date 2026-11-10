@@ -365,7 +365,7 @@ cmd__actions() { # id key
 cmd__menu() { # session [client]
   local C="$PLUGIN_DIR/bin/collie" T=$1 popup="display-popup -E -w 90% -h 85%" items k l a
   items=(dashboard h "$popup '$C _popup $C dash'"
-    brief b "display-popup -E -w 90% -h 85% '$C _popup -w $C brief'"
+    brief b "$popup '$C _popup \"$C brief | less -R\"'"
     lazygit g "$popup -d '#{pane_current_path}' '$C _popup lazygit'"
     terminal t "$popup -d '#{pane_current_path}'"
     "new task" c "display-popup -EE -w 80% -h 70% -d '#{pane_current_path}' '$C new'")
