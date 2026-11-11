@@ -66,11 +66,11 @@ delete an item only when it is covered by a test.
       ordering, preview text and target window only.
       2026-11-11: private attached client displayed fzf rows and preview; Enter
       switched to the selected task. Popup client, urgent window, and reload remain unchecked.
-- [ ] The `prefix h` menu with a real client: `#{session_name}` expanding in
-      nested items (confirm-before), popups sizing, lazygit popup
-      opening in the pane's directory. Tests only check the binding text and
-      `run-shell collie done`.
-      2026-11-11: these menu interactions were not exercised.
+- [x] The `prefix h` menu with a real client: `#{session_name}` expanding in
+      nested confirm-before items, popup sizing, and lazygit's pane directory.
+      Checked 2026-11-12 with an attached private pty: `done x?` expanded,
+      a 100×30 client displayed an 88×23 lazygit popup, and a lazygit stub
+      observed the originating pane's directory.
 - [ ] Menu actions on a session that is not a task (should show collie's error).
       2026-11-11: private client menu displayed “not a collie task — use
       collie new”; action error behavior remains unchecked.
