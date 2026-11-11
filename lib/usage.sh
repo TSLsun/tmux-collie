@@ -16,6 +16,8 @@ tasks:
   drop [<id>] -r repo remove repos from a task, keeping their branches
   ls [-a]             list tasks: id, status, priority, session, agent, needs
   brief               what waits on you and the command to act per task
+  todo                fzf to-do of what waits on you; enter acts on a row
+  next [-c client]    switch to the next task that waits on you
   show [<id>]         fields, TASK.md, repos, agent runs, events, REPORT.md
   history [-n] [pat]  finished tasks, newest first; searches TASK.md/REPORT.md
   note [-t <id>] [text...] record or print the latest one-line progress note
@@ -279,10 +281,38 @@ usage: collie brief
 What waits on you, most urgent first (answer, reply, findings, review,
 stalled; then priority, id): a block per task with its reason and the command
 to act. review shows REPORT.md's first line and the PR with its state and CI
-from the cache the dashboard keeps (never calls gh). A task whose open PR
+from the cache the dashboard keeps (never calls gh); PRs of a task spanning
+repos read repo#N. A task whose open PR
 has failing CI in that cache also gets a ci block at the end, pointing
 at `collie ci <id> --send`. Prints "nothing waits on you" when nothing does.
 Read-only.
+EOF
+      ;;
+    todo)
+      cat <<'EOF'
+usage: collie todo
+
+brief's rows in fzf (prefix h i opens it in a popup). enter acts on a row:
+
+  answer, reply     go to the task's most urgent agent window
+  findings, review  show collie review in a pager, then back to the list
+  stalled           go to the task session; lost agents: collie restore
+  ci                collie ci <id> --send, then back to the list
+
+The preview shows the agent's screen or the review. ctrl-a lists every
+open task instead, to find one by name; ctrl-t goes back. Needs fzf.
+EOF
+      ;;
+    next)
+      cat <<'EOF'
+usage: collie next [-c client]
+
+Switch to the next task in brief's order after the current session's task,
+wrapping around; one stop per task. Agent rows go to the agent window,
+others to the task session. Nothing is stored: a row left unresolved comes
+round again. Says "nothing waits on you" when nothing does.
+
+  -c client       the tmux client to switch (prefix h n passes it)
 EOF
       ;;
     show)
@@ -372,8 +402,9 @@ EOF
       cat <<'EOF'
 usage: collie review [<id>] [-p]
 
-Per repo: commits since the branch started, diff stat (-p: the full patch),
-dirty files; then REPORT.md. Folders list files modified since the first
+Per repo: commits since the branch started (marked "no commits" or
+"merged"), its cached PRs with state and CI, diff stat (-p: the full
+patch), dirty files; then REPORT.md. Folders list files modified since the first
 run. Read-only.
 EOF
       ;;
@@ -384,10 +415,12 @@ usage: collie verify [<id>] [-r repo]
 Run the fenced ```sh blocks under TASK.md's "## Verify" in each repo's
 worktree (-r: only that repo), in order, each with `sh -e`, stdin from
 /dev/null and your environment. A repo stops at its first failing block.
-Output goes to the terminal and to verify/<time>-<repo>.log in the task
-dir; a verify event records pass/fail, the exit code and the log. show,
-review and the dash preview print the last result per repo; it does not
-change the task's status. Exits non-zero if any repo fails. No blocks:
+A block opened with ```sh repo=<name> runs in that repo only; a repo with
+no blocks of its own or untagged ones is skipped. Output goes to the
+terminal and to verify/<time>-<repo>.log in the task dir; a verify event
+records pass/fail, the exit code and the log. show, review and the dash
+preview print the last result per repo; it does not change the task's
+status. Exits non-zero if any repo fails. No blocks:
 says so, exits 0, records nothing.
 
   collie verify login
@@ -423,8 +456,10 @@ usage: collie sync [<id>...] [-n]
 Merge the base branch (fetched first) into active task branches (all, or the
 given ids), committing and pushing clean merges when the branch has an
 upstream. On a conflict the merge is started and the task's agent is told
-the files (typed in if idle, a new run if exited). Skips tasks whose agent
-is working or waiting, dirty worktrees, and branches without own commits.
+the files (typed in if idle, a new run if exited); conflicts in several
+repos of a task go to it in one message. Each repo is synced and reported
+on its own line; exits 0 whatever they report. Skips tasks whose agent is
+working or waiting, dirty worktrees, and branches without own commits.
 -n predicts only, including conflicts between tasks; read-only.
 EOF
       ;;
@@ -714,7 +749,7 @@ EOF
 }
 
 # the public commands, in overview order
-HELP_COMMANDS='new add drop ls brief show history note log edit go dash set review verify spike race pick gc sync done archive reopen run handoff send peek ci pause adopt restore wait signal state status doctor repos workspaces'
+HELP_COMMANDS='new add drop ls brief todo next show history note log edit go dash set review verify spike race pick gc sync done archive reopen run handoff send peek ci pause adopt restore wait signal state status doctor repos workspaces'
 
 cmd_help() {
   local c

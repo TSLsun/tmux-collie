@@ -216,7 +216,7 @@ race_review() { # parent task_dir
 }
 
 cmd_review() {
-  local id="" patch=0 d name c b p base
+  local id="" patch=0 d name c b p base n note
   while [ $# -gt 0 ]; do
     case $1 in
       -p) patch=1 ;;
@@ -236,8 +236,17 @@ cmd_review() {
     fi
     default_base "$c"
     base=$BASE
-    printf '== %s  %s  %s ahead of %s\n' "$name" "$b" \
-      "$(git --git-dir="$c" rev-list --count "$base..refs/heads/$b")" "${base#refs/heads/}"
+    # how far the repo got: no commits, merged (squash merges stay "ahead")
+    n=$(git --git-dir="$c" rev-list --count "$base..refs/heads/$b")
+    note=""
+    if [ "$n" -eq 0 ]; then
+      note=", no commits"
+    elif merged_into "$c" "$b" "$base"; then
+      note=", merged"
+    fi
+    printf '== %s  %s  %s ahead of %s%s\n' "$name" "$b" "$n" "${base#refs/heads/}" "$note"
+    # its PRs from the cache (see cmd__pr): number, state, CI
+    awk -F'\t' -v n="$name" '$1 == n && NF >= 3 { print "PR #" $2 " " $3 ($4 != "" && $4 != "-" ? ", CI " $4 : "") }' "$d/pr.tsv" 2>/dev/null || true
     git --git-dir="$c" log --oneline "$base..refs/heads/$b"
     if [ "$patch" -eq 1 ]; then
       git --git-dir="$c" diff "$base...refs/heads/$b"
@@ -258,11 +267,12 @@ cmd_review() {
 }
 
 # Run TASK.md's ## Verify sh blocks in each repo's worktree (-r: one repo),
-# in order with sh -e, stopping a repo at its first failing block. Output goes
+# in order with sh -e, stopping a repo at its first failing block; a
+# ```sh repo=<name> block runs in that repo only. Output goes
 # to the terminal and verify/<time>-<repo>.log; a verify event records
 # pass/fail, the exit code and the log. collie never judges the output.
 cmd_verify() {
-  local id="" only="" d tmp n i rc st fail=0 name c b p rel
+  local id="" only="" d tmp n i k m blocks rc st fail=0 name c b p rel
   while [ $# -gt 0 ]; do
     case $1 in
       -r) need_value verify "-r needs a repo" "${2:-}"; only=$2; shift ;;
@@ -282,9 +292,28 @@ cmd_verify() {
     echo "verify: no \`\`\`sh blocks under ## Verify in $d/TASK.md; nothing run or recorded"
     return 0
   fi
+  for ((i = 1; i <= n; i++)); do
+    [ -f "$tmp/$i.repo" ] || continue
+    read -r rel <"$tmp/$i.repo"
+    awk -F'\t' -v n="$rel" '$1 == n { f = 1 } END { exit !f }' "$d/repos.tsv" ||
+      warn "verify: block $i is for repo '$rel', which task '$id' does not have"
+  done
   mkdir -p "$d/verify"
   while IFS=$TAB read -r name c b p; do
     [ -z "$only" ] || [ "$name" = "$only" ] || continue
+    # the blocks for this repo: untagged ones and its own
+    blocks=""
+    for ((i = 1; i <= n; i++)); do
+      if [ -f "$tmp/$i.repo" ]; then
+        read -r rel <"$tmp/$i.repo"
+        [ "$rel" = "$name" ] || continue
+      fi
+      blocks="$blocks $i"
+    done
+    if [ -z "$blocks" ]; then
+      printf '== %s  no blocks for this repo\n\n' "$name"
+      continue
+    fi
     if [ ! -d "$p" ]; then
       warn "verify: $name: worktree missing: $p"
       fail=1
@@ -294,15 +323,17 @@ cmd_verify() {
     rel=verify/$NOW-$name.log
     : >"$d/$rel"
     printf '== %s  %s\n' "$name" "$p"
-    rc=0
-    for ((i = 1; i <= n; i++)); do
-      printf -- '--- block %s of %s\n' "$i" "$n" | tee -a "$d/$rel"
+    rc=0 k=0
+    m=$(wc -w <<<"$blocks" | tr -d ' ')
+    for i in $blocks; do
+      k=$((k + 1))
+      printf -- '--- block %s of %s\n' "$k" "$m" | tee -a "$d/$rel"
       (cd "$p" && sh -e "$tmp/$i.sh") </dev/null 2>&1 | tee -a "$d/$rel" || rc=$?
       [ "$rc" -eq 0 ] || break
     done
     st=pass
     [ "$rc" -eq 0 ] || { st=fail; fail=1; }
-    log_event "$id" verify "repo=$name result=$st exit=$rc blocks=$n log=$rel"
+    log_event "$id" verify "repo=$name result=$st exit=$rc blocks=$m log=$rel"
     printf '== %s  %s  exit %s  %s\n\n' "$name" "$st" "$rc" "$d/$rel"
   done <"$d/repos.tsv"
   rm -rf "$tmp"
@@ -362,12 +393,15 @@ cmd_spike() {
   log_event "$id" spiked_from "task=${owner:--} path=$src head=$head"
 }
 
-# A task is merged when every branch moved past where its worktree started,
-# has commits of its own (see own_commits) and that tip is merged into the
-# base branch (see merged_into). Merged tasks whose agent is working or
-# waiting are skipped.
+# A task is merged when at least one branch moved past where its worktree
+# started, has commits of its own (see own_commits) and that tip is merged
+# into the base branch (see merged_into), and every other branch is merged
+# too or untouched: still at its start, or merged without commits of its own
+# (it only gained base commits). A task with some branches merged and others
+# not is reported per repo. Merged tasks whose agent is working or waiting
+# are skipped.
 cmd_gc() {
-  local dry=0 d id name c b p start tip merged note busy err total=0 found=0
+  local dry=0 d id name c b p start tip landed unmerged own stop pr err total=0 found=0
   [ "${1:-}" != -n ] || dry=1
   load_tmux_state
   for d in "$TASKS_DIR"/*; do
@@ -377,29 +411,34 @@ cmd_gc() {
     id=${d##*/}
     cmd__pr "$id" || true
     # folders have no branch: a task needs at least one merged repo
-    merged=0 note=""
+    landed="" unmerged="" own="" stop=0
     while IFS=$TAB read -r name c b p; do
       [ "$c" != - ] || continue
-      merged=1
       repo_start "$d" "$name"
       start=$START
-      tip=$(git --git-dir="$c" rev-parse -q --verify "refs/heads/$b") || { merged=0; break; }
+      tip=$(git --git-dir="$c" rev-parse -q --verify "refs/heads/$b") && [ -n "$start" ] || { stop=1; break; }
+      [ "$tip" != "$start" ] || continue
       fetch_origin "$c" "$name" || true
-      if [ -z "$start" ] || [ "$tip" = "$start" ] || ! { default_base "$c" || true; merged_into "$c" "$b" "$BASE"; }; then
-        merged=0
-        break
-      fi
-      if ! awk -F'\t' -v n="$name" '$1 == n && $3 == "merged" { f = 1 } END { exit !f }' "$d/pr.tsv" 2>/dev/null &&
-        ! own_commits "$c" "$b" "$start" "$BASE"; then
-        merged=0 note="no own commits on $name"
-        break
+      default_base "$c" || true
+      if ! merged_into "$c" "$b" "$BASE"; then
+        pr=$(awk -F'\t' -v n="$name" '$1 == n { s = s " #" $2 " " $3 } END { print s }' "$d/pr.tsv" 2>/dev/null) || pr=""
+        unmerged="$unmerged${unmerged:+, }$name${pr:+ (PR${pr})}"
+      elif awk -F'\t' -v n="$name" '$1 == n && $3 == "merged" { f = 1 } END { exit !f }' "$d/pr.tsv" 2>/dev/null ||
+        own_commits "$c" "$b" "$start" "$BASE"; then
+        landed="$landed${landed:+, }$name"
+      else
+        own="$own${own:+, }$name"
       fi
     done <"$d/repos.tsv"
-    if [ -n "$note" ]; then
-      echo "skipped $id: $note"
+    [ "$stop" -eq 0 ] || continue
+    if [ -z "$landed" ]; then
+      [ -z "$own" ] || [ -n "$unmerged" ] || echo "skipped $id: no own commits on $own"
       continue
     fi
-    [ "$merged" -eq 1 ] || continue
+    if [ -n "$unmerged" ]; then
+      echo "skipped $id: merged: $landed; not merged: $unmerged"
+      continue
+    fi
     busy=$(task_runs "$id" | awk -F'\t' '$3 == "working" || $3 == "waiting" { print $3; exit }')
     if [ -n "$busy" ]; then
       echo "skipped $id: agent $busy (see: collie done $id)"
@@ -461,7 +500,7 @@ cmd__gc() {
 # typed into it if idle, else a new run if it exited; else left untouched.
 # Tasks with an agent working or waiting are skipped. -n only predicts.
 cmd_sync() {
-  local dry=0 ids="" all=0 id d runs busy win pane agent name c b p bname n files msg out rc
+  local dry=0 ids="" all=0 id d runs busy win agent name c b p bname n files msg out conf
   while [ $# -gt 0 ]; do
     case $1 in
       -n) dry=1 ;;
@@ -483,6 +522,7 @@ cmd_sync() {
   while IFS= read -r id; do
     [ -n "$id" ] || continue
     d="$TASKS_DIR/$id"
+    conf=""
     runs=$(task_runs "$id")
     busy=$(awk -F'\t' '$3 == "working" || $3 == "waiting" { print "busy"; exit }' <<<"$runs")
     win=$(awk -F'\t' '$3 == "idle" { print $4; exit }' <<<"$runs")
@@ -543,30 +583,12 @@ cmd_sync() {
           continue
         fi
         git -C "$p" merge -q -m "Merge $bname into $b" "$BASE" >/dev/null 2>&1 || true
-        msg="collie sync merged $bname into $b in $p and stopped on conflicts in: $files. Resolve them keeping the intent of both sides, run the Verify checks from .collie/TASK.md, commit the merge (do not rebase or abort it), and push if the branch has an upstream."
-        if [ -n "$win" ]; then
-          pane=$(agent_pane "$id" "$win")
-          if [ -n "$pane" ]; then
-            rc=0
-            type_into "$pane" "$msg" || rc=$?
-            case $rc in
-              0) out="sent to the agent in $win" ;;
-              2) out="$win is at a startup dialog that needs a human, resolve it in $p" ;;
-              *) return "$rc" ;;
-            esac
-          else
-            out="agent pane not found, resolve it in $p"
-          fi
-        elif "$BASH" "$PLUGIN_DIR/bin/collie" run "$id" -r "$name" --agent "$agent" \
-          -p "Your task contract is .collie/TASK.md. $msg" >/dev/null 2>&1; then
-          out="started a $agent run"
-        else
-          out="could not start $agent; resolve it in $p"
-        fi
         log_event "$id" sync_conflict "repo=$name base=$(git --git-dir="$c" rev-parse --short "$BASE") files=${files// /,}"
-        echo "$id $name: conflict in $files; $out"
+        # handed to the agent once per task, after every repo is merged
+        conf="$conf$name$TAB$p$TAB$bname$TAB$b$TAB$files"$'\n'
       fi
     done <"$d/repos.tsv"
+    [ -z "$conf" ] || sync_handoff "$id" "$win" "$agent" "$conf"
     cmd__pr "$id" || true
   done <<<"$ids"
   if [ "$dry" -eq 0 ]; then
@@ -583,6 +605,47 @@ cmd_sync() {
   else
     echo "between tasks: no conflicts"
   fi
+}
+
+# Hands a task's sync conflicts to its agent in one message, so repos that
+# conflict together reach one agent run: typed into the idle agent's window
+# if given, else a new run of the last agent in the first conflicting repo
+# (it sees the other worktrees). Prints one line per conflicting repo.
+sync_handoff() { # id window agent conflicts (repo, path, base, branch, files lines)
+  local id=$1 win=$2 agent=$3 name p bname b files items="" first="" n=0 msg pane out rc=0
+  while IFS=$TAB read -r name p bname b files; do
+    [ -n "$name" ] || continue
+    [ -n "$first" ] || first=$name
+    items="$items${items:+; }merged $bname into $b in $p and stopped on conflicts in: $files"
+    n=$((n + 1))
+  done <<<"$4"
+  if [ "$n" -eq 1 ]; then
+    msg="collie sync $items. Resolve them keeping the intent of both sides, run the Verify checks from .collie/TASK.md, commit the merge (do not rebase or abort it), and push if the branch has an upstream."
+  else
+    msg="collie sync, in $n repos: $items. Resolve them in each repo keeping the intent of both sides, run the Verify checks from .collie/TASK.md, commit each merge (do not rebase or abort them), and push the branches that have an upstream."
+  fi
+  if [ -n "$win" ]; then
+    pane=$(agent_pane "$id" "$win")
+    if [ -n "$pane" ]; then
+      type_into "$pane" "$msg" || rc=$?
+      case $rc in
+        0) out="sent to the agent in $win" ;;
+        2) out="$win is at a startup dialog that needs a human, resolve it in {path}" ;;
+        *) return "$rc" ;;
+      esac
+    else
+      out="agent pane not found, resolve it in {path}"
+    fi
+  elif "$BASH" "$PLUGIN_DIR/bin/collie" run "$id" -r "$first" --agent "$agent" \
+    -p "Your task contract is .collie/TASK.md. $msg" >/dev/null 2>&1; then
+    out="started a $agent run"
+  else
+    out="could not start $agent; resolve it in {path}"
+  fi
+  while IFS=$TAB read -r name p bname b files; do
+    [ -n "$name" ] || continue
+    echo "$id $name: conflict in $files; ${out//\{path\}/$p}"
+  done <<<"$4"
 }
 
 # Predicts merge conflicts between active tasks without touching worktrees or

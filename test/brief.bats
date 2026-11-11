@@ -86,6 +86,19 @@ STUB
   [ ! -s "$TMP/gh.log" ]
 }
 
+@test "brief: multi-repo PRs are named repo#N in the review and ci rows" {
+  make_bare_repo B
+  cd "$TMP"
+  collie new x -r A -r B --no-window
+  printf '2020-01-01T00:00:00Z\trun_started\trun=1 agent=sleep repo=A\n' >>"$(task_dir x)/events.log"
+  printf '# report\n\nReady.\n' >"$(task_dir x)/REPORT.md"
+  printf 'A\t7\tmerged\tpass\nB\t7\topen\tfail\n' >"$(task_dir x)/pr.tsv"
+  out=$(COLUMNS=200 collie brief)
+  [[ "$out" == *'PR: A#7 merged, CI pass; B#7 open, CI fail'* ]]
+  [[ "$out" == *'PR B#7 has failing CI'* ]]
+  [[ "$(collie _preview x)" == *"  B  feat/x  #7 open (CI fail)  "* ]]
+}
+
 @test "brief: long review details wrap without obscuring the next action" {
   collie new x --no-window
   printf '2020-01-01T00:00:00Z\trun_started\trun=1 agent=sleep repo=A\n' >>"$(task_dir x)/events.log"

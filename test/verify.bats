@@ -118,3 +118,39 @@ EOF
   [ "$status" -ne 0 ]
   [[ "$output" == *"has no repo 'nope'"* ]]
 }
+
+@test "verify: a \`\`\`sh repo=<name> block runs in that repo only; unknown names warn" {
+  make_normal_repo B
+  cd "$TMP"
+  collie new x -r A -r B --no-window
+  set_verify x <<'EOF2'
+```sh
+echo "all $(basename "$(dirname "$(pwd)")")" >>"$TMP/ran"
+```
+```sh repo=B
+echo "only-b $(basename "$(dirname "$(pwd)")")" >>"$TMP/ran"
+```
+```sh repo=nope
+echo never >>"$TMP/ran"
+```
+EOF2
+  run --separate-stderr collie verify x
+  [ "$status" -eq 0 ]
+  [[ "$stderr" == *"block 3 is for repo 'nope', which task 'x' does not have"* ]]
+  [ "$(sort "$TMP/ran")" = "$(printf 'all A\nall B.worktrees\nonly-b B.worktrees')" ]
+  grep -q $'\tverify\trepo=A result=pass exit=0 blocks=1 ' "$(task_dir x)/events.log"
+  grep -q $'\tverify\trepo=B result=pass exit=0 blocks=2 ' "$(task_dir x)/events.log"
+  [[ "$output" == *"--- block 2 of 2"* ]]
+  # a repo with only other repos' blocks is skipped and records nothing
+  rm "$TMP/ran"
+  set_verify x <<'EOF2'
+```sh repo=B
+echo b >>"$TMP/ran"
+```
+EOF2
+  run collie verify x
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"== A  no blocks for this repo"* ]]
+  [ "$(cat "$TMP/ran")" = b ]
+  [ "$(grep -c $'\tverify\trepo=A ' "$(task_dir x)/events.log")" -eq 1 ]
+}

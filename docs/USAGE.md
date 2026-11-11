@@ -270,8 +270,18 @@ lists with `+N`; the preview and `dash -n` show the complete cached list.
 `collie brief` is the short form: a block per task that needs you, in the
 same order, with separate reason, PR details and next command. It reads only
 local state and the dashboard's PR cache, so it never touches the network.
-The `prefix h b` popup uses a pager: scroll with the arrow keys and press `q`
-to close it.
+`collie todo` (`prefix h i`, a popup) lists the same rows in fzf. `enter`
+acts on a row: an agent row goes to its agent window, review and findings
+show `collie review` in a pager (`q` returns to the list), stalled goes to
+the task session, a lost run runs `collie restore`, ci runs
+`collie ci <id> --send`. The preview shows the agent's screen or the review.
+`ctrl-a` lists every open task, to find one by name; `ctrl-t` goes back.
+
+`collie next` (`prefix h n`) switches to the next task in that order after
+the one you are in, wrapping around, with one stop per task: an agent row
+to its agent window, others to the task session. Nothing is stored, so a
+row you leave unresolved comes round again. `prefix h l` returns to the
+session you came from.
 
 ```text
 answer  login (P1)
@@ -473,7 +483,8 @@ state outside permitted locations.
 | Action | CLI | `prefix h` menu | Dashboard (`prefix h h`) |
 |---|---|---|---|
 | Dashboard | `collie dash` | `h` | — |
-| What waits on you | `collie brief` | `b` (popup) | sorted task list |
+| What waits on you | `collie brief`, `collie todo` | `i` (to-do popup) | sorted task list |
+| Next task that waits on you | `collie next` | `n` | — |
 | New task | `collie new` | `c` (prompts, switches to it) | `?` `c` |
 | Edit TASK.md | `collie edit` | `e` | `e` or `?` `e` |
 | Run agent | `collie run --agent` | `r` (menu of agents, default first) | `r` or `?` `r` (digit picks, `enter` the default) |
@@ -489,6 +500,7 @@ state outside permitted locations.
 | Go to task | `collie go` | — | `enter` (most urgent agent window) |
 | Runs of a task | `collie show` | — | `u` (`enter`: its window, `esc`: back) |
 | Jump to last alert | — | `j` | — |
+| Back to the last session | — | `l` | — |
 | Review | `collie review` | `v` | `v` or `?` `v` |
 | Run TASK.md Verify blocks | `collie verify` | — | — (last result in the preview) |
 | Shell in worktree | — | `t` (popup at the pane's path) | `?` `t` (task's first worktree) |
@@ -534,3 +546,39 @@ filter, in which every key types; `?` lists every action.
 | The agent to push, open a PR and watch CI | `collie new --ship` or `set -g @collie-ship on` |
 | Move uncommitted experiments out of the way | `collie spike <id>` inside the worktree (new `exp/<id>` task, tracked changes only) |
 | Keep `exp/*` off the remote | link `hooks/pre-push` (see README) |
+
+### Several repos in one task
+
+A task holds one worktree and branch per repo (one `repos.tsv` row each) and
+expects one PR per repo. `TASK.md`, `REPORT.md` and the rest of the record are
+shared: every worktree's `.collie` links to the same task dir, and
+`.collie/repos/<name>` links to each worktree.
+
+| Command | With several repos |
+|---|---|
+| `new -r a -r b`, `-w`, `add`, `drop` | all-or-nothing per call; `drop` refuses to remove the last repo |
+| `run` | the agent starts in the first repo (`-r` picks another); claude, codex, gemini and omp also get the other worktrees and the task dir |
+| `ls`, `show` | repo names; `show` lists each branch and path |
+| dash row | the task's PR numbers by state color, without repo names (up to about 24 columns, then `+N`) |
+| dash preview | per repo: branch, cached PRs with state and CI, ahead/dirty counts, diff stat |
+| `brief` | PRs read `repo#N` once a task has PRs in more than one repo |
+| `review` | a section per repo: commits ahead (marked `no commits` or `merged`), cached PRs with state and CI, diff stat, dirty files |
+| `verify` | every block runs in every worktree; a block opened with ` ```sh repo=<name> ` runs in that repo only; `-r` limits the run to one repo |
+| `ci` | the open PRs of every repo; `--send` puts them in one `CI.md` and one prompt |
+| `sync` | each repo against its own base, one line per repo; conflicts in several repos reach the agent in one message (or one new run); exits 0 whatever the lines report |
+| `gc` | finishes a task once at least one repo landed commits of its own and every other repo is merged or untouched; a partly merged task prints `skipped <id>: merged: a; not merged: b (PR #4 open)` |
+| `done` | refuses while any repo is dirty or unmerged, listing each one |
+| `archive`, `reopen` | remove, and restore, every worktree; `reopen` is all-or-nothing |
+| `after:` | a dependency counts as merged when every repo with a PR has a merged one |
+
+Limits that stay:
+
+- One shared `TASK.md` and `REPORT.md`, so an agent working one repo reads
+  the whole task's contract.
+- `sync` exits 0 even when a repo's merge failed or a conflict had no
+  agent; read its lines.
+- `race` races one repo (the first, or `-r`).
+- PR state and CI come from the cache the dashboard refreshes (every 5
+  minutes, inline in `sync` and `gc`); `brief`, `review` and the preview
+  never call `gh`.
+

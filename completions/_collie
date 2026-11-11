@@ -29,6 +29,8 @@ _collie() {
     'drop:remove a repo from a task'
     'ls:list tasks'
     'brief:what waits on you'
+    'todo:act on what waits on you'
+    'next:switch to the next task that waits on you'
     'show:show a task'
     'history:browse finished tasks'
     'log:append a row to the decision log'
@@ -83,6 +85,7 @@ _collie() {
     wait) compadd -- --run --done --state --timeout; _collie_tasks ;;
     set) compadd -S '=' priority title after; _collie_tasks ;;
     ls) compadd -- -a ;;
+    next) compadd -- -c ;;
     new) compadd -- -r -w -t -m --title --from --edit --no-window --ship --no-ship --run --agent -p --after ;;
     gc | history) compadd -- -n ;;
     reopen) compadd -- --no-window; _collie_tasks -a ;;

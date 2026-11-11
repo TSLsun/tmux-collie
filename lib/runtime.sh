@@ -224,14 +224,18 @@ verify_results() { # id
 }
 
 # Writes the fenced ```sh blocks under TASK.md's "## Verify" heading to
-# <dir>/1.sh, 2.sh, ... and prints how many. Fences elsewhere, other
+# <dir>/1.sh, 2.sh, ... and prints how many. A ```sh repo=<name> block is for
+# that repo only: its name goes to <dir>/<n>.repo. Fences elsewhere, other
 # languages, and "## " lines inside a fence are skipped.
 verify_blocks() { # task.md dir
   awk -v dir="$2" '
     /^```/ {
       if (!fence) {
         fence = 1
-        if (sec && $0 ~ /^```sh[ \t]*$/) { sh = 1; f = dir "/" ++n ".sh"; printf "" >f }
+        if (sec && $0 ~ /^```sh([ \t]+repo=[^ \t]+)?[ \t]*$/) {
+          sh = 1; f = dir "/" ++n ".sh"; printf "" >f
+          if (match($0, /repo=[^ \t]+/)) { printf "%s\n", substr($0, RSTART + 5, RLENGTH - 5) >(dir "/" n ".repo"); close(dir "/" n ".repo") }
+        }
       } else if ($0 ~ /^```[ \t]*$/) {
         fence = 0
         if (sh) close(f)
