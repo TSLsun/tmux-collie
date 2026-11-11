@@ -50,11 +50,13 @@ teardown() { teardown_env; }
   collie new p
   collie run p
   pane=$(run_pane p)
+  # The tty echoes each line and cat prints it again. Type the blank row only
+  # after cat's copy shows, or its echo can land in front of that copy.
   tmux send-keys -t "$pane" trim-marker Enter
-  # tty echo, then cat's copy: spaces typed sooner would share cat's row
-  wait_for "[ \"\$(tmux capture-pane -p -J -t '$pane' | grep -c trim-marker)\" -ge 2 ]"
+  wait_for "[ \"\$(tmux capture-pane -p -J -t '$pane' | grep -c '^trim-marker$')\" -ge 2 ]"
   tmux send-keys -t "$pane" -l '      '
   tmux send-keys -t "$pane" Enter
+  wait_for "[ \"\$(tmux capture-pane -p -J -t '$pane' | grep -c '^      $')\" -ge 2 ]"
   run --separate-stderr collie peek p -n 1
   [ "$status" -eq 0 ]
   [ "$output" = trim-marker ]
