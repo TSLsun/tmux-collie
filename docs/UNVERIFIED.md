@@ -30,10 +30,12 @@ delete an item only when it is covered by a test.
 - [ ] Claude `waiting`: `Notification` matcher `permission_prompt|elicitation_dialog`
       never fired in a manual run (auto mode on, no permission prompt).
       Verified by hand on 2026-10-24: working → idle → exited with Claude Code 2.1.310.
-      2026-11-11: no real permission prompt was triggered.
+      2026-11-12: Claude 2.1.322 displayed a real permission modal under
+      collie, but remained idle with no waiting event. Fix `claude-wait-notification`.
 - [ ] Claude folder-trust dialog on a new worktree shows as `working` until
       answered (known gap; no hook covers it).
-      2026-11-11: no isolated real trust dialog was triggered.
+      2026-11-12: real Claude 2.1.322 trust dialog showed idle in an isolated
+      run; startup-dialog detection is addressed by existing task `startup-blocked`.
 - [ ] Built-in notifications (`osascript` on macOS, `notify-send` on Linux);
       tests only use a custom `$COLLIE_NOTIFY` command.
       2026-11-11: macOS GUI delivery needs visual confirmation; Linux
@@ -64,8 +66,9 @@ delete an item only when it is covered by a test.
       enter selecting the urgent window and switching session (from a popup,
       `switch-client` must act on the popup's client). Tests cover rows,
       ordering, preview text and target window only.
-      2026-11-11: private attached client displayed fzf rows and preview; Enter
-      switched to the selected task. Popup client, urgent window, and reload remain unchecked.
+      2026-11-11: private attached client displayed fzf rows and preview.
+      2026-11-12: Enter from a popup switched that attached client to the
+      selected task session; urgent window and action reload remain unchecked.
 - [x] The `prefix h` menu with a real client: `#{session_name}` expanding in
       nested confirm-before items, popup sizing, and lazygit's pane directory.
       Checked 2026-11-12 with an attached private pty: `done x?` expanded,
@@ -132,7 +135,8 @@ delete an item only when it is covered by a test.
       socket access.
 - [ ] Claude and Gemini tmux guards through real agents. Deterministic tests
       verify their emitted hook commands and denial behavior.
-      2026-11-11: real Gemini failed authentication; Claude was not exercised.
+      2026-11-12: real Claude 2.1.322 denied bare `tmux kill-server` while
+      the private server survived. Gemini failed authentication and remains unchecked.
 
 ## P5 — Review & lifecycle
 - [ ] `gc` against a real remote: PR merge commits (non-ff) detected after
