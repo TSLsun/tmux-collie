@@ -46,9 +46,9 @@ delete an item only when it is covered by a test.
 - [ ] Clickable status counts on tmux 3.2/3.3 (no `range=user`): the counts
       should still render, colored and unclickable. Click → menu → jump was
       checked on 3.8 on 2026-10-29 with a pty client sending SGR mouse events.
-      2026-11-12: privately built tmux 3.3a rendered real collie waiting, idle
-      and working counts (`●1 ●1 ●1`) in an attached pty; colors and clicks
-      remain unchecked.
+      2026-11-12: privately built tmux 3.2a and 3.3a rendered real collie
+      waiting, idle and working counts (`●1 ●1 ●1`) in attached ptys;
+      colors and clicks remain unchecked.
 - [ ] Clicking a menu item with the mouse (only the item's key was sent).
       2026-11-12: an SGR click closed the private-client menu but did not run
       the target marker; synthetic pty coordinate mapping was inconclusive.
@@ -122,8 +122,8 @@ delete an item only when it is covered by a test.
       remains unchecked.
 - [ ] `ancestor_pane` on Linux (`ps -o ppid=`), and with deep process trees
       (gives up after 10 levels).
-      2026-11-12: a private macOS tmux pane resolved through ten nested shell
-      levels with `TMUX_PANE` unset; Linux remains unavailable here.
+      2026-11-12: a private macOS tmux probe resolved at ten verified parent
+      links and returned no pane at eleven; Linux remains unavailable here.
 - [ ] `collie doctor` version parsing for tmux builds like `next-3.6` / `3.3a`.
       Checked 2026-11-11: `3.3a` passes, but `next-3.6` fails; fix task
       `doctor-tmux-version`.
