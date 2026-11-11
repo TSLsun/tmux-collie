@@ -101,8 +101,9 @@ delete an item only when it is covered by a test.
       2026-11-11: other platforms and localized prompts not available here.
 - [ ] Codex adoption requires a hand-started `--no-daemon` process and `lsof`;
       unknown or ambiguous conversations are refused.
-      2026-11-11: fake-agent tests cover unknown and ambiguous conversations;
-      no real hand-started adoption was run.
+      2026-11-12: real Codex 0.167.0 hand-started with `--no-daemon` was
+      adopted on private tmux with `lsof`; fake-agent tests cover unknown
+      and ambiguous conversations. Missing-prerequisite behavior not checked.
 - [x] Restore caveat: an old window closed without an exit record can appear
       lost after a later server failure. Checked 2026-11-11 in isolated state:
       `restore -n` showed nothing after the window closed, then listed the run
