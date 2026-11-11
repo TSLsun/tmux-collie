@@ -24,6 +24,7 @@ delete an item only when it is covered by a test.
 - [ ] Daily use on real repos (bare layout from the dotfiles clone script,
       normal clones, repos with `origin/HEAD` unset).
       2026-11-11: sustained daily use cannot be established by isolated tests.
+      2026-11-12: an isolated repo without `origin/HEAD` selected `origin/main`.
 
 ## P2 — Agent runtime
 - [ ] Claude `waiting`: `Notification` matcher `permission_prompt|elicitation_dialog`
@@ -43,7 +44,9 @@ delete an item only when it is covered by a test.
 - [ ] Clickable status counts on tmux 3.2/3.3 (no `range=user`): the counts
       should still render, colored and unclickable. Click → menu → jump was
       checked on 3.8 on 2026-10-29 with a pty client sending SGR mouse events.
-      2026-11-11: only tmux 3.8 available locally.
+      2026-11-12: privately built tmux 3.3a rendered real collie waiting, idle
+      and working counts (`●1 ●1 ●1`) in an attached pty; colors and clicks
+      remain unchecked.
 - [ ] Clicking a menu item with the mouse (only the item's key was sent).
       2026-11-11: no live mouse-selection fixture was established.
 - [ ] `#{collie_status}` rendering in a real status bar (glyph width, colours,
@@ -73,9 +76,10 @@ delete an item only when it is covered by a test.
 - [x] `edit task` popups (menu `prefix h e`, dash `?` `e`) open `$EDITOR`, close on
       save, and the dash preview shows the change. Checked 2026-10-26 with vi on
       `tmux -L collie-test` (tmux 3.8), driving a real client from an outer tmux.
-- [ ] `$EDITOR` inside the menu popup comes from the tmux server environment;
-      an `EDITOR` exported only in a later shell does not reach it (falls back to vi).
-      2026-11-11: server environment inheritance was not exercised.
+- [x] `$EDITOR` inside the menu popup comes from the tmux server environment;
+      an `EDITOR` exported only in a later shell does not reach it. Checked
+      2026-11-12 with an attached private pty: the server editor ran instead
+      of the pane-only editor; with server `EDITOR` unset the popup opened vi.
 - [x] zsh completion in an interactive shell. Checked 2026-11-11 with `expect`:
       `collie doct<Tab>` completed to `collie doctor` after `compinit`.
 - [ ] Alacritty `chars = "\u0002hh"` example in README.
@@ -116,8 +120,8 @@ delete an item only when it is covered by a test.
       remains unchecked.
 - [ ] `ancestor_pane` on Linux (`ps -o ppid=`), and with deep process trees
       (gives up after 10 levels).
-      2026-11-11: Linux unavailable; private tmux deep-tree probes had invalid
-      context and were inconclusive.
+      2026-11-12: a private macOS tmux pane resolved through ten nested shell
+      levels with `TMUX_PANE` unset; Linux remains unavailable here.
 - [ ] `collie doctor` version parsing for tmux builds like `next-3.6` / `3.3a`.
       Checked 2026-11-11: `3.3a` passes, but `next-3.6` fails; fix task
       `doctor-tmux-version`.
