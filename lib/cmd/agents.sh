@@ -112,6 +112,7 @@ cmd_run() {
   # shellcheck disable=SC2034
   RUN_DIRS=$(awk -F'\t' -v p="$path" '$4 != p { print $4 }' "$d/repos.tsv"; printf '%s\n' "$d")
   AGENT_HOOKS=0 AGENT_HOOKS_PENDING=0 AGENT_EXTRA_HANDLED=0 AGENT_SESSION_ID="" AGENT_MODELS=0
+  unset -f agent_startup_dialog
   if [[ $agent != */* ]] && [ -f "$PLUGIN_DIR/agents/$agent.sh" ]; then
     # shellcheck source=/dev/null
     . "$PLUGIN_DIR/agents/$agent.sh"
@@ -145,6 +146,11 @@ cmd_run() {
   [ "$AGENT_HOOKS_PENDING" = 0 ] || AGENT_HOOKS=0
   # @collie_run last: the wrapper starts the agent once it is set
   stamp %s
+  local watch=""
+  if declare -F agent_startup_dialog >/dev/null; then
+    watch=$NOW.$$
+    tmux set-option -w -t "$wid" @collie_startup "$watch" || return
+  fi
   tmux set-option -w -t "$wid" @collie_task "$id" \; set-option -w -t "$wid" @collie_path "$path" \; \
     set-option -w -t "$wid" @collie_agent "$agent" \; set-option -w -t "$wid" @collie_hooks "$AGENT_HOOKS" \; \
     set-option -w -t "$wid" @collie_pane "$pane" \; set-option -w -t "$wid" @collie_state "$st" \; \
@@ -153,6 +159,10 @@ cmd_run() {
     log_agent_session "$id" "$run" "$AGENT_SESSION_ID" || return
   fi
   [ -z "$RUN_MODEL$RUN_EFFORT" ] || log_event "$id" run_model "run=$run model=${RUN_MODEL:--} effort=${RUN_EFFORT:--}" || return
+  # nohup: outlives a menu or popup that started the run; 3>&-: not bats' fd
+  if [ -n "$watch" ]; then
+    nohup "$BASH" "$PLUGIN_DIR/bin/collie" _startup-watch "$pane" "$watch" "$st" </dev/null >/dev/null 2>&1 3>&- &
+  fi
   # -s: show the new window (menu, dashboard); a script keeps its window
   if [ "$switch" = 1 ] && { [ -n "$client" ] || [ -n "${TMUX:-}" ]; }; then
     tmux switch-client ${client:+-c "$client"} -t "$wid" \; select-window -t "$wid" 2>/dev/null || true
@@ -298,9 +308,10 @@ cmd_peek() {
 }
 
 # Types text into the agent of a collie run while it is idle or waiting, and
-# logs the first line. Exit 2: the agent is working; 3: no live run.
+# logs the first line. Exit 2: the agent is working or at a startup trust
+# dialog; 3: no live run.
 cmd_send() {
-  local id="" repo="" run="" file="" wait=0 text="" args=() t agent st win pane first
+  local id="" repo="" run="" file="" wait=0 text="" args=() t agent st win pane first rc=0
   while [ $# -gt 0 ]; do
     case $1 in
       -r) need_value send "-r needs a repo" "${2:-}"; repo=$2; shift ;;
@@ -352,7 +363,12 @@ cmd_send() {
   esac
   pane=$(agent_pane "$id" "$win")
   [ -n "$pane" ] || { warn "send: the pane of run $run ($agent) is gone; not sent"; exit 3; }
-  type_into "$pane" "$text"
+  type_into "$pane" "$text" || rc=$?
+  if [ "$rc" = 2 ]; then
+    warn "send: run $run ($agent) is at a startup dialog that needs a human; not sent (answer it in $win)"
+    exit 2
+  fi
+  [ "$rc" = 0 ] || return "$rc"
   first=${text%%$'\n'*}
   first=${first//$'\t'/ }
   log_event "$id" sent "run=$run text=${first:0:80}"
@@ -636,7 +652,10 @@ cmd_state() {
     *) die "usage: collie state <working|waiting|idle|exited>" ;;
   esac
   local pane=${TMUX_PANE:-$(ancestor_pane)}
-  [ -z "$pane" ] || set_state "$pane" "$1"
+  [ -n "$pane" ] || return 0
+  # a hook proves the agent is past its startup dialogs: ends _startup-watch
+  tmux set-option -wu -t "$pane" @collie_startup 2>/dev/null || true
+  set_state "$pane" "$1"
 }
 
 # A real Codex hook proves trust/config loading for this window. Until then,
@@ -645,6 +664,7 @@ cmd__codex-hook() {
   local pane=${TMUX_PANE:-$(ancestor_pane)}
   [ -n "$pane" ] || return 0
   tmux set-option -w -t "$pane" @collie_hooks 1 2>/dev/null || return 0
+  tmux set-option -wu -t "$pane" @collie_startup 2>/dev/null || true
   # All Codex lifecycle payloads carry session_id, including hooks first
   # trusted after SessionStart was skipped.
   cmd__session
@@ -681,7 +701,7 @@ cmd__codex-wait() { # pane pending-token
     info=$(tmux display-message -p -t "$1" '#{@collie_codex_pending}|#{@collie_state}' 2>/dev/null) || return 0
     IFS='|' read -r pending st <<<"$info"
     [ "$pending" = "$2" ] && [ "$st" != exited ] || return 0
-    screen=$(tmux capture-pane -p -t "$1" 2>/dev/null | awk 'NF { a[++n] = $0 } END { for (i = n - 3; i <= n; i++) if (i > 0) print a[i] }') || return 0
+    screen=$(pane_bottom "$1" 4) || return 0
     case $screen in
       *'to confirm or '*'to cancel'* | *'to submit answer'* | *'to submit all'*)
         visible=$((visible + 1)) missing=0 ;;
@@ -696,6 +716,36 @@ cmd__codex-wait() { # pane pending-token
       seen=0
     fi
   done
+}
+
+# No hook fires at a startup trust dialog, so watch the pane until the agent's
+# first hook (cmd_state, cmd__codex-hook unset the token), for
+# COLLIE_STARTUP_WATCH seconds (60) after the last dialog seen, or 24 h: a
+# dialog can wait for a human indefinitely. Two observations either way; when
+# a dialog closes, back to the run's starting state, as a run with no prompt
+# fires no hook. Keeps watching: agents show more than one dialog in a row.
+cmd__startup-watch() { # pane token state-after-dialog
+  local info tok st visible=0 missing=0 seen=0 start=$SECONDS last=$SECONDS limit=${COLLIE_STARTUP_WATCH:-60}
+  while [ $((SECONDS - start)) -lt 86400 ]; do
+    sleep 0.5
+    info=$(tmux display-message -p -t "$1" '#{@collie_startup}|#{@collie_state}' 2>/dev/null) || return 0
+    IFS='|' read -r tok st <<<"$info"
+    [ "$tok" = "$2" ] && [ "$st" != exited ] || return 0
+    if startup_dialog "$1"; then
+      visible=$((visible + 1)) missing=0 last=$SECONDS
+    else
+      missing=$((missing + 1)) visible=0
+    fi
+    if [ "$visible" -ge 2 ] && [ "$seen" = 0 ]; then
+      set_state "$1" waiting "$2" @collie_startup
+      seen=1
+    elif [ "$seen" = 1 ] && [ "$missing" -ge 2 ]; then
+      set_state "$1" "$3" "$2" @collie_startup
+      seen=0
+    fi
+    [ "$seen" = 1 ] || [ $((SECONDS - last)) -lt "$limit" ] || break
+  done
+  tmux set-option -wu -t "$1" @collie_startup 2>/dev/null || true
 }
 
 # SessionStart hook: logs the run's conversation id (session_id in the hook's

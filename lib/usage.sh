@@ -576,8 +576,9 @@ started by hand or the shell left after a run exits.
   -f file         send the file's contents (-: stdin)
 
 Logs a `sent` event with the run and the text's first line.
-Exit 0 sent; 2 the agent is working (not sent); 3 no live run (exited or
-gone); 1 other errors, e.g. several live runs without --run.
+Exit 0 sent; 2 the agent is working or at a startup trust dialog, which
+needs a human (not sent); 3 no live run (exited or gone); 1 other errors,
+e.g. several live runs without --run.
 
   collie send fix-retry 'CI fails on macOS: see the log in the PR'
   collie send fix-retry --run 2 --wait -f review.md
