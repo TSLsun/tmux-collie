@@ -7,7 +7,7 @@ cmd_doctor() {
   doc_line ok "bash $BASH_VERSION"
   if v=$(git --version 2>/dev/null); then doc_line ok "$v"; else doc_line FAIL "git not found"; fail=1; fi
   if v=$(tmux -V 2>/dev/null); then
-    if awk '{ split($2, n, /[^0-9]+/); exit !(n[1] > 3 || (n[1] == 3 && n[2] >= 2)) }' <<<"$v"; then
+    if awk '{ sub(/^next-/, "", $2); split($2, n, /[^0-9]+/); exit !(n[1] > 3 || (n[1] == 3 && n[2] >= 2)) }' <<<"$v"; then
       doc_line ok "$v"
     else
       doc_line FAIL "$v (need 3.2+ for popups and new-session -e)"
