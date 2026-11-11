@@ -48,7 +48,8 @@ delete an item only when it is covered by a test.
       and working counts (`●1 ●1 ●1`) in an attached pty; colors and clicks
       remain unchecked.
 - [ ] Clicking a menu item with the mouse (only the item's key was sent).
-      2026-11-11: no live mouse-selection fixture was established.
+      2026-11-12: an SGR click closed the private-client menu but did not run
+      the target marker; synthetic pty coordinate mapping was inconclusive.
 - [ ] `#{collie_status}` rendering in a real status bar (glyph width, colours,
       refresh every `status-interval`).
       2026-11-11: substitution confirmed on tmux 3.8; visible width, colours,
