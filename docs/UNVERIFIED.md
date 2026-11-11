@@ -99,9 +99,10 @@ delete an item only when it is covered by a test.
       unknown or ambiguous conversations are refused.
       2026-11-11: fake-agent tests cover unknown and ambiguous conversations;
       no real hand-started adoption was run.
-- [ ] Restore caveat: an old window closed without an exit record can appear
-      lost after a later server failure. Inspect `restore -n` first.
-      2026-11-11: the exact closed-window/server-loss sequence was not reproduced.
+- [x] Restore caveat: an old window closed without an exit record can appear
+      lost after a later server failure. Checked 2026-11-11 in isolated state:
+      `restore -n` showed nothing after the window closed, then listed the run
+      after its private tmux server was killed. Inspect `restore -n` first.
 - [ ] Gemini for real: system settings layer picked up and merged with user
       hooks; hooks enabled without extra flags; `ToolPermission` matcher;
       ancestor-pane lookup under its sanitized env. Tried 2026-10-25: two trust
