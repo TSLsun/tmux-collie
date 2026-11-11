@@ -419,7 +419,7 @@ runs it the lead of one task: it does not write the code itself, it drives
 other runs with collie commands and checks their work.
 
 ```sh
-npx skills add TSLsun/tmux-collie     # installs skills/collie-lead
+npx skills add TSLsun/tmux-collie     # installs skills/collie-lead and skills/collie-dispatch
 ```
 
 ```mermaid
@@ -477,6 +477,15 @@ socket, so a lead cannot drive collie there. A run's `collie signal done` and
 they remain callable from the agent run (using the collie executable provided
 to the run), though sandbox filesystem policy can still deny writes to task
 state outside permitted locations.
+
+### Dispatching tasks with an agent
+
+The [`collie-dispatch`](https://github.com/TSLsun/tmux-collie/blob/main/skills/collie-dispatch/SKILL.md)
+skill is for an agent asked to open tasks: per task it runs `collie new -m`
+(without `--run`), writes Context, Acceptance Criteria and `## Verify` into
+the new `.collie/TASK.md`, starts the task agent with `collie run`, reports the
+id, path and window, and stops. It never works in the worktrees it creates;
+follow-up requests go to the task agent with `collie send`.
 
 ## 5. Where each action lives
 
