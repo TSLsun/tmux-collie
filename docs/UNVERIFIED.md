@@ -142,8 +142,9 @@ delete an item only when it is covered by a test.
       Checked 2026-11-11 in isolated repos: staged rename passed; conflicts and
       staged submodule updates failed. Fix tasks `spike-conflicts` and
       `spike-submodule`.
-- [ ] `review` popup from the menu (`| less -R`), long outputs and colours.
-      2026-11-11: CLI report display checked with Codex; popup pager not exercised.
+- [x] `review` popup from the menu (`| less -R`), long outputs and colours.
+      Checked 2026-11-12 in an attached private pty: an 81-line report
+      retained red and green ANSI colors, scrolled to its end, and closed with q.
 - [x] Agents actually writing `.collie/REPORT.md` from the default prompt.
       Checked 2026-11-11 with Codex 0.167.0 in an isolated task and private tmux.
 - [x] Derived `review` with a real agent: REPORT.md written, then the agent
