@@ -157,6 +157,42 @@ wt() { echo "$TMP/repos/A/feat-$1"; }
   grep -q "run_started	run=2 agent=sleep repo=A" "$(task_dir c)/events.log"
 }
 
+@test "sync: multi-repo conflicts reach the agent once, naming every repo" {
+  make_bare_repo B
+  cd "$TMP"
+  collie new c -r A -r B --no-window
+  commit_in "$(wt c)" f mine
+  commit_in "$TMP/repos/B/feat-c" g mine
+  collie run c -- 300
+  hook c idle
+  land f theirs
+  commit_in "$TMP/origin-B" g theirs
+  run --separate-stderr collie sync
+  win=$(tmux display -p -t "$(run_pane c)" '#{window_id}')
+  [ "$output" = "c A: conflict in f; sent to the agent in $win"$'\n'"c B: conflict in g; sent to the agent in $win" ]
+  git -C "$(wt c)" rev-parse -q --verify MERGE_HEAD
+  git -C "$TMP/repos/B/feat-c" rev-parse -q --verify MERGE_HEAD
+  wait_for "tmux capture-pane -p -J -t '$(run_pane c)' | grep -q 'in 2 repos: .*feat-c and stopped on conflicts in: f; .*B/feat-c and stopped on conflicts in: g. Resolve them in each repo'"
+  [ "$(tmux capture-pane -p -J -t "$(run_pane c)" | grep -c 'collie sync')" -eq 1 ]
+  [ "$(grep -c sync_conflict "$(task_dir c)/events.log")" -eq 2 ]
+}
+
+@test "sync: multi-repo conflicts for an exited agent start one run" {
+  make_bare_repo B
+  cd "$TMP"
+  collie new c -r A -r B --no-window
+  commit_in "$(wt c)" f mine
+  commit_in "$TMP/repos/B/feat-c" g mine
+  collie run c -- 0
+  wait_for "grep -q run_exited '$(task_dir c)/events.log'"
+  land f theirs
+  commit_in "$TMP/origin-B" g theirs
+  run --separate-stderr collie sync
+  [ "$output" = "c A: conflict in f; started a sleep run"$'\n'"c B: conflict in g; started a sleep run" ]
+  grep -q "run_started	run=2 agent=sleep repo=A" "$(task_dir c)/events.log"
+  ! grep -q "run_started	run=3" "$(task_dir c)/events.log"
+}
+
 @test "sync: Codex skips working/waiting, targets its split pane, and restarts after exit" {
   mkdir "$TMP/bin"
   export PATH="$TMP/bin:$PATH" CODEX_ARGS="$TMP/codex-args"

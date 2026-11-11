@@ -534,3 +534,39 @@ filter, in which every key types; `?` lists every action.
 | The agent to push, open a PR and watch CI | `collie new --ship` or `set -g @collie-ship on` |
 | Move uncommitted experiments out of the way | `collie spike <id>` inside the worktree (new `exp/<id>` task, tracked changes only) |
 | Keep `exp/*` off the remote | link `hooks/pre-push` (see README) |
+
+### Several repos in one task
+
+A task holds one worktree and branch per repo (one `repos.tsv` row each) and
+expects one PR per repo. `TASK.md`, `REPORT.md` and the rest of the record are
+shared: every worktree's `.collie` links to the same task dir, and
+`.collie/repos/<name>` links to each worktree.
+
+| Command | With several repos |
+|---|---|
+| `new -r a -r b`, `-w`, `add`, `drop` | all-or-nothing per call; `drop` refuses to remove the last repo |
+| `run` | the agent starts in the first repo (`-r` picks another); claude, codex, gemini and omp also get the other worktrees and the task dir |
+| `ls`, `show` | repo names; `show` lists each branch and path |
+| dash row | the task's PR numbers by state color, without repo names (up to about 24 columns, then `+N`) |
+| dash preview | per repo: branch, cached PRs with state and CI, ahead/dirty counts, diff stat |
+| `brief` | PRs read `repo#N` once a task has PRs in more than one repo |
+| `review` | a section per repo: commits ahead (marked `no commits` or `merged`), cached PRs with state and CI, diff stat, dirty files |
+| `verify` | every block runs in every worktree; a block opened with ` ```sh repo=<name> ` runs in that repo only; `-r` limits the run to one repo |
+| `ci` | the open PRs of every repo; `--send` puts them in one `CI.md` and one prompt |
+| `sync` | each repo against its own base, one line per repo; conflicts in several repos reach the agent in one message (or one new run); exits 0 whatever the lines report |
+| `gc` | finishes a task once at least one repo landed commits of its own and every other repo is merged or untouched; a partly merged task prints `skipped <id>: merged: a; not merged: b (PR #4 open)` |
+| `done` | refuses while any repo is dirty or unmerged, listing each one |
+| `archive`, `reopen` | remove, and restore, every worktree; `reopen` is all-or-nothing |
+| `after:` | a dependency counts as merged when every repo with a PR has a merged one |
+
+Limits that stay:
+
+- One shared `TASK.md` and `REPORT.md`, so an agent working one repo reads
+  the whole task's contract.
+- `sync` exits 0 even when a repo's merge failed or a conflict had no
+  agent; read its lines.
+- `race` races one repo (the first, or `-r`).
+- PR state and CI come from the cache the dashboard refreshes (every 5
+  minutes, inline in `sync` and `gc`); `brief`, `review` and the preview
+  never call `gh`.
+
