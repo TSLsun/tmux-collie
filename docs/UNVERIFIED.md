@@ -50,10 +50,10 @@ delete an item only when it is covered by a test.
 - [ ] Clicking a menu item with the mouse (only the item's key was sent).
       2026-11-12: an SGR click closed the private-client menu but did not run
       the target marker; synthetic pty coordinate mapping was inconclusive.
-- [ ] `#{collie_status}` rendering in a real status bar (glyph width, colours,
-      refresh every `status-interval`).
-      2026-11-11: substitution confirmed on tmux 3.8; visible width, colours,
-      and periodic refresh were not established.
+- [x] `#{collie_status}` rendering in a real status bar (glyph width, colours,
+      refresh every `status-interval`). Checked 2026-11-12 with an attached
+      private pty and one-second interval: red waiting changed to yellow idle,
+      green remained visible, and the glyphs used the same cursor column.
 - [ ] Latency of `collie state` from `PostToolUse` on every tool call is
       unnoticeable.
       2026-11-11: 30 isolated hook-command calls measured median 29.40 ms,
