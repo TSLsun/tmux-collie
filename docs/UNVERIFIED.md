@@ -132,8 +132,6 @@ delete an item only when it is covered by a test.
 - [ ] `gc` against a real remote: PR merge commits (non-ff) detected after
       `git fetch`; squash merges are known not to be detected. Checked
       2026-11-11 with a local bare remote and non-ff merge; hosted PR not checked.
-- [x] `gc` on tasks created before P5 (no `start=` in events): never collected.
-      Checked 2026-11-11 with a legacy event record and `gc -n` in an isolated repo.
 - [ ] `spike` with a merge/rebase in progress, submodules, or renames staged.
       Checked 2026-11-11 in isolated repos: staged rename passed; conflicts and
       staged submodule updates failed. Fix tasks `spike-conflicts` and
