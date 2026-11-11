@@ -166,6 +166,24 @@ cmd_new() {
       exit "$rc"
     fi
   fi
+  [ -t 0 ] || new_handoff_note "$id" "${NEW_PATHS%%$'\n'*}" "$run" "$agent"
+}
+
+# An agent that runs `collie new` reads the printed path as "work there":
+# tell it on stderr that the task belongs to the task's own agent.
+new_handoff_note() { # id path run agent
+  warn "task '$1' is for its own agent, not this session: do not implement it here."
+  # a folder task has no .collie link: name the record's TASK.md instead
+  local contract=$2/.collie/TASK.md
+  [ -e "$2/.collie" ] || contract=$TASKS_DIR/$1/TASK.md
+  warn "If needed, fill Context, Acceptance Criteria and Verify in $contract."
+  if [ "$3" = 1 ]; then
+    local agent=$4
+    [ -n "$agent" ] || { run_agent; agent=$RUN_AGENT; }
+    warn "Its agent is already running in tmux session '$1', window '$agent'; stop here."
+  else
+    warn "Then start its agent with: collie run $1 (and stop here)."
+  fi
 }
 
 cmd_add() {

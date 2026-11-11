@@ -17,9 +17,10 @@ teardown() { teardown_env; }
 
 @test "new: a non-git cwd becomes a folder task, used in place" {
   cd "$F"
-  run collie new trip
+  run --separate-stderr collie new trip
   [ "$status" -eq 0 ]
   [ "$output" = "$F" ]
+  [[ "$stderr" == *"Verify in $(task_dir trip)/TASK.md."* ]]
   [ "$(cat "$(task_dir trip)/repos.tsv")" = "trip-2027	-	-	$F" ]
   [ "$(window_path trip trip-2027)" = "$F" ]
   [ ! -e "$F/.collie" ]
