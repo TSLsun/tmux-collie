@@ -62,13 +62,10 @@ delete an item only when it is covered by a test.
       p95 34.02 ms, max 34.51 ms; perceived impact during agent use not checked.
 
 ## P3 — Dashboard & interaction
-- [ ] `collie dash` interactively: fzf layout, preview pane, rows reloading after an action,
-      enter selecting the urgent window and switching session (from a popup,
-      `switch-client` must act on the popup's client). Tests cover rows,
-      ordering, preview text and target window only.
-      2026-11-11: private attached client displayed fzf rows and preview.
-      2026-11-12: Enter from a popup switched that attached client to the
-      selected task session; urgent window and action reload remain unchecked.
+- [x] `collie dash` interactively: fzf layout, preview, action reload and
+      urgent-window selection from a popup. Checked 2026-11-11–12 with a private
+      attached pty: rows and preview rendered, sync returned to the dashboard,
+      and Enter switched that same client to the waiting run's window ID.
 - [x] The `prefix h` menu with a real client: `#{session_name}` expanding in
       nested confirm-before items, popup sizing, and lazygit's pane directory.
       Checked 2026-11-12 with an attached private pty: `done x?` expanded,
