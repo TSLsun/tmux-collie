@@ -281,7 +281,8 @@ usage: collie brief
 What waits on you, most urgent first (answer, reply, findings, review,
 stalled; then priority, id): a block per task with its reason and the command
 to act. review shows REPORT.md's first line and the PR with its state and CI
-from the cache the dashboard keeps (never calls gh). A task whose open PR
+from the cache the dashboard keeps (never calls gh); PRs of a task spanning
+repos read repo#N. A task whose open PR
 has failing CI in that cache also gets a ci block at the end, pointing
 at `collie ci <id> --send`. Prints "nothing waits on you" when nothing does.
 Read-only.
@@ -401,8 +402,9 @@ EOF
       cat <<'EOF'
 usage: collie review [<id>] [-p]
 
-Per repo: commits since the branch started, diff stat (-p: the full patch),
-dirty files; then REPORT.md. Folders list files modified since the first
+Per repo: commits since the branch started (marked "no commits" or
+"merged"), its cached PRs with state and CI, diff stat (-p: the full
+patch), dirty files; then REPORT.md. Folders list files modified since the first
 run. Read-only.
 EOF
       ;;
@@ -413,10 +415,12 @@ usage: collie verify [<id>] [-r repo]
 Run the fenced ```sh blocks under TASK.md's "## Verify" in each repo's
 worktree (-r: only that repo), in order, each with `sh -e`, stdin from
 /dev/null and your environment. A repo stops at its first failing block.
-Output goes to the terminal and to verify/<time>-<repo>.log in the task
-dir; a verify event records pass/fail, the exit code and the log. show,
-review and the dash preview print the last result per repo; it does not
-change the task's status. Exits non-zero if any repo fails. No blocks:
+A block opened with ```sh repo=<name> runs in that repo only; a repo with
+no blocks of its own or untagged ones is skipped. Output goes to the
+terminal and to verify/<time>-<repo>.log in the task dir; a verify event
+records pass/fail, the exit code and the log. show, review and the dash
+preview print the last result per repo; it does not change the task's
+status. Exits non-zero if any repo fails. No blocks:
 says so, exits 0, records nothing.
 
   collie verify login
@@ -452,8 +456,10 @@ usage: collie sync [<id>...] [-n]
 Merge the base branch (fetched first) into active task branches (all, or the
 given ids), committing and pushing clean merges when the branch has an
 upstream. On a conflict the merge is started and the task's agent is told
-the files (typed in if idle, a new run if exited). Skips tasks whose agent
-is working or waiting, dirty worktrees, and branches without own commits.
+the files (typed in if idle, a new run if exited); conflicts in several
+repos of a task go to it in one message. Each repo is synced and reported
+on its own line; exits 0 whatever they report. Skips tasks whose agent is
+working or waiting, dirty worktrees, and branches without own commits.
 -n predicts only, including conflicts between tasks; read-only.
 EOF
       ;;
