@@ -16,21 +16,25 @@ stub_tmux() {
   chmod +x "$TMP/stub/tmux"
 }
 
-@test "menu: brief is global and peek appears only in task sessions" {
+@test "menu: to-do, next and back are global; peek appears only in task sessions" {
   stub_tmux
   PATH="$TMP/stub:$PATH" run collie _menu main cl
   [ "$status" -eq 0 ]
-  [[ "$output" == *"brief"$'\n'"b"$'\n'*"_popup "*"brief | LESS= less -R"* ]]
+  [[ "$output" == *"to-do"$'\n'"i"$'\n'*"_popup "*"collie todo"* ]]
+  [[ "$output" == *"next for you"$'\n'"n"$'\n'"run-shell '"*"collie next -c cl'"* ]]
+  [[ "$output" == *"back to last session"$'\n'"l"$'\n'"switch-client -l"* ]]
   [[ "$output" != *$'\n'"peek task"$'\n'* ]]
 
   collie new x -r proj --no-window
   PATH="$TMP/stub:$PATH" run collie _menu x cl
   [ "$status" -eq 0 ]
-  [[ "$output" == *"brief"$'\n'"b"$'\n'*"_popup "*"brief | LESS= less -R"* ]]
+  [[ "$output" == *"to-do"$'\n'"i"$'\n'*"_popup "*"collie todo"* ]]
+  [[ "$output" == *"next for you"$'\n'"n"$'\n'"run-shell '"*"collie next -c cl'"* ]]
+  [[ "$output" == *"back to last session"$'\n'"l"$'\n'"switch-client -l"* ]]
   [[ "$output" == *"peek task"$'\n'"p"$'\n'*"_popup -w"*"peek x"* ]]
 }
 
-@test "menu: brief popup stays open with LESS=FRX and a short result" {
+@test "menu: the to-do popup opens and says when nothing waits" {
   export LESS=FRX TERM=xterm-256color
   tmux new-session -d -s main -x 100 -y 30
   tmux run-shell "$COLLIE_ROOT/collie.tmux"
@@ -53,11 +57,11 @@ try:
 
     receive(b"main")
     os.write(master, b"\x02h")
-    receive(b"brief")
-    os.write(master, b"b")
-    output = receive(b"(END)")
-    assert b"nothing waits on you" in output and b"(END)" in output, output
-    os.write(master, b"q")
+    receive(b"to-do")
+    os.write(master, b"i")
+    output = receive(b"nothing waits on you")
+    assert b"nothing waits on you" in output, output
+    os.write(master, b"\x1b")
 finally:
     client.kill()
     client.wait()

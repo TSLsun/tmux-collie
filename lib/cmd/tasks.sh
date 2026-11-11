@@ -322,17 +322,16 @@ cmd_ls() {
   done
 }
 
-# What waits on you, most urgent first, then by priority and id.
-# Reads local state and the cached PRs (pr.tsv) only: never gh or the network.
 brief_detail() { # label text width
   printf '%s: %s\n' "$1" "$2" | fold -s -w "$(($3 - 4))" | awk 'NR == 1 { print "  " $0; next } { print "    " $0 }'
 }
 
-cmd_brief() {
-  local all rows id pri top needs what act d head pr n=0 _ width=${COLUMNS:-}
-  [ -n "$width" ] || [ ! -t 0 ] || { width=$(stty size </dev/tty 2>/dev/null) && width=${width#* }; } || width=""
-  case $width in '' | *[!0-9]*) width=80 ;; esac
-  [ "$width" -ge 24 ] || width=24
+# What waits on you, most urgent first, then by priority and id: one TSV row
+# per item, needs, id, priority, action (go review restore run ci), why and
+# PR ("" when none). brief prints them; todo and next act on them.
+# Reads local state and the cached PRs (pr.tsv) only: never gh or the network.
+brief_rows() {
+  local all rows id pri top needs what act d head pr _
   all=$(cmd_ls)
   rows=$(printf '%s\n' "$all" | awk -F'\t' '
     BEGIN { split("answer reply findings review stalled", o, " "); for (i in o) r[o[i]] = i }
@@ -342,13 +341,14 @@ cmd_brief() {
     d="$TASKS_DIR/$id"
     pr=""
     case $needs in
-      answer) what="an agent waits for your answer" act="collie go $id" ;;
-      reply) what="an agent finished its turn without a REPORT.md" act="collie go $id" ;;
-      findings) what="the review has open findings" act="collie review $id" ;;
+      answer) what="an agent waits for your answer" act=go ;;
+      reply) what="an agent finished its turn without a REPORT.md" act=go ;;
+      findings) what="the review has open findings" act=review ;;
       review)
         # the report's first line of prose, then its PR (link from REPORT.md,
         # state and CI from the cache)
         head=$(awk -v re="$PR_RE" 'NF && !/^#/ && $0 !~ re { sub(/^[-*>] /, ""); print; exit }' "$d/REPORT.md")
+        head=${head//"$TAB"/ }
         [ "${#head}" -le 100 ] || head="${head:0:97}..."
         pr=$(grep -oE -m1 "$PR_RE" "$d/REPORT.md") || pr=""
         # repo#N once the PRs span repos
@@ -366,22 +366,17 @@ cmd_brief() {
               else if (s != "") print "PR " s
             }
           }' "$d/pr.tsv" "$d/pr.tsv" 2>/dev/null) || pr=""
-        what="${head:-REPORT.md written}" act="collie review $id"
+        what="${head:-REPORT.md written}" act=review
         ;;
       stalled)
         if [ "$top" = unknown ]; then
-          what="its agents were lost with the tmux server" act="collie restore $id"
+          what="its agents were lost with the tmux server" act=restore
         else
-          what="no agent running and no REPORT.md since the last run" act="collie run $id"
+          what="no agent running and no REPORT.md since the last run" act=run
         fi
         ;;
     esac
-    [ "$n" -eq 0 ] || printf '\n'
-    printf '%s  %s (%s)\n' "$needs" "$id" "$pri"
-    brief_detail "Why" "$what" "$width"
-    [ -z "$pr" ] || brief_detail "PR" "${pr#PR }" "$width"
-    brief_detail "Next" "$act" "$width"
-    n=$((n + 1))
+    printf '%s\t%s\t%s\t%s\t%s\t%s\n' "$needs" "$id" "$pri" "$act" "$what" "$pr"
   done <<<"$rows"
   # open PRs with failing CI, after the rows above and whatever the task needs
   while IFS=$TAB read -r id _ pri _; do
@@ -390,13 +385,135 @@ cmd_brief() {
       ($3 == "open" || $3 == "draft") && $4 == "fail" { s = s (s == "" ? "" : ", ") (nr > 1 ? $1 : "") "#" $2 }
       END { print s }' "$TASKS_DIR/$id/pr.tsv" "$TASKS_DIR/$id/pr.tsv" 2>/dev/null) || pr=""
     [ -n "$pr" ] || continue
-    [ "$n" -eq 0 ] || printf '\n'
-    printf 'ci  %s (%s)\n' "$id" "$pri"
-    brief_detail "Why" "PR $pr has failing CI" "$width"
-    brief_detail "Next" "collie ci $id --send" "$width"
-    n=$((n + 1))
+    printf 'ci\t%s\t%s\tci\tPR %s has failing CI\t\n' "$id" "$pri" "$pr"
   done < <(printf '%s\n' "$all" | sort -t "$TAB" -k3,3 -k1,1)
+}
+
+cmd_brief() {
+  local rows needs id pri act what pr n=0 width=${COLUMNS:-}
+  [ -n "$width" ] || [ ! -t 0 ] || { width=$(stty size </dev/tty 2>/dev/null) && width=${width#* }; } || width=""
+  case $width in '' | *[!0-9]*) width=80 ;; esac
+  [ "$width" -ge 24 ] || width=24
+  rows=$(brief_rows)
+  while IFS=$TAB read -r needs id pri act what pr; do
+    [ -n "$id" ] || continue
+    [ "$n" -eq 0 ] || printf '\n'
+    printf '%s  %s (%s)\n' "$needs" "$id" "$pri"
+    brief_detail "Why" "$what" "$width"
+    [ -z "$pr" ] || brief_detail "PR" "${pr#PR }" "$width"
+    [ "$act" = ci ] && act="collie ci $id --send" || act="collie $act $id"
+    brief_detail "Next" "$act" "$width"
+    n=$((n + 1))
+  done <<<"$rows"
   [ "$n" -gt 0 ] || echo "nothing waits on you"
+}
+
+# Goes to a queue item: an agent row (action go) to the task's most urgent
+# agent window (as dash enter does), any other to the task session.
+nav_go() { # id action [client]
+  local wid=-
+  [ "$2" != go ] || wid=$(cmd__target "$1")
+  if [ -z "${3:-}" ] && [ -z "${TMUX:-}" ]; then
+    [ "$wid" = - ] || tmux select-window -t "$wid" 2>/dev/null || true
+    cmd_go "$1"
+    return
+  fi
+  ensure_session "$1"
+  [ "$wid" = - ] || tmux select-window -t "$wid" 2>/dev/null || true
+  tmux switch-client ${3:+-c "$3"} -t "=$1"
+}
+
+# In tmux the status line, else stdout.
+nav_msg() { # client text
+  if [ -n "$1${TMUX:-}" ]; then
+    tmux display-message ${1:+-c "$1"} "$2" 2>/dev/null || true
+  else
+    printf '%s\n' "$2"
+  fi
+}
+
+# The next queue item after the current session's task, wrapping around: no
+# cursor is stored, so an item left unresolved comes round again.
+cmd_next() {
+  local client="" cur="" pick id act needs
+  while [ $# -gt 0 ]; do
+    case $1 in
+      -c) need_value next "-c needs a client" "${2:-}"; client=$2; shift ;;
+      *) die "usage: collie next [-c client]" ;;
+    esac
+    shift
+  done
+  if [ -n "$client${TMUX:-}" ]; then
+    cur=$(tmux display-message -p ${client:+-c "$client"} '#{client_session}' 2>/dev/null) || cur=""
+  fi
+  pick=$(brief_rows | awk -F'\t' -v cur="$cur" '
+    NF && !seen[$2]++ { n++; id[n] = $2; a[n] = $4; nd[n] = $1; if ($2 == cur) at = n }
+    END { if (n) { i = at % n + 1; print id[i] "\t" a[i] "\t" nd[i] } }')
+  if [ -z "$pick" ]; then
+    nav_msg "$client" "collie: nothing waits on you"
+    return 0
+  fi
+  IFS=$TAB read -r id act needs <<<"$pick"
+  nav_go "$id" "$act" "$client"
+  nav_msg "$client" "collie: $needs $id"
+}
+
+# todo's rows: id, action, then the shown text. -a: every open task.
+cmd__todo_rows() { # [-a]
+  local needs id pri act what _ st top repos
+  if [ "${1:-}" = -a ]; then
+    cmd_ls | while IFS=$TAB read -r id st pri _ top repos needs; do
+      [ -n "$id" ] || continue
+      printf '%s\tgo\t%-9s %s (%s)  %s, %s\n' "$id" "$needs" "$id" "$pri" "$st" "$repos"
+    done
+    return 0
+  fi
+  brief_rows | while IFS=$TAB read -r needs id pri act what _; do
+    [ -n "$id" ] || continue
+    printf '%s\t%s\t%-9s %s (%s)  %s\n' "$id" "$act" "$needs" "$id" "$pri" "$what"
+  done
+}
+
+# todo's preview: an agent row's pane, a review row's review, else the task.
+cmd__todo_preview() { # id action
+  local C=("$BASH" "$PLUGIN_DIR/bin/collie") wid pane
+  case $2 in
+    go)
+      wid=$(cmd__target "$1")
+      pane=$(agent_pane "$1" "$wid")
+      if [ -n "$pane" ] && pane_tail "$pane" "${FZF_PREVIEW_LINES:-40}"; then return 0; fi
+      ;;
+    review) "${C[@]}" review "$1" 2>&1; return 0 ;;
+  esac
+  "${C[@]}" show "$1" 2>&1
+}
+
+# What waits on you, to act on: enter goes to an agent or task, shows a
+# review, restores lost agents or sends failing CI logs, then comes back.
+cmd_todo() {
+  command -v fzf >/dev/null || die "todo: fzf required"
+  local self="'$BASH' '$PLUGIN_DIR/bin/collie'" C=("$BASH" "$PLUGIN_DIR/bin/collie") rows hdr sel id act rc
+  while :; do
+    rows=$(cmd__todo_rows)
+    hdr="enter: act · ctrl-a: all tasks · ctrl-t: to-do · esc: close"
+    [ -n "$rows" ] || hdr="nothing waits on you · ctrl-a: all tasks · esc: close"
+    rc=0
+    sel=$(printf '%s' "$rows" | fzf --delimiter='\t' --with-nth=3.. --no-sort --prompt='to-do> ' \
+      --header="$hdr" \
+      --preview="$self _todo_preview {1} {2}" --preview-window=right,55%,wrap \
+      --bind="ctrl-a:reload($self _todo_rows -a)" --bind="ctrl-t:reload($self _todo_rows)") || rc=$?
+    [ "$rc" -eq 0 ] && [ -n "$sel" ] || return 0
+    IFS=$TAB read -r id act _ <<<"$sel"
+    case $act in
+      review) "${C[@]}" review "$id" 2>&1 | LESS='' less -R ;;
+      restore) cmd__popup -w "$self restore '$id'" || true ;;
+      ci) cmd__popup -w "$self ci '$id' --send" || true ;;
+      *)
+        nav_go "$id" "$act"
+        return
+        ;;
+    esac
+  done
 }
 
 latest_note() { # id; sets NOTE_AT and NOTE_TEXT, if present
