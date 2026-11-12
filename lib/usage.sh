@@ -257,11 +257,16 @@ EOF
       ;;
     pick)
       cat <<'EOF'
-usage: collie pick <id> <n>
+usage: collie pick <id> <n> [--archive-rest [--force]]
 
 Fast-forward the task branch to race candidate <id>-<n>. The task worktree
 must be clean and its branch must still be at the race base. The candidate
-branches and tasks are kept; archive candidate tasks when finished.
+exp/* branches are kept. Without --archive-rest it prints an archive hint
+for each other candidate still open. --archive-rest then archives them, as
+`collie archive` does, one line each: archived, skipped (already done or
+archived) or refused (dirty); it exits non-zero if any was refused. --force
+(only with --archive-rest) discards their uncommitted changes. Nothing is
+archived when the pick itself fails.
 EOF
       ;;
     ls)

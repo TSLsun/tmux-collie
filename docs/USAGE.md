@@ -59,8 +59,13 @@ candidate directly with `collie review <id>-<n>`.
 `collie pick <id> <n>` keeps candidate N's work on the original task branch.
 It only fast-forwards when the task worktree is clean and its branch is still
 at the race's recorded base. It never resets or creates a merge commit.
-Candidate branches are kept; candidate tasks remain available. Archive them
-individually when no longer needed, e.g. `collie archive <id>-1`.
+Candidate branches are kept. Without a flag the other candidate tasks stay
+open and pick prints a `collie archive <id>-K` hint for each one still open.
+`collie pick <id> <n> --archive-rest` archives them right after a successful
+pick, reporting each as archived, skipped (already done or archived) or
+refused (dirty worktree; it stays open and pick exits non-zero). Add
+`--force` to discard their uncommitted changes. Their exp/* branches are
+kept either way.
 ## 2. What a task is made of
 
 ```mermaid
