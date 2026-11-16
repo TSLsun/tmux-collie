@@ -32,10 +32,14 @@ delete an item only when it is covered by a test.
       Verified by hand on 2026-10-24: working → idle → exited with Claude Code 2.1.310.
       2026-11-12: Claude 2.1.322 displayed a real permission modal under
       collie, but remained idle with no waiting event. Fix `claude-wait-notification`.
-- [ ] Claude folder-trust dialog on a new worktree shows as `working` until
-      answered (known gap; no hook covers it).
-      2026-11-12: real Claude 2.1.322 trust dialog showed idle in an isolated
-      run; startup-dialog detection is addressed by existing task `startup-blocked`.
+- [x] Claude folder-trust dialog (2.1.319 on macOS, checked 2026-11-10):
+      `waiting`, `answer`, notification, `wait --state waiting` and `send` exit 2;
+      after trusting a throwaway repo the run followed its hooks to `idle`.
+      Before `startup-blocked` merged, Claude 2.1.322 showed idle during trust
+      in an isolated run on 2026-11-12.
+- [ ] Startup dialog text in other agent versions and locales: unknown text
+      stays `working`, and `send` is not blocked. The first moments before a
+      dialog draws are unguarded: a `send` to an idle no-prompt run can land there.
 - [ ] Built-in notifications (`osascript` on macOS, `notify-send` on Linux);
       tests only use a custom `$COLLIE_NOTIFY` command.
       2026-11-11: macOS GUI delivery needs visual confirmation; Linux
@@ -49,9 +53,11 @@ delete an item only when it is covered by a test.
       2026-11-12: privately built tmux 3.2a and 3.3a rendered real collie
       waiting, idle and working counts (`●1 ●1 ●1`) in attached ptys;
       colors and clicks remain unchecked.
+      2026-11-16: color capture and reliable click mapping unavailable here.
 - [ ] Clicking a menu item with the mouse (only the item's key was sent).
       2026-11-12: an SGR click closed the private-client menu but did not run
       the target marker; synthetic pty coordinate mapping was inconclusive.
+      2026-11-16: no reliable synthetic mouse selection was established here.
 - [x] `#{collie_status}` rendering in a real status bar (glyph width, colours,
       refresh every `status-interval`). Checked 2026-11-12 with an attached
       private pty and one-second interval: red waiting changed to yellow idle,
@@ -98,8 +104,13 @@ delete an item only when it is covered by a test.
 - [x] Codex 0.165.0 on macOS, checked 2026-10-28: hooks, approval/question
       waits and recovery, notifications/status, adoption and exact restore.
 - [ ] Other Codex versions/platforms and localized/custom prompts are unverified.
-      Human waits may remain working; startup trust dialogs do not notify.
+      Human waits may remain working.
       2026-11-11: other platforms and localized prompts not available here.
+- [x] Codex 0.166.0 startup dialogs, checked 2026-11-10: folder trust and "Hooks
+      need review" report `waiting`, `send` exits 2, and the run returns to
+      `working` after "Continue without trusting".
+- [ ] Codex hook recovery after "Trust all": not run, because the trust is one
+      global hash per hook event and would replace the user's own.
 - [ ] Codex adoption requires a hand-started `--no-daemon` process and `lsof`;
       unknown or ambiguous conversations are refused.
       2026-11-12: real Codex 0.167.0 hand-started with `--no-daemon` was
@@ -111,11 +122,13 @@ delete an item only when it is covered by a test.
       after its private tmux server was killed. Inspect `restore -n` first.
 - [ ] Gemini for real: system settings layer picked up and merged with user
       hooks; hooks enabled without extra flags; `ToolPermission` matcher;
-      ancestor-pane lookup under its sanitized env. Tried 2026-10-25: two trust
-      dialogs (folder, then `--include-directories`) appeared before any hook ran;
-      run not completed.
-      2026-11-11: Gemini 0.66.0 non-interactive run failed authentication
-      (exit 41); a real hook check needs credentials.
+      ancestor-pane lookup under its sanitized env. Gemini 0.66.0, checked
+      2026-11-10: both startup dialogs report `waiting`, `send` exits 2, the run
+      returns to `working`. Hooks after them are unverified: it refused collie's
+      settings file ("not owned by root") and stopped at its auth screen.
+      2026-11-11: a non-interactive run failed authentication (exit 41);
+      real hook checks require credentials.
+      2026-11-16: real hook verification remains blocked on Gemini authentication.
 - [ ] `GEMINI_CLI_SYSTEM_SETTINGS_PATH` hides an existing
       `/etc/gemini-cli/settings.json` for collie runs.
       2026-11-11: adapter sets its generated path; actual system-file masking
@@ -124,9 +137,6 @@ delete an item only when it is covered by a test.
       (gives up after 10 levels).
       2026-11-12: a private macOS tmux probe resolved at ten verified parent
       links and returned no pane at eleven; Linux remains unavailable here.
-- [ ] `collie doctor` version parsing for tmux builds like `next-3.6` / `3.3a`.
-      Checked 2026-11-11: `3.3a` passes, but `next-3.6` fails; fix task
-      `doctor-tmux-version`.
 - [x] Real Codex 0.165.0 tmux guard denial, checked 2026-10-28. Named private
       servers pass the guard, but macOS sandbox permissions may still block
       socket access.

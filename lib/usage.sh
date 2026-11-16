@@ -16,6 +16,8 @@ tasks:
   drop [<id>] -r repo remove repos from a task, keeping their branches
   ls [-a]             list tasks: id, status, priority, session, agent, needs
   brief               what waits on you and the command to act per task
+  todo                fzf to-do of what waits on you; enter acts on a row
+  next [-c client]    switch to the next task that waits on you
   show [<id>]         fields, TASK.md, repos, agent runs, events, REPORT.md
   history [-n] [pat]  finished tasks, newest first; searches TASK.md/REPORT.md
   note [-t <id>] [text...] record or print the latest one-line progress note
@@ -200,8 +202,10 @@ objective) whether to start the agent. A bad id or type is asked again at
 once (an uppercase one offers its lowercase); objective e writes TASK.md in
 $EDITOR instead. If creation fails, the input is kept in new-draft under
 the state dir and the next prompt offers it. Fetches origin first; prints
-the primary worktree path. All-or-nothing: a failure removes the worktrees
-and branches it created.
+the primary worktree path. Without a tty (an agent calling it), a note on
+stderr says the task is for its own agent: start it with collie run (or,
+with --run, it is already running) and stop. All-or-nothing: a failure
+removes the worktrees and branches it created.
 
   collie new login -m 'add OAuth login' --run
   collie new deploy-v2 -r api -r web:release/v2
@@ -255,11 +259,16 @@ EOF
       ;;
     pick)
       cat <<'EOF'
-usage: collie pick <id> <n>
+usage: collie pick <id> <n> [--archive-rest [--force]]
 
 Fast-forward the task branch to race candidate <id>-<n>. The task worktree
 must be clean and its branch must still be at the race base. The candidate
-branches and tasks are kept; archive candidate tasks when finished.
+exp/* branches are kept. Without --archive-rest it prints an archive hint
+for each other candidate still open. --archive-rest then archives them, as
+`collie archive` does, one line each: archived, skipped (already done or
+archived) or refused (dirty); it exits non-zero if any was refused. --force
+(only with --archive-rest) discards their uncommitted changes. Nothing is
+archived when the pick itself fails.
 EOF
       ;;
     ls)
@@ -279,10 +288,38 @@ usage: collie brief
 What waits on you, most urgent first (answer, reply, findings, review,
 stalled; then priority, id): a block per task with its reason and the command
 to act. review shows REPORT.md's first line and the PR with its state and CI
-from the cache the dashboard keeps (never calls gh). A task whose open PR
+from the cache the dashboard keeps (never calls gh); PRs of a task spanning
+repos read repo#N. A task whose open PR
 has failing CI in that cache also gets a ci block at the end, pointing
 at `collie ci <id> --send`. Prints "nothing waits on you" when nothing does.
 Read-only.
+EOF
+      ;;
+    todo)
+      cat <<'EOF'
+usage: collie todo
+
+brief's rows in fzf (prefix h i opens it in a popup). enter acts on a row:
+
+  answer, reply     go to the task's most urgent agent window
+  findings, review  show collie review in a pager, then back to the list
+  stalled           go to the task session; lost agents: collie restore
+  ci                collie ci <id> --send, then back to the list
+
+The preview shows the agent's screen or the review. ctrl-a lists every
+open task instead, to find one by name; ctrl-t goes back. Needs fzf.
+EOF
+      ;;
+    next)
+      cat <<'EOF'
+usage: collie next [-c client]
+
+Switch to the next task in brief's order after the current session's task,
+wrapping around; one stop per task. Agent rows go to the agent window,
+others to the task session. Nothing is stored: a row left unresolved comes
+round again. Says "nothing waits on you" when nothing does.
+
+  -c client       the tmux client to switch (prefix h n passes it)
 EOF
       ;;
     show)
@@ -372,8 +409,9 @@ EOF
       cat <<'EOF'
 usage: collie review [<id>] [-p]
 
-Per repo: commits since the branch started, diff stat (-p: the full patch),
-dirty files; then REPORT.md. Folders list files modified since the first
+Per repo: commits since the branch started (marked "no commits" or
+"merged"), its cached PRs with state and CI, diff stat (-p: the full
+patch), dirty files; then REPORT.md. Folders list files modified since the first
 run. Read-only.
 EOF
       ;;
@@ -384,10 +422,12 @@ usage: collie verify [<id>] [-r repo]
 Run the fenced ```sh blocks under TASK.md's "## Verify" in each repo's
 worktree (-r: only that repo), in order, each with `sh -e`, stdin from
 /dev/null and your environment. A repo stops at its first failing block.
-Output goes to the terminal and to verify/<time>-<repo>.log in the task
-dir; a verify event records pass/fail, the exit code and the log. show,
-review and the dash preview print the last result per repo; it does not
-change the task's status. Exits non-zero if any repo fails. No blocks:
+A block opened with ```sh repo=<name> runs in that repo only; a repo with
+no blocks of its own or untagged ones is skipped. Output goes to the
+terminal and to verify/<time>-<repo>.log in the task dir; a verify event
+records pass/fail, the exit code and the log. show, review and the dash
+preview print the last result per repo; it does not change the task's
+status. Exits non-zero if any repo fails. No blocks:
 says so, exits 0, records nothing.
 
   collie verify login
@@ -423,8 +463,10 @@ usage: collie sync [<id>...] [-n]
 Merge the base branch (fetched first) into active task branches (all, or the
 given ids), committing and pushing clean merges when the branch has an
 upstream. On a conflict the merge is started and the task's agent is told
-the files (typed in if idle, a new run if exited). Skips tasks whose agent
-is working or waiting, dirty worktrees, and branches without own commits.
+the files (typed in if idle, a new run if exited); conflicts in several
+repos of a task go to it in one message. Each repo is synced and reported
+on its own line; exits 0 whatever they report. Skips tasks whose agent is
+working or waiting, dirty worktrees, and branches without own commits.
 -n predicts only, including conflicts between tasks; read-only.
 EOF
       ;;
@@ -541,8 +583,9 @@ started by hand or the shell left after a run exits.
   -f file         send the file's contents (-: stdin)
 
 Logs a `sent` event with the run and the text's first line.
-Exit 0 sent; 2 the agent is working (not sent); 3 no live run (exited or
-gone); 1 other errors, e.g. several live runs without --run.
+Exit 0 sent; 2 the agent is working or at a startup trust dialog, which
+needs a human (not sent); 3 no live run (exited or gone); 1 other errors,
+e.g. several live runs without --run.
 
   collie send fix-retry 'CI fails on macOS: see the log in the PR'
   collie send fix-retry --run 2 --wait -f review.md
@@ -713,7 +756,7 @@ EOF
 }
 
 # the public commands, in overview order
-HELP_COMMANDS='new add drop ls brief show history note log edit go dash set review verify spike race pick gc sync done archive reopen run handoff send peek ci pause adopt restore wait signal state status doctor repos workspaces'
+HELP_COMMANDS='new add drop ls brief todo next show history note log edit go dash set review verify spike race pick gc sync done archive reopen run handoff send peek ci pause adopt restore wait signal state status doctor repos workspaces'
 
 cmd_help() {
   local c

@@ -175,6 +175,28 @@ two_repos() {
   [ ! -d "$(task_dir x)" ]
 }
 
+@test "new: an agent caller (no tty) gets the path on stdout and a handoff note on stderr" {
+  make_bare_repo A
+  cd "$REPO/main"
+  run --separate-stderr collie new x --no-window </dev/null
+  [ "$status" -eq 0 ]
+  [ "$output" = "$REPO/feat-x" ]
+  [[ "$stderr" == *"collie: task 'x' is for its own agent, not this session"* ]]
+  [[ "$stderr" == *"$REPO/feat-x/.collie/TASK.md"* ]]
+  [[ "$stderr" == *"collie run x (and stop here)"* ]]
+}
+
+@test "new: no handoff note when creation fails" {
+  make_bare_repo A
+  cd "$REPO/main"
+  collie new x --no-window </dev/null 2>/dev/null
+  run --separate-stderr collie new x --no-window </dev/null
+  [ "$status" -ne 0 ]
+  [ -z "$output" ]
+  [[ "$stderr" == *"already exists"* ]]
+  [[ "$stderr" != *"own agent"* ]]
+}
+
 # --- add --------------------------------------------------------------------
 
 @test "add: attaches another repo to an existing task (and its session)" {

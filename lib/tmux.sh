@@ -71,11 +71,32 @@ pane_tail() { # pane lines
     }'
 }
 
+# The bottom N non-blank rows of the visible screen, never scrollback.
+pane_bottom() { # pane rows
+  tmux capture-pane -p -t "$1" 2>/dev/null | awk -v n="$2" 'NF { a[++c] = $0 } END { for (i = c - n + 1; i <= c; i++) if (i > 0) print a[i] }'
+}
+
+# True while the pane's agent shows a startup trust dialog, by its adapter's
+# agent_startup_dialog. A subshell keeps the adapter's globals out of callers.
+startup_dialog() { # pane
+  local agent screen
+  agent=$(tmux display-message -p -t "$1" '#{@collie_agent}' 2>/dev/null) || return 1
+  [[ $agent != */* ]] && [ -f "$PLUGIN_DIR/agents/$agent.sh" ] || return 1
+  screen=$(pane_bottom "$1" 6) || return 1
+  (
+    # shellcheck source=/dev/null
+    . "$PLUGIN_DIR/agents/$agent.sh"
+    declare -F agent_startup_dialog >/dev/null && agent_startup_dialog "$screen"
+  )
+}
+
 # Types text into a pane and submits it: a line as keys, several lines as one
 # paste (bracketed when the program asked for it, newlines kept as LF, so they
 # do not submit early). A pause before Enter, so agents that detect pastes
-# still submit.
+# still submit. Returns 2 at a startup trust dialog, where Enter accepts: every
+# path that types goes through here, and only a human may answer one.
 type_into() { # pane text
+  if startup_dialog "$1"; then return 2; fi
   if [[ $2 == *$'\n'* ]]; then
     tmux set-buffer -b "collie-$$" -- "$2" &&
       tmux paste-buffer -d -p -r -b "collie-$$" -t "$1" || return
@@ -83,5 +104,6 @@ type_into() { # pane text
     tmux send-keys -t "$1" -l -- "$2" || return
   fi
   sleep 0.3
+  if startup_dialog "$1"; then return 2; fi
   tmux send-keys -t "$1" Enter
 }

@@ -365,7 +365,8 @@ cmd__actions() { # id key
 cmd__menu() { # session [client]
   local C="$PLUGIN_DIR/bin/collie" T=$1 popup="display-popup -E -w 90% -h 85%" items k l a
   items=(dashboard h "$popup '$C _popup $C dash'"
-    brief b "$popup '$C _popup \"$C brief | LESS= less -R\"'"
+    to-do i "$popup '$C _popup $C todo'"
+    "next for you" n "run-shell '$C next${2:+ -c $2}'"
     lazygit g "$popup -d '#{pane_current_path}' '$C _popup lazygit'"
     terminal t "$popup -d '#{pane_current_path}'"
     "new task" c "display-popup -EE -w 80% -h 70% -d '#{pane_current_path}' '$C new'")
@@ -390,6 +391,7 @@ cmd__menu() { # session [client]
     items+=("" "-not a collie task — use collie new" "" "")
   fi
   items+=("" "jump to alert" j "run-shell '$C _jump - ${2:-}'"
+    "back to last session" l "switch-client -l"
     "gc merged tasks" G "display-popup -E -w 90 -h 20 '$C _popup $C _gc'")
   if [ "${COLLIE_DEV:-$(tmux_opt @collie-dev)}" = on ]; then
     items+=("" "dev: load this checkout" D "run-shell '$C _dev load #{q:pane_current_path}'"

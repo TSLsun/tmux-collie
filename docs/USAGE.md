@@ -42,6 +42,12 @@ answer `e` to write TASK.md — Objective, Context, Acceptance Criteria — in
 is kept in `new-draft` under the state dir and the next `collie new` offers
 it as the defaults.
 
+`collie new <id>` prints only the primary worktree path on stdout, so
+`cd "$(collie new x)"` works. Without a tty (an agent creating a task), it
+adds a short note on stderr: the task belongs to its own agent, the session
+that created it fills `.collie/TASK.md` if needed, starts the agent with
+`collie run <id>` (or, after `--run`, finds it already running) and stops.
+
 ## Comparing independent candidates
 
 `collie race <id> -n N` creates N child tasks (`<id>-1` through `<id>-N`)
@@ -59,8 +65,13 @@ candidate directly with `collie review <id>-<n>`.
 `collie pick <id> <n>` keeps candidate N's work on the original task branch.
 It only fast-forwards when the task worktree is clean and its branch is still
 at the race's recorded base. It never resets or creates a merge commit.
-Candidate branches are kept; candidate tasks remain available. Archive them
-individually when no longer needed, e.g. `collie archive <id>-1`.
+Candidate branches are kept. Without a flag the other candidate tasks stay
+open and pick prints a `collie archive <id>-K` hint for each one still open.
+`collie pick <id> <n> --archive-rest` archives them right after a successful
+pick, reporting each as archived, skipped (already done or archived) or
+refused (dirty worktree; it stays open and pick exits non-zero). Add
+`--force` to discard their uncommitted changes. Their exp/* branches are
+kept either way.
 ## 2. What a task is made of
 
 ```mermaid
@@ -270,8 +281,18 @@ lists with `+N`; the preview and `dash -n` show the complete cached list.
 `collie brief` is the short form: a block per task that needs you, in the
 same order, with separate reason, PR details and next command. It reads only
 local state and the dashboard's PR cache, so it never touches the network.
-The `prefix h b` popup uses a pager: scroll with the arrow keys and press `q`
-to close it.
+`collie todo` (`prefix h i`, a popup) lists the same rows in fzf. `enter`
+acts on a row: an agent row goes to its agent window, review and findings
+show `collie review` in a pager (`q` returns to the list), stalled goes to
+the task session, a lost run runs `collie restore`, ci runs
+`collie ci <id> --send`. The preview shows the agent's screen or the review.
+`ctrl-a` lists every open task, to find one by name; `ctrl-t` goes back.
+
+`collie next` (`prefix h n`) switches to the next task in that order after
+the one you are in, wrapping around, with one stop per task: an agent row
+to its agent window, others to the task session. Nothing is stored, so a
+row you leave unresolved comes round again. `prefix h l` returns to the
+session you came from.
 
 ```text
 answer  login (P1)
@@ -409,7 +430,7 @@ runs it the lead of one task: it does not write the code itself, it drives
 other runs with collie commands and checks their work.
 
 ```sh
-npx skills add TSLsun/tmux-collie     # installs skills/collie-lead
+npx skills add TSLsun/tmux-collie     # installs skills/collie-lead and skills/collie-dispatch
 ```
 
 ```mermaid
@@ -468,12 +489,22 @@ they remain callable from the agent run (using the collie executable provided
 to the run), though sandbox filesystem policy can still deny writes to task
 state outside permitted locations.
 
+### Dispatching tasks with an agent
+
+The [`collie-dispatch`](https://github.com/TSLsun/tmux-collie/blob/main/skills/collie-dispatch/SKILL.md)
+skill is for an agent asked to open tasks: per task it runs `collie new -m`
+(without `--run`), writes Context, Acceptance Criteria and `## Verify` into
+the new `.collie/TASK.md`, starts the task agent with `collie run`, reports the
+id, path and window, and stops. It never works in the worktrees it creates;
+follow-up requests go to the task agent with `collie send`.
+
 ## 5. Where each action lives
 
 | Action | CLI | `prefix h` menu | Dashboard (`prefix h h`) |
 |---|---|---|---|
 | Dashboard | `collie dash` | `h` | — |
-| What waits on you | `collie brief` | `b` (popup) | sorted task list |
+| What waits on you | `collie brief`, `collie todo` | `i` (to-do popup) | sorted task list |
+| Next task that waits on you | `collie next` | `n` | — |
 | New task | `collie new` | `c` (prompts, switches to it) | `?` `c` |
 | Edit TASK.md | `collie edit` | `e` | `e` or `?` `e` |
 | Run agent | `collie run --agent` | `r` (menu of agents, default first) | `r` or `?` `r` (digit picks, `enter` the default) |
@@ -489,6 +520,7 @@ state outside permitted locations.
 | Go to task | `collie go` | — | `enter` (most urgent agent window) |
 | Runs of a task | `collie show` | — | `u` (`enter`: its window, `esc`: back) |
 | Jump to last alert | — | `j` | — |
+| Back to the last session | — | `l` | — |
 | Review | `collie review` | `v` | `v` or `?` `v` |
 | Run TASK.md Verify blocks | `collie verify` | — | — (last result in the preview) |
 | Shell in worktree | — | `t` (popup at the pane's path) | `?` `t` (task's first worktree) |
@@ -527,10 +559,46 @@ filter, in which every key types; `?` lists every action.
 | Remove a repo | `collie drop <id> -r infra` (refuses dirty/unmerged worktrees, active agents, cwd inside, or last repo; `--force` skips dirty/unmerged checks) |
 | A second agent on the same task | `collie run <id> --agent codex [-r repo]` (one window per run) |
 | Continue another agent's work with explicit context | `collie handoff <id> --from <run> --agent <claude\|codex\|omp> --note <file>` |
-| Send a follow-up, fix or pause request to a running agent | `collie send <id> [--run N] [--wait] <text>` or `-f <file>` (refuses while it works: exit 2) |
+| Send a follow-up, fix or pause request to a running agent | `collie send <id> [--run N] [--wait] <text>` or `-f <file>` (refuses while it works or at a startup trust dialog: exit 2) |
 | Read a running agent's screen | `collie peek <id> [--run N \| -r repo] [-n lines]` |
 | Give an agent its failing CI | `collie ci <id> [--lines N]` prints failing checks and log tails (exit 0 none failing, 2 pending, 3 failing, 1 errors); `--send [--run N] [--wait]` writes `.collie/CI.md` and prompts the run through `collie send`. Cancelled or timed-out checks only print the `gh run rerun` command |
 | Pause an agent and pick up later | `collie pause <id> [--run N] [-p <request>]`: it writes `.collie/RESUME.md`, which `show` and the preview mention and the next `run`, `handoff` or `adopt` reads |
 | The agent to push, open a PR and watch CI | `collie new --ship` or `set -g @collie-ship on` |
 | Move uncommitted experiments out of the way | `collie spike <id>` inside the worktree (new `exp/<id>` task, tracked changes only) |
 | Keep `exp/*` off the remote | link `hooks/pre-push` (see README) |
+
+### Several repos in one task
+
+A task holds one worktree and branch per repo (one `repos.tsv` row each) and
+expects one PR per repo. `TASK.md`, `REPORT.md` and the rest of the record are
+shared: every worktree's `.collie` links to the same task dir, and
+`.collie/repos/<name>` links to each worktree.
+
+| Command | With several repos |
+|---|---|
+| `new -r a -r b`, `-w`, `add`, `drop` | all-or-nothing per call; `drop` refuses to remove the last repo |
+| `run` | the agent starts in the first repo (`-r` picks another); claude, codex, gemini and omp also get the other worktrees and the task dir |
+| `ls`, `show` | repo names; `show` lists each branch and path |
+| dash row | the task's PR numbers by state color, without repo names (up to about 24 columns, then `+N`) |
+| dash preview | per repo: branch, cached PRs with state and CI, ahead/dirty counts, diff stat |
+| `brief` | PRs read `repo#N` once a task has PRs in more than one repo |
+| `review` | a section per repo: commits ahead (marked `no commits` or `merged`), cached PRs with state and CI, diff stat, dirty files |
+| `verify` | every block runs in every worktree; a block opened with ` ```sh repo=<name> ` runs in that repo only; `-r` limits the run to one repo |
+| `ci` | the open PRs of every repo; `--send` puts them in one `CI.md` and one prompt |
+| `sync` | each repo against its own base, one line per repo; conflicts in several repos reach the agent in one message (or one new run); exits 0 whatever the lines report |
+| `gc` | finishes a task once at least one repo landed commits of its own and every other repo is merged or untouched; a partly merged task prints `skipped <id>: merged: a; not merged: b (PR #4 open)` |
+| `done` | refuses while any repo is dirty or unmerged, listing each one |
+| `archive`, `reopen` | remove, and restore, every worktree; `reopen` is all-or-nothing |
+| `after:` | a dependency counts as merged when every repo with a PR has a merged one |
+
+Limits that stay:
+
+- One shared `TASK.md` and `REPORT.md`, so an agent working one repo reads
+  the whole task's contract.
+- `sync` exits 0 even when a repo's merge failed or a conflict had no
+  agent; read its lines.
+- `race` races one repo (the first, or `-r`).
+- PR state and CI come from the cache the dashboard refreshes (every 5
+  minutes, inline in `sync` and `gc`); `brief`, `review` and the preview
+  never call `gh`.
+

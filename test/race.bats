@@ -126,3 +126,72 @@ SH
   [ "$(grep -c race_started "$(task_dir race)/events.log")" -eq 1 ]
   release_candidates
 }
+
+@test "race: pick --archive-rest archives the losers and keeps every exp branch" {
+  local picked
+  collie race race -n 3 --agent race-fake
+  touch "$TMP/go-race-3"
+  release_candidates
+  collie wait race-3 --run 1 --done --timeout 30
+  picked=$(git -C "$REPO" rev-parse exp/race-2)
+  run collie pick race 2 --archive-rest
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'archived race-1'* && "$output" == *'archived race-3'* ]]
+  [[ "$output" != *'archived race-2'* && "$output" != *hint:* ]]
+  [ "$(git -C "$REPO" rev-parse feat/race)" = "$picked" ]
+  run collie ls -a
+  [[ "$output" == *$'race-1\tarchived'* && "$output" == *$'race-3\tarchived'* ]]
+  [[ "$output" != *$'race-2\tarchived'* ]]
+  for b in exp/race-1 exp/race-2 exp/race-3; do
+    git -C "$REPO" show-ref --verify --quiet "refs/heads/$b"
+  done
+}
+
+@test "race: pick --archive-rest refuses a dirty loser, archives the rest, and --force archives it" {
+  collie race race -n 3 --agent race-fake
+  touch "$TMP/go-race-3"
+  release_candidates
+  collie wait race-3 --run 1 --done --timeout 30
+  printf 'unsaved\n' >"$REPO/exp-race-1/scratch"
+  run collie pick race 2 --archive-rest
+  [ "$status" -ne 0 ]
+  [[ "$output" == *'refused race-1'*'--force'* && "$output" == *'archived race-3'* ]]
+  [ "$(git -C "$REPO" rev-parse feat/race)" = "$(git -C "$REPO" rev-parse exp/race-2)" ]
+  [ -f "$REPO/exp-race-1/scratch" ]
+  fm_status() { awk '/^status:/ { print $2 }' "$(task_dir "$1")/TASK.md"; }
+  [ "$(fm_status race-1)" != archived ]
+  [ "$(fm_status race-3)" = archived ]
+  # pick cannot run twice (the branch has moved); archive the loser directly
+  run collie archive race-1 --force
+  [ "$status" -eq 0 ]
+  [ "$(fm_status race-1)" = archived ]
+  git -C "$REPO" show-ref --verify --quiet refs/heads/exp/race-1
+}
+
+@test "race: pick --archive-rest --force archives a dirty loser" {
+  collie race race -n 2 --agent race-fake
+  release_candidates
+  printf 'unsaved\n' >"$REPO/exp-race-1/scratch"
+  run collie pick race 2 --force --archive-rest
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'archived race-1'* ]]
+  run collie ls -a
+  [[ "$output" == *$'race-1\tarchived'* ]]
+  git -C "$REPO" show-ref --verify --quiet refs/heads/exp/race-1
+}
+
+@test "race: plain pick hints only open losers; --force alone errors" {
+  collie race race -n 3 --agent race-fake
+  touch "$TMP/go-race-3"
+  release_candidates
+  collie wait race-3 --run 1 --done --timeout 30
+  run collie pick race 2 --force
+  [ "$status" -ne 0 ]
+  [[ "$output" == *'--force needs --archive-rest'* ]]
+  [ "$(git -C "$REPO" rev-parse feat/race)" != "$(git -C "$REPO" rev-parse exp/race-2)" ]
+  collie archive race-3
+  run collie pick race 2
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'hint: collie archive race-1'* ]]
+  [[ "$output" != *'hint: collie archive race-2'* && "$output" != *'hint: collie archive race-3'* ]]
+}

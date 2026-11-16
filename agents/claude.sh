@@ -13,6 +13,12 @@ AGENT_RESUME_ID=(--resume)
 # shellcheck disable=SC2034  # maps RUN_MODEL/RUN_EFFORT to --model/--effort
 AGENT_MODELS=1
 
+# Startup trust dialog in the pane's bottom rows (seen in Claude Code 2.1.319).
+agent_startup_dialog() {
+  case $1 in *'Yes, I trust this folder'*'Enter to confirm'*) return 0 ;; esac
+  return 1
+}
+
 agent_argv() {
   local d settings
   # PreToolUse: hooks/tmux-guard denies killing the user's tmux server

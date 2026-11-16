@@ -8,7 +8,8 @@ Finish the delivery loop yourself, then stop for the human:
    own unpushed commits) before pushing.
 2. When the Acceptance Criteria are met (checked on the real artifact: run
    it, don't infer from tests) and the Verify checks pass locally,
-   push the task branch to origin and open a PR (`gh pr create`): title and
+   push the task branch to origin and open a PR (`gh pr create`; with
+   several repos, one per repo that has commits): title and
    body summarize the changes and how you verified them, plus the gist of
    REPORT.md. Without `gh`, push and put the branch URL in REPORT.md.
 3. Wait for CI (`gh pr checks --watch`, or poll). Green CI alone is not

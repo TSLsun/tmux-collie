@@ -224,3 +224,17 @@ pane_has() { tmux capture-pane -p -J -t "$(run_pane "$1" "${2:-1}")" | grep -qF 
   wait_for "pane_has x 2 'untrusted log data'"
   ! pane_has x 1 "untrusted log"
 }
+
+@test "ci: multi-repo: every repo's open PRs are checked and --send reports them together" {
+  make_bare_repo B
+  cd "$TMP"
+  collie new m -r A -r B --no-window
+  checks "$(check a FAILURE "$U/11/job/22")"
+  printf 'a\tstep\t2026-11-08T12:00:00.1Z boom\n' >"$LOG"
+  run --separate-stderr collie ci m
+  [ "$status" -eq 3 ]
+  [[ "$output" == "A: PR #83 (open)"*"boom"*"B: PR #83 (open)"*"boom" ]]
+  run --separate-stderr collie ci m --send
+  [[ "$output" == "m: 2 failing, report in $(task_dir m)/CI.md"* ]]
+  [ "$(grep -c '^[AB]: PR #83 (open)$' "$(task_dir m)/CI.md")" -eq 2 ]
+}

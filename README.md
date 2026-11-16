@@ -49,6 +49,8 @@ collie add deploy-v2 -r C:release/v2   # switch C to another branch, keep feat/d
 collie drop deploy-v2 -r C             # remove C's worktree; keep its branch
 collie ls                              # id  status  priority  session(*|-)  agent  repos  needs
 collie brief                           # what waits on you and the command to act, per task
+collie todo                            # the same queue in fzf: enter goes there, reviews or sends CI logs
+collie next                            # switch to the next task that waits on you (prefix h n)
 collie show deploy-v2                  # fields, TASK.md contract, repos, runs, last decision, events
 collie note 'finished the retry fix; starting verification' # agent: phase checkpoint
 collie log build 'use ln' 'atomic' test/log.bats ok   # agent: a row in .collie/decisions.tsv
@@ -83,6 +85,9 @@ collie ls                              # agent column: waiting/idle/working/exit
 An agent can lead a task (implement, independent review, fix, verify) with the
 `collie-lead` skill: `npx skills add TSLsun/tmux-collie`; see
 [Leading a task with an agent](docs/USAGE.md#leading-a-task-with-an-agent).
+An agent asked to open tasks writes their TASK.md, starts their agents and
+stops with the `collie-dispatch` skill; see
+[Dispatching tasks with an agent](docs/USAGE.md#dispatching-tasks-with-an-agent).
 
 ### Review and lifecycle
 
@@ -93,7 +98,7 @@ collie spike try-cache                 # from a dirty worktree: exp/try-cache ta
 collie spike try-cache -u              # ...plus untracked (non-ignored) files
 collie race compare -n 2 --agent claude,codex  # independent candidates from one base
 collie review compare                  # compare candidate diff stats and reports
-collie pick compare 2                  # fast-forward chosen work onto compare's task branch
+collie pick compare 2 --archive-rest   # keep candidate 2 on the task branch, archive the rest
 collie gc                              # finish tasks whose branches were merged
 collie history                         # finished tasks, newest first; fzf picker, enter: show
 collie history -n oauth                # rows of finished tasks whose TASK.md/REPORT.md/decisions mention oauth
@@ -184,9 +189,9 @@ repo's branch and PR. It sits right of the list when the rows fit beside it,
 below it otherwise, and wraps long lines. The header's key hints wrap instead
 of being cut.
 
-`prefix h` opens a menu (dashboard, brief, lazygit, terminal, new
-task, peek, run agent, run default agent, adopt agent, edit task, review, done, archive, sync, jump to alert, gc merged tasks) for the current session's task; outside a
-task session it keeps only dashboard, brief, lazygit, terminal, new task, jump to alert and gc merged tasks.
+`prefix h` opens a menu (dashboard, to-do, next for you, lazygit, terminal, new
+task, peek, run agent, run default agent, adopt agent, edit task, review, done, archive, sync, jump to alert, back to last session, gc merged tasks) for the current session's task; outside a
+task session it keeps only dashboard, to-do, next for you, lazygit, terminal, new task, jump to alert, back to last session and gc merged tasks.
 `run agent` (`r`) lists the agents (default first), then switches you to the
 new agent window; `run default agent` (`R`) skips the list;
 plain `collie run` leaves it in the background (`-s` switches). `jump to alert` (`j`) switches to the pane of the last agent that notified. `prefix h h` goes straight to the
