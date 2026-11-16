@@ -19,6 +19,8 @@ jobs:
     runs-on: ${{ matrix.os }}
     steps:
       - uses: actions/checkout@v4
+        with:
+          fetch-depth: ${{ github.event_name == 'pull_request' && 0 || 1 }}
       - name: deps (ubuntu)
         if: runner.os == 'Linux'
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends bats parallel shellcheck tmux zsh
@@ -41,8 +43,21 @@ jobs:
         env:
           COLLIE_TEST_DIAGNOSTICS_DIR: ${{ runner.temp }}/collie-test-diagnostics
       # workflow_call (including release) runs only the normal suite.
+      - name: Detect readiness path changes
+        id: readiness-paths
+        if: github.event_name == 'pull_request'
+        env:
+          PR_BASE_SHA: ${{ github.event.pull_request.base.sha }}
+        run: |
+          if git diff --quiet "$PR_BASE_SHA" HEAD -- test/ lib/runtime.sh lib/tmux.sh agents/; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+          else
+            status=$?
+            if [ "$status" -ne 1 ]; then exit "$status"; fi
+            echo "changed=true" >> "$GITHUB_OUTPUT"
+          fi
       - name: Repeat readiness paths under parallel load
-        if: github.event_name == 'push' && github.ref == 'refs/heads/main' && github.workflow_ref == format('{0}/.github/workflows/ci.yml@refs/heads/main', github.repository)
+        if: (github.event_name == 'pull_request' && steps.readiness-paths.outputs.changed == 'true') || (github.event_name == 'push' && github.ref == 'refs/heads/main' && github.workflow_ref == format('{0}/.github/workflows/ci.yml@refs/heads/main', github.repository))
         env:
           BATS_TEST_TIMEOUT: 120
           COLLIE_TEST_DIAGNOSTICS_DIR: ${{ runner.temp }}/collie-test-diagnostics
