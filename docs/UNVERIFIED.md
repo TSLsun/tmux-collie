@@ -81,7 +81,8 @@ delete an item only when it is covered by a test.
       `/etc/gemini-cli/settings.json` for collie runs.
 - [ ] `ancestor_pane` on Linux (`ps -o ppid=`), and with deep process trees
       (gives up after 10 levels).
-- [ ] `collie doctor` version parsing for tmux builds like `next-3.6` / `3.3a`.
+- [x] `collie doctor` version parsing for `next-3.6` / `3.3a`, checked
+      2026-11-12 with simulated `tmux -V` output; `next-3.1` is rejected.
 - [x] Real Codex 0.165.0 tmux guard denial, checked 2026-10-28. Named private
       servers pass the guard, but macOS sandbox permissions may still block
       socket access.

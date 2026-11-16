@@ -42,6 +42,12 @@ answer `e` to write TASK.md — Objective, Context, Acceptance Criteria — in
 is kept in `new-draft` under the state dir and the next `collie new` offers
 it as the defaults.
 
+`collie new <id>` prints only the primary worktree path on stdout, so
+`cd "$(collie new x)"` works. Without a tty (an agent creating a task), it
+adds a short note on stderr: the task belongs to its own agent, the session
+that created it fills `.collie/TASK.md` if needed, starts the agent with
+`collie run <id>` (or, after `--run`, finds it already running) and stops.
+
 ## Comparing independent candidates
 
 `collie race <id> -n N` creates N child tasks (`<id>-1` through `<id>-N`)
