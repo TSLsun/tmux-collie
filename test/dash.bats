@@ -234,7 +234,7 @@ branch_of() { awk -F'\t' -v r="$2" '$1 == r { print $3 }' "$(task_dir "$1")/repo
   plain=$(printf '%s\n' "$output" | sed $'s/\033\\[[0-9;]*m//g' | cut -f2)
   [[ "$plain" == *"○ x  start  P2  #244 #12"$'\n'* ]]
   [[ "$plain" == "○ w  start  P2"$'\n'* ]]
-  [[ "$(collie _preview x)" == *$'\n'"  A  $(branch_of x A)  #244 open  "* ]]
+  [[ "$(collie _preview x)" == *$'\n'"  A  $(branch_of x A)  #244 open (cache "* ]]
   [[ "$output" == *$'\033[32m#244\033[0m \033[35m#12\033[0m'* ]]
   [[ "$output" == *$'\033[2m#7\033[0m'* && "$output" == *$'\033[31m#3\033[0m'* ]]
   printf 'A\t123456\topen\nA\t123457\tdraft\nA\t123458\tclosed\nA\t123459\tmerged\n' >>"$(task_dir x)/pr.tsv"
