@@ -78,7 +78,7 @@ collie pause deploy-v2                 # idle agent saves work, leaves .collie/R
 collie run deploy-v2 --model opus --effort high  # per-run model/effort (claude, codex, omp)
 collie run deploy-v2 --agent codex --scratch -p 'review ...'  # own worktree at the branch head
 collie wait deploy-v2 --done --timeout 3600     # until the run signals done and stops
-collie doctor                          # deps, agents, task/worktree consistency
+collie doctor                          # deps, agents, task/worktree consistency and orphan notes
 collie ls                              # agent column: waiting/idle/working/exited/unknown
 ```
 

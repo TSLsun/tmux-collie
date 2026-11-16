@@ -725,7 +725,8 @@ EOF
 usage: collie doctor
 
 Check dependencies, agent CLIs, and that task records, worktrees, branches
-and sessions agree. Read-only.
+and sessions agree. Notes orphan and prunable worktrees with cleanup commands.
+Read-only.
 EOF
       ;;
     repos)
