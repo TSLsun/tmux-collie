@@ -468,6 +468,7 @@ cmd__preview() {
         s = s (s == "" ? "" : ", ") "#" $2 " " $3 ($4 != "" && $4 != "-" ? " (CI " $4 ")" : "")
       }
       END { print s }' "$d/pr.tsv" 2>/dev/null) || a=""
+    [ -z "$a" ] || a="$a (cache $(pr_cache_age "$d") ago)"
     [ -z "$a" ] || a="  $a"
     printf '  %s  %s%s  %s ahead, %s dirty  %s\n' "$name" "$b" "$a" \
       "$(git --git-dir="$c" rev-list --count "$base..refs/heads/$b" 2>/dev/null || echo '?')" \
