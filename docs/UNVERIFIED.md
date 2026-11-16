@@ -40,6 +40,24 @@ delete an item only when it is covered by a test.
       refresh every `status-interval`).
 - [ ] Latency of `collie state` from `PostToolUse` on every tool call is
       unnoticeable.
+- [ ] Omp run 1 from `unverified-sweep` (session
+      `01a1c857-cafd-75ec-8e7b-8a2f79b1253a`) stayed `working` despite an idle
+      prompt (reported 2026-11-16). Read-only `events.log` records the run start
+      and notes that interactive checks were inconclusive, but contains no hook
+      event/state-transition trace. `agents/omp.ts` already maps main-agent
+      `agent_end` without `willContinue` to `idle`; subagent ends are ignored.
+      Could not reproduce or distinguish a missing `agent_end`/`willContinue`
+      case from a failed hook invocation: the original live session is no longer
+      available and the event log does not record extension events. No cause
+      established; needs a real omp run with event instrumentation before a
+      safe code fix can be made.
+- [ ] Claude interrupted while `working`: the configured Claude hook events
+      include `Stop` (normal turn completion), but Claude's
+      [hook event reference](https://code.claude.com/docs/en/hooks#hook-events)
+      has no `Interrupt` event equivalent to Codex's. No supported hook
+      can currently report this transition; Escape-interrupted sessions can
+      therefore remain `working`. The `Stop` hook is not a safe substitute
+      because it also runs on normal completion.
 
 ## P3 — Dashboard & interaction
 - [ ] `collie dash` interactively: fzf layout, preview pane, rows reloading after an action,
@@ -59,15 +77,6 @@ delete an item only when it is covered by a test.
 - [ ] zsh completion in an interactive shell (only `zsh -n` is checked).
 - [ ] Alacritty `chars = "\u0002hh"` example in README.
 
-## P4 — More agents & doctor
-- [x] omp adapter, checked 2026-10-28 with real omp 18.13.1 (bun script,
-      argv `bun …/omp …`) and 18.13.2 (Homebrew binary, argv `omp …`): found
-      by process, `adopt` resumes its own conversation by the id of the
-      `run/session-owners/<id>.lock` it holds (`-c` took the session a reused
-      tty last showed), extension reports working/idle. `waiting` (ask,
-      approvals) only tested with a fake omp. 2026-11-03, real 18.15.0
-      (`omp -p`, one task-tool subagent): the subagent's events carry
-      `ctx.agent.kind` `sub` and its `agent_end` no longer reports idle.
 - [x] Codex 0.165.0 on macOS, checked 2026-10-28: hooks, approval/question
       waits and recovery, notifications/status, adoption and exact restore.
 - [ ] Other Codex versions/platforms and localized/custom prompts are unverified.
