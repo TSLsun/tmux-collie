@@ -144,7 +144,12 @@ STUB
   printf '2020-01-01T00:00:00Z\trun_started\trun=1 agent=sleep repo=A\n' >>"$(task_dir x)/events.log"
   printf '# report\n\nReady.\n' >"$(task_dir x)/REPORT.md"
   printf 'A\t12\topen\tfail\n' >"$(task_dir x)/pr.tsv"
-  run env PATH="$TMP/no-gh:/usr/bin:/bin" "$COLLIE_ROOT/bin/collie" brief --refresh
+  mkdir "$TMP/no-gh"
+  local t
+  for t in git awk sed grep cat date mkdir rm mv tr sort dirname tmux cut head tail wc stat basename find fold; do
+    ln -s "$(command -v "$t")" "$TMP/no-gh/$t"
+  done
+  run env PATH="$TMP/no-gh" "$(command -v "${COLLIE_BASH:-bash}")" "$COLLIE_ROOT/bin/collie" brief --refresh
   [ "$status" -eq 0 ]
   [[ "$output" == *'PR: #12 open, CI fail'* ]]
   [[ "$output" == *'gh is unavailable'* ]]
