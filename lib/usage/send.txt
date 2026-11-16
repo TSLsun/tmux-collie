@@ -1,4 +1,5 @@
-usage: collie send <id> [-r repo | --run N] [--wait] [--force] <text>... | -f file
+usage: collie send <id> [-r repo | --run N] [--wait] [--force]
+                   <text>... | -f file
 
 Type text into the agent of a `collie run` and press Enter, when it is idle
 or waiting. Words are joined with spaces; several lines are pasted as one
@@ -9,7 +10,7 @@ started by hand or the shell left after a run exits.
   -r repo         the only live run in that repo
   --run N         run N (numbers from `collie show`)
   --wait          while the agent is working, wait for its turn to end
-  --force         send even if the run is marked working (takes precedence over --wait)
+  --force         send even if working; takes precedence over --wait
   -f file         send the file's contents (-: stdin)
 Logs a `sent` event with the run and the text's first line.
 Exit 0 sent; 2 the agent is working or at a startup trust dialog (use --force
