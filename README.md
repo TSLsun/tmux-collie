@@ -85,6 +85,9 @@ collie ls                              # agent column: waiting/idle/working/exit
 An agent can lead a task (implement, independent review, fix, verify) with the
 `collie-lead` skill: `npx skills add TSLsun/tmux-collie`; see
 [Leading a task with an agent](docs/USAGE.md#leading-a-task-with-an-agent).
+An agent asked to open tasks writes their TASK.md, starts their agents and
+stops with the `collie-dispatch` skill; see
+[Dispatching tasks with an agent](docs/USAGE.md#dispatching-tasks-with-an-agent).
 
 ### Review and lifecycle
 
