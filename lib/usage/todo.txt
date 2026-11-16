@@ -1,0 +1,11 @@
+usage: collie todo
+
+brief's rows in fzf (prefix h i opens it in a popup). enter acts on a row:
+
+  answer, reply     go to the task's most urgent agent window
+  findings, review  show collie review in a pager, then back to the list
+  stalled           go to the task session; lost agents: collie restore
+  ci                collie ci <id> --send, then back to the list
+
+The preview shows the agent's screen or the review. ctrl-a lists every
+open task instead, to find one by name; ctrl-t goes back. Needs fzf.

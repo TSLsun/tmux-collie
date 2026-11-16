@@ -1,0 +1,4 @@
+usage: collie workspaces
+
+Named repo sets from ~/.config/collie/workspaces (lines `name: repo...`),
+for new -w. Read-only.

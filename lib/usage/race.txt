@@ -1,0 +1,12 @@
+usage: collie race <id> -n N [--agent a,b,c] [--model m] [--effort e]
+                  [-r repo] [-p prompt]
+
+Create N child tasks <id>-1 through <id>-N with exp/<id>-<n> branches from
+the same tip of the task branch. Each copies the parent's TASK.md and starts
+one run. --agent assigns agents in order and cycles; omitted agents use the
+default. --model, --effort and -p are passed to every run. A race uses one
+git repo (the task's first repo, or -r); N must be 2..9. Existing child tasks
+or exp branches are refused. Runs start only after every candidate is created;
+partial creation is reported and any created branches/worktrees are retained.
+Output gives each child task, run and path; use `collie wait <id>-<n> --done`
+for each candidate.

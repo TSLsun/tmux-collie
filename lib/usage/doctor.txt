@@ -1,0 +1,4 @@
+usage: collie doctor
+
+Check dependencies, agent CLIs, and that task records, worktrees, branches
+and sessions agree. Read-only.
