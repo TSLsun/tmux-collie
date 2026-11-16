@@ -307,24 +307,25 @@ cmd_peek() {
   }
 }
 
-# Types text into the agent of a collie run while it is idle or waiting, and
-# logs the first line. Exit 2: the agent is working or at a startup trust
+# Types text into a collie run, normally only while idle or waiting, and
+# logs the first line. Exit 2: working without --force or a startup trust
 # dialog; 3: no live run.
 cmd_send() {
-  local id="" repo="" run="" file="" wait=0 text="" args=() t agent st win pane first rc=0
+  local id="" repo="" run="" file="" wait=0 force=0 text="" args=() t agent st win pane first force_field="" rc=0
   while [ $# -gt 0 ]; do
     case $1 in
       -r) need_value send "-r needs a repo" "${2:-}"; repo=$2; shift ;;
       --run) need_value send "--run needs a run number" "${2:-}"; run=$2; shift ;;
       -f) need_value send "-f needs a file" "${2:-}"; file=$2; shift ;;
       --wait) wait=1 ;;
+      --force) force=1 ;;
       --) shift; args+=("$@"); break ;;
       -*) die "send: unknown option $1" ;;
       *) if [ -z "$id" ]; then id=$1; else args+=("$1"); fi ;;
     esac
     shift
   done
-  [ -n "$id" ] || die "usage: collie send <id> [-r repo | --run N] [--wait] <text>... | -f file"
+  [ -n "$id" ] || die "usage: collie send <id> [-r repo | --run N] [--wait] [--force] <text>... | -f file"
   task_id "$id"
   [ -z "$run" ] || [[ $run =~ ^[1-9][0-9]*$ ]] || die "send: --run needs a run number"
   [ -z "$run" ] || [ -z "$repo" ] || die "send: give -r or --run, not both"
@@ -353,12 +354,14 @@ cmd_send() {
       many*) die "send: several live runs in task '$id' (${t#many }); pick one with --run" ;;
     esac
     IFS=$TAB read -r run agent st win <<<"$t"
-    [ "$st" = working ] && [ "$wait" = 1 ] || break
+    [ "$st" = working ] && [ "$wait" = 1 ] && [ "$force" = 0 ] || break
     sleep 1
   done
   case $st in
     idle | waiting) ;;
-    working) warn "send: run $run ($agent) is working; not sent (--wait waits for its turn to end)"; exit 2 ;;
+    working) if [ "$force" != 1 ]; then
+      warn "send: run $run ($agent) is working; not sent (--wait waits for its turn to end; --force sends anyway)"; exit 2
+    fi ;;
     *) warn "send: run $run ($agent) has exited; not sent"; exit 3 ;;
   esac
   pane=$(agent_pane "$id" "$win")
@@ -371,7 +374,8 @@ cmd_send() {
   [ "$rc" = 0 ] || return "$rc"
   first=${text%%$'\n'*}
   first=${first//$'\t'/ }
-  log_event "$id" sent "run=$run text=${first:0:80}"
+  [ "$force" = 0 ] || force_field=" force=1"
+  log_event "$id" sent "run=$run${force_field} text=${first:0:80}"
   echo "$id: sent to run $run ($agent) in $win"
 }
 
