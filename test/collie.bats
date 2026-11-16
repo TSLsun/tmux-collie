@@ -646,6 +646,14 @@ past_run() {
   done
 }
 
+@test "help: every lib/usage file belongs to a command or help itself" {
+  local f c
+  for f in "$COLLIE_ROOT"/lib/usage/*.txt; do
+    c=${f##*/} c=${c%.txt}
+    [ "$c" = help ] || grep -qE "^cmd_$c\\(\\)" "$COLLIE_ROOT"/lib/cmd/*.sh || { echo "orphan: $f"; false; }
+  done
+}
+
 @test "help: <command> -h prints its help without running it" {
   run collie new x -h
   [ "$status" -ne 0 ] # -h only counts right after the command
@@ -669,6 +677,8 @@ past_run() {
   run collie help bogus
   [ "$status" -ne 0 ]
   [[ "$output" == *"no command or topic 'bogus'"* ]]
+  run collie help ../usage # a name, never a path into lib/usage/
+  [ "$status" -ne 0 ]
   [ -z "$(collie help all | awk 'length > 80')" ]
 }
 

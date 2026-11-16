@@ -1,0 +1,6 @@
+usage: collie ls [-a]
+
+List live tasks, tab-separated: id, status, priority, session (* exists,
+- none), agent (most urgent run state), repos, needs (answer, findings,
+review, reply, stalled, start, blocked:<ids>, -). -a includes done and
+archived. Read-only.

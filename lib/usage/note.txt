@@ -1,0 +1,9 @@
+usage: collie note [-t <id>] [text...]
+
+Record a one-line progress checkpoint for a task; without text, print the
+latest note and its age. The task defaults to $COLLIE_TASK; -t selects one
+explicitly. Text arguments are joined, sanitized to one line and capped at
+200 characters. Notes are display-only and are never added to agent prompts.
+
+  collie note implementing retry handling
+  collie note -t fix-retry
