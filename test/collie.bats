@@ -406,13 +406,13 @@ two_repos() {
 import os, pty, subprocess, sys
 master, slave = pty.openpty()
 proc = subprocess.run([sys.argv[1], "ls"], stdout=slave, check=True)
-os.close(slave)
 output = os.read(master, 65536).decode().replace("\r\n", "\n")
+os.close(slave)
 os.close(master)
 print(output, end="")
 ' "$COLLIE_ROOT/bin/collie"
   [ "$status" -eq 0 ]
-  [ "${lines[0]}" = "ID         STATUS  PRIORITY  SESSION  AGENT  REPOS  NEEDS" ]
+  [ "${lines[0]}" = "ID         STATUS  PRIORITY  SESSION  AGENT  REPOS  NEEDS" ] || { printf 'terminal output:\n%s\n' "$output" >&2; return 1; }
   [ "${lines[1]}" = "longer-id  todo    P2        -        -      A      start" ]
   [ "${lines[2]}" = "short      todo    P2        -        -      A      start" ]
 }
