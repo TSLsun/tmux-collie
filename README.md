@@ -71,7 +71,7 @@ collie run deploy-v2 --agent codex      # also: gemini, omp; state hooks injecte
 collie run --agent aider -- --model x  # any command works (no state hooks)
 collie handoff deploy-v2 --from 1 --agent omp --note handoff.md
                                       # new conversation, preserving run 1's context
-collie send deploy-v2 'rerun the tests'  # type into its idle agent (--run N, --wait, -f file)
+collie send deploy-v2 'rerun the tests'  # idle agent (--run N, --wait, --force, -f file)
 collie peek deploy-v2 --run 1          # read its screen without switching windows
 collie ci deploy-v2 --send             # failing CI logs to .collie/CI.md, then tell its agent
 collie pause deploy-v2                 # idle agent saves work, leaves .collie/RESUME.md
