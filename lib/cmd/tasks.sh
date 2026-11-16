@@ -310,9 +310,8 @@ task_needs() { # status top_state [task_dir]
   esac
 }
 
-# shellcheck disable=SC2120  # -a comes from the CLI; internal callers pass none
 # Columns: id, status, priority, session (*|-), agent, repos, needs.
-cmd_ls() {
+ls_rows() {
   local all=0 d id st top mark repos name _
   [ "${1:-}" != -a ] || all=1
   load_tmux_state
@@ -338,6 +337,34 @@ cmd_ls() {
     printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$id" "$STATUS" "$FM" "$mark" \
       "$top" "$repos" "$NEEDS"
   done
+}
+
+# shellcheck disable=SC2120  # -a comes from the CLI; internal callers pass none
+cmd_ls() {
+  if [ ! -t 1 ]; then
+    ls_rows "$@"
+    return
+  fi
+  ls_rows "$@" | awk -F '\t' '
+    BEGIN {
+      split("ID STATUS PRIORITY SESSION AGENT REPOS NEEDS", header, " ")
+      for (i = 1; i <= 7; i++) width[i] = length(header[i])
+    }
+    {
+      for (i = 1; i <= 7; i++) {
+        row[NR, i] = $i
+        if (length($i) > width[i]) width[i] = length($i)
+      }
+    }
+    END {
+      for (r = 0; r <= NR; r++) {
+        for (i = 1; i <= 7; i++) {
+          value = r ? row[r, i] : header[i]
+          if (i < 7) printf "%-*s  ", width[i], value
+          else printf "%s\n", value
+        }
+      }
+    }'
 }
 
 brief_detail() { # label text width
