@@ -202,8 +202,10 @@ objective) whether to start the agent. A bad id or type is asked again at
 once (an uppercase one offers its lowercase); objective e writes TASK.md in
 $EDITOR instead. If creation fails, the input is kept in new-draft under
 the state dir and the next prompt offers it. Fetches origin first; prints
-the primary worktree path. All-or-nothing: a failure removes the worktrees
-and branches it created.
+the primary worktree path. Without a tty (an agent calling it), a note on
+stderr says the task is for its own agent: start it with collie run (or,
+with --run, it is already running) and stop. All-or-nothing: a failure
+removes the worktrees and branches it created.
 
   collie new login -m 'add OAuth login' --run
   collie new deploy-v2 -r api -r web:release/v2
