@@ -200,6 +200,11 @@ a cycle. The preview (and `show`) lists each dep and `blocks:`, the open tasks
 waiting on this one. `collie run` on a blocked task asks `run anyway? (y/n)`
 on a terminal and warns otherwise; dashboard `r` asks y/n first.
 
+`collie run` also warns when TASK.md's Acceptance Criteria or Verify section
+is missing or empty. It asks `run anyway? (y/n)` on a terminal; otherwise it
+warns on stderr and continues. Dashboard run actions ask first as for blocked
+tasks, including for folder-only tasks.
+
 ## 4. Agent state (per run)
 
 ```mermaid
