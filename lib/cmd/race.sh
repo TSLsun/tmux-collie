@@ -111,8 +111,22 @@ race_abort() { # children
 }
 
 cmd_pick() {
-  [ $# -eq 2 ] || die "usage: collie pick <id> <n>"
-  local id=$1 n=$2 child d c branch path task_branch head current base repo line candidate
+  local id="" n="" rest=0 force=0 child d c branch path task_branch head current base repo line candidate
+  while [ $# -gt 0 ]; do
+    case $1 in
+      --archive-rest) rest=1 ;;
+      --force) force=1 ;;
+      -*) die "pick: unknown option $1" ;;
+      *)
+        if [ -z "$id" ]; then id=$1
+        elif [ -z "$n" ]; then n=$1
+        else die "usage: collie pick <id> <n> [--archive-rest [--force]]"
+        fi ;;
+    esac
+    shift
+  done
+  [ -n "$n" ] || die "usage: collie pick <id> <n> [--archive-rest [--force]]"
+  [ "$force" -eq 0 ] || [ "$rest" -eq 1 ] || die "pick: --force needs --archive-rest"
   task_id "$id"
   [[ $n =~ ^[1-9]$ ]] || die "pick: candidate number must be 1..9"
   child="$id-$n"
@@ -145,6 +159,42 @@ cmd_pick() {
   commit=$(git -C "$path" rev-parse HEAD) || return 1
   log_event "$id" race_picked "n=$n task=$child commit=$commit"
   printf 'picked %s (%s); candidates remain on exp/* branches\n' "$child" "$commit"
-  awk -F'\t' "$AWK_KV"'$2 == "race_candidate" && kv("task") != "" { print "hint: collie archive " kv("task") }' "$d/events.log"
+  local loser st out refused=0
+  local -a args
+  while IFS= read -r loser; do
+    [ "$loser" != "$child" ] || continue
+    [ -f "$TASKS_DIR/$loser/TASK.md" ] || continue
+    fm_get "$TASKS_DIR/$loser/TASK.md" status
+    st=$FM
+    case $st in
+      done | archived)
+        [ "$rest" -eq 0 ] || printf 'skipped %s: already %s\n' "$loser" "$st"
+        continue ;;
+    esac
+    if [ "$rest" -eq 0 ]; then
+      printf 'hint: collie archive %s\n' "$loser"
+      continue
+    fi
+    # archive dies on refusal: a subshell keeps the other losers going, and
+    # set -e is restored inside it (an && or if context would disable it)
+    args=("$loser")
+    [ "$force" -eq 0 ] || args+=(--force)
+    set +e
+    out=$( (set -e; finish_task archived "${args[@]}") 2>&1 </dev/null)
+    st=$?
+    set -e
+    if [ "$st" -eq 0 ]; then
+      [ -z "$out" ] || printf '%s\n' "$out"
+      printf 'archived %s\n' "$loser"
+    else
+      refused=1
+      printf '%s\n' "$out" >&2
+      case $out in
+        *dirty:*) printf 'refused %s: dirty worktree; commit it, or discard with collie archive %s --force\n' "$loser" "$loser" >&2 ;;
+        *) printf 'refused %s\n' "$loser" >&2 ;;
+      esac
+    fi
+  done < <(awk -F'\t' "$AWK_KV"'$2 == "race_candidate" && kv("task") != "" { print kv("task") }' "$d/events.log")
+  [ "$refused" -eq 0 ] || die "pick: picked $child, but some candidates were not archived"
 }
   
