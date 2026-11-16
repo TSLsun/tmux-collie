@@ -39,6 +39,7 @@ type_line() { tmux send-keys -t =n: -l "$1" && tmux send-keys -t =n: Enter; }
   shows 'ship'
   type_line ''
   shows 'new-exit 0'
+  [ -z "$(screen | grep -F 'own agent')" ]
   [ "$(git -C "$REPO/fix-luwa-201242-airflow-sku" branch --show-current)" = fix/luwa-201242-airflow-sku ]
   grep -qx 'keep what I typed' "$(task_dir luwa-201242-airflow-sku)/TASK.md"
   [ ! -e "$COLLIE_STATE_DIR/new-draft" ]

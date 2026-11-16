@@ -1,6 +1,7 @@
 #!/usr/bin/env bats
 
 load helper
+bats_require_minimum_version 1.5.0
 
 # The default agent is `sleep`: no adapter file, so the generic adapter runs
 # `sleep <args>` — a stand-in agent whose hooks the tests fire by hand.
@@ -90,6 +91,15 @@ EOF
   # no --run: no agent
   collie new z
   [ -z "$(run_pane z)" ]
+}
+
+@test "new --run: the handoff note says the agent is already running" {
+  run --separate-stderr collie new x --run -- 300 </dev/null
+  [ "$status" -eq 0 ]
+  [ "$output" = "$TMP/repos/A/feat-x" ]
+  [[ "$stderr" == *"task 'x' is for its own agent"* ]]
+  [[ "$stderr" == *"already running in tmux session 'x', window 'sleep'; stop here"* ]]
+  [[ "$stderr" != *"collie run x"* ]]
 }
 
 @test "new --run: rejects --no-window; a failed run keeps the task" {
