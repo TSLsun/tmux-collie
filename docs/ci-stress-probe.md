@@ -1,1 +1,1 @@
-CI path-selection probe.
+CI docs path-selection probe.
