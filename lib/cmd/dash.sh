@@ -322,8 +322,13 @@ dash_panel() { # id
           return 0
           ;;
         r)
-          task_blocked "$TASKS_DIR/${ids%% *}"
-          printf 'blocked on: %s (not done or merged)\n\n' "$BLOCKED"
+          task_status "${ids%% *}" ""
+          if [ "$STATUS" = todo ]; then
+            task_blocked "$TASKS_DIR/${ids%% *}"
+            [ -z "$BLOCKED" ] || printf 'blocked on: %s (not done or merged)\n\n' "$BLOCKED"
+          fi
+          k=$(contract_empty "$TASKS_DIR/${ids%% *}/TASK.md")
+          [ -z "$k" ] || printf 'empty sections: %s\n\n' "$k"
           ;;
       esac
       return 1
