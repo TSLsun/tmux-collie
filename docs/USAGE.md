@@ -279,8 +279,10 @@ repository lookup keeps its previous cached PRs. The row abbreviates long PR
 lists with `+N`; the preview and `dash -n` show the complete cached list.
 
 `collie brief` is the short form: a block per task that needs you, in the
-same order, with separate reason, PR details and next command. It reads only
-local state and the dashboard's PR cache, so it never touches the network.
+same order, with separate reason, PR details and next command. By default it
+reads only local state and the dashboard's PR cache; `collie brief --refresh`
+refreshes that cache first when `gh` is available, otherwise warns and prints
+the cached state.
 `collie todo` (`prefix h i`, a popup) lists the same rows in fzf. `enter`
 acts on a row: an agent row goes to its agent window, review and findings
 show `collie review` in a pager (`q` returns to the list), stalled goes to

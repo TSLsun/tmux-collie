@@ -48,7 +48,7 @@ collie add deploy-v2 -r C              # pull another repo in mid-task
 collie add deploy-v2 -r C:release/v2   # switch C to another branch, keep feat/deploy-v2
 collie drop deploy-v2 -r C             # remove C's worktree; keep its branch
 collie ls                              # id  status  priority  session(*|-)  agent  repos  needs
-collie brief                           # what waits on you and the command to act, per task
+collie brief [--refresh]              # what waits on you; optionally refresh PR/CI cache
 collie todo                            # the same queue in fzf: enter goes there, reviews or sends CI logs
 collie next                            # switch to the next task that waits on you (prefix h n)
 collie show deploy-v2                  # fields, TASK.md contract, repos, runs, last decision, events
