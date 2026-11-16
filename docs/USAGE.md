@@ -5,6 +5,9 @@ Diagrams and tables for how a task moves from `collie new` to `done`. The
 
 The dashboard requires fzf 0.73 or newer: earlier releases can drop background action reloads and leave completed tasks in the list.
 
+An unknown command prints a short error and, when there is one unambiguous
+close match, a suggestion. Run `collie help` for the command overview.
+
 ## 1. The everyday loop
 
 ```mermaid
