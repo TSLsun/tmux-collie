@@ -612,7 +612,7 @@ cmd_sync() {
 # if given, else a new run of the last agent in the first conflicting repo
 # (it sees the other worktrees). Prints one line per conflicting repo.
 sync_handoff() { # id window agent conflicts (repo, path, base, branch, files lines)
-  local id=$1 win=$2 agent=$3 name p bname b files items="" first="" n=0 msg pane out
+  local id=$1 win=$2 agent=$3 name p bname b files items="" first="" n=0 msg pane out rc=0
   while IFS=$TAB read -r name p bname b files; do
     [ -n "$name" ] || continue
     [ -n "$first" ] || first=$name
@@ -627,8 +627,12 @@ sync_handoff() { # id window agent conflicts (repo, path, base, branch, files li
   if [ -n "$win" ]; then
     pane=$(agent_pane "$id" "$win")
     if [ -n "$pane" ]; then
-      type_into "$pane" "$msg"
-      out="sent to the agent in $win"
+      type_into "$pane" "$msg" || rc=$?
+      case $rc in
+        0) out="sent to the agent in $win" ;;
+        2) out="$win is at a startup dialog that needs a human, resolve it in {path}" ;;
+        *) return "$rc" ;;
+      esac
     else
       out="agent pane not found, resolve it in {path}"
     fi

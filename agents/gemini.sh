@@ -9,6 +9,16 @@
 # shellcheck disable=SC2034  # read by bin/collie
 AGENT_HOOKS=1
 
+# Startup dialogs in the pane's bottom rows (seen in Gemini CLI 0.66.0): the
+# folder, then the --include-directories folders.
+agent_startup_dialog() {
+  case $1 in
+    *'1. Trust folder'*"3. Don't trust"*) return 0 ;;
+    *'1. Yes'*'2. Yes, and remember'*'3. No'*) return 0 ;;
+  esac
+  return 1
+}
+
 agent_argv() {
   local f="$STATE_DIR/gemini-settings.json" d
   mkdir -p "$STATE_DIR"

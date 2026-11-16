@@ -107,10 +107,12 @@ N=<run number>
 collie wait <id> --run $N --done --timeout 3600
 ```
 
-- exit 1, early: use `collie peek <id> --run $N` to distinguish real work
-  from a first-run trust dialog (claude folder trust; codex folder trust,
-  then "Hooks need review"). No hook fires at the dialog, so state stays
-  `working`; if the dialog is visible, tell the human which window waits.
+- exit 1, early: state `waiting` right after a start can be a first-run
+  trust dialog (claude folder trust; codex folder trust, then "Hooks need
+  review"; gemini folder, then added directories), which collie detects from
+  the pane. Check with `collie peek <id> --run $N`. Never answer one: `collie
+  send` exits 2 there; tell the human which window waits. Unknown dialog text
+  still shows `working`, so peek when an early wait times out.
 - exit 1, later: `collie show`; still working → wait again; waiting on a
   question inside the contract → answer with `collie send`; else stop.
 - exit 2: the run is gone; `collie handoff --from $N` or a new run, logged.

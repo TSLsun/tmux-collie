@@ -311,9 +311,19 @@ Notifications fire on → `waiting` and on `working` → `idle`, skipped for the
 active window of an attached session. `@collie-notify`: `on` (osascript /
 notify-send), `off`, or a command receiving title and body.
 
-Known gap: folder-trust dialogs on a new worktree (Claude; Gemini asks twice,
-once for the folder and once for `--include-directories`) are not reported by
-any hook, so the run shows `working` until they are answered.
+Startup trust dialogs fire no hook (Claude folder trust; Codex folder trust,
+then "Hooks need review"; Gemini folder, then `--include-directories`), so each
+run with an adapter pattern starts a short-lived observer, `_startup-watch`. It
+reads only the bottom non-blank visible rows, needs two consecutive
+observations, and guards its writes with the `@collie_startup` token through
+`set_state`. A match makes the run `waiting`; when the dialog closes the run
+returns to its starting state. The agent's first hook ends the observer, as do
+a lost pane, exit, and 60 seconds with no dialog (`$COLLIE_STARTUP_WATCH`).
+Unknown UI stays `working`, omp shows no such dialog.
+
+Enter accepts these dialogs, so `type_into` refuses to type while one is on
+screen: `collie send` exits 2 and `sync` leaves the conflict for a human.
+collie never answers one.
 
 ### tmux kill guard
 

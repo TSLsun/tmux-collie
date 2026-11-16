@@ -22,8 +22,12 @@ delete an item only when it is covered by a test.
 - [ ] Claude `waiting`: `Notification` matcher `permission_prompt|elicitation_dialog`
       never fired in a manual run (auto mode on, no permission prompt).
       Verified by hand on 2026-10-24: working → idle → exited with Claude Code 2.1.310.
-- [ ] Claude folder-trust dialog on a new worktree shows as `working` until
-      answered (known gap; no hook covers it).
+- [x] Claude folder-trust dialog (2.1.319 on macOS, checked 2026-11-10):
+      `waiting`, `answer`, notification, `wait --state waiting` and `send` exit 2;
+      after trusting a throwaway repo the run followed its hooks to `idle`.
+- [ ] Startup dialog text in other agent versions and locales: unknown text
+      stays `working`, and `send` is not blocked. The first moments before a
+      dialog draws are unguarded: a `send` to an idle no-prompt run can land there.
 - [ ] Built-in notifications (`osascript` on macOS, `notify-send` on Linux);
       tests only use a custom `$COLLIE_NOTIFY` command.
 - [ ] Notification skipped for the active window of an attached session
@@ -67,16 +71,22 @@ delete an item only when it is covered by a test.
 - [x] Codex 0.165.0 on macOS, checked 2026-10-28: hooks, approval/question
       waits and recovery, notifications/status, adoption and exact restore.
 - [ ] Other Codex versions/platforms and localized/custom prompts are unverified.
-      Human waits may remain working; startup trust dialogs do not notify.
+      Human waits may remain working.
+- [x] Codex 0.166.0 startup dialogs, checked 2026-11-10: folder trust and "Hooks
+      need review" report `waiting`, `send` exits 2, and the run returns to
+      `working` after "Continue without trusting".
+- [ ] Codex hook recovery after "Trust all": not run, because the trust is one
+      global hash per hook event and would replace the user's own.
 - [ ] Codex adoption requires a hand-started `--no-daemon` process and `lsof`;
       unknown or ambiguous conversations are refused.
 - [ ] Restore caveat: an old window closed without an exit record can appear
       lost after a later server failure. Inspect `restore -n` first.
 - [ ] Gemini for real: system settings layer picked up and merged with user
       hooks; hooks enabled without extra flags; `ToolPermission` matcher;
-      ancestor-pane lookup under its sanitized env. Tried 2026-10-25: two trust
-      dialogs (folder, then `--include-directories`) appeared before any hook ran;
-      run not completed.
+      ancestor-pane lookup under its sanitized env. Gemini 0.66.0, checked
+      2026-11-10: both startup dialogs report `waiting`, `send` exits 2, the run
+      returns to `working`. Hooks after them are unverified: it refused collie's
+      settings file ("not owned by root") and stopped at its auth screen.
 - [ ] `GEMINI_CLI_SYSTEM_SETTINGS_PATH` hides an existing
       `/etc/gemini-cli/settings.json` for collie runs.
 - [ ] `ancestor_pane` on Linux (`ps -o ppid=`), and with deep process trees
