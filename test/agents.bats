@@ -283,6 +283,25 @@ EOF
   [[ "$output" != *FAIL* ]]
 }
 
+@test "doctor: compares release and next-build tmux versions against the minimum" {
+  export COLLIE_AGENT=sleep TMUX_VERSION
+  cat >"$TMP/bin/tmux" <<'EOF'
+#!/bin/sh
+if [ "$1" = -V ]; then printf 'tmux %s\n' "$TMUX_VERSION"; else exit 1; fi
+EOF
+  chmod +x "$TMP/bin/tmux"
+  for TMUX_VERSION in 3.2 3.3a next-3.6 next-3.2 4.0; do
+    run collie doctor
+    [ "$status" -eq 0 ]
+    [[ "$output" == *"ok    tmux $TMUX_VERSION"* ]]
+  done
+  for TMUX_VERSION in 3.1 next-3.1 next-2.9 unknown; do
+    run collie doctor
+    [ "$status" -eq 1 ]
+    [[ "$output" == *"FAIL  tmux $TMUX_VERSION (need 3.2+"* ]]
+  done
+}
+
 @test "doctor: flags missing, unregistered worktrees and a missing default agent" {
   export COLLIE_AGENT=sleep
   rm -rf "$TMP/repos/A/feat-x"
