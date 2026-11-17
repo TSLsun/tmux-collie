@@ -2,7 +2,7 @@
 # Sourced by bin/collie: doctor, repos, workspaces.
 
 cmd_doctor() {
-  local fail=0 v a d id name c b p
+  local fail=0 v a d id name c b p live commons="" owned=""
   echo "dependencies:"
   doc_line ok "bash $BASH_VERSION"
   if v=$(git --version 2>/dev/null); then doc_line ok "$v"; else doc_line FAIL "git not found"; fail=1; fi
@@ -45,9 +45,13 @@ cmd_doctor() {
   for d in "$TASKS_DIR"/*; do
     [ -f "$d/TASK.md" ] || continue
     fm_get "$d/TASK.md" status
-    case $FM in done | archived) continue ;; esac
+    live=1
+    case $FM in done | archived) live=0 ;; esac
     id=${d##*/}
     while IFS=$TAB read -r name c b p; do
+      [ "$c" = - ] || commons="$commons$c"$'\n'
+      [ "$live" = 1 ] || continue
+      [ "$c" = - ] || owned="$owned$p"$'\n'
       if [ "$c" = - ]; then
         [ -d "$p" ] || { doc_line FAIL "$id: $name folder missing: $p"; fail=1; }
       elif [ ! -d "$p" ]; then
@@ -60,9 +64,46 @@ cmd_doctor() {
         doc_line warn "$id: $name has no .collie link"
       fi
     done <"$d/repos.tsv"
+    [ "$live" = 1 ] || continue
     task_runs "$id" | awk -F'\t' -v id="$id" '$3 == "unknown" { print "  warn  " id ": run " $1 " (" $2 ") state unknown (session gone)" }'
   done
+  ! repo_at . || commons="$commons$R_COMMON"$'\n'
+  while IFS= read -r c; do
+    [ -d "$c" ] || continue
+    doc_orphans "$c" "$owned"
+  done < <(printf '%s' "$commons" | sort -u)
   return "$fail"
+}
+
+# Notes for a repo's worktrees that no live task owns, each with the command
+# that cleans it up: entries whose directory is gone (prunable), and worktrees
+# outside every live task. Not reported: the main checkout (the first entry,
+# and in a bare layout the worktree on the repo's HEAD branch), task worktrees
+# and their scratch worktrees (<worktree>.scratch-<n>). Never removes anything.
+doc_orphans() { # common owned
+  local top
+  top=$(git --git-dir="$1" symbolic-ref -q HEAD) || top=""
+  git --git-dir="$1" worktree list --porcelain 2>/dev/null | OWNED=$2 awk -v head="$top" '
+    function quote(s) { gsub(/\047/, "\047\\\047\047", s); return "\047" s "\047" }
+    function flush(   q, what) {
+      if (p == "") return
+      q = p
+      sub(/\.scratch-[0-9]+$/, "", q)
+      if (++n == 1) top = p
+      else if (prunable)
+        printf "  note  prunable worktree entry %s: clear it with: git -C %s worktree prune\n", p, quote(top)
+      else if (p in own || (q != p && q in own)) ;
+      else if (b == "" || b != head) {
+        what = b == "" ? "detached" : "branch " substr(b, 12)
+        printf "  note  orphan worktree %s (%s): no task owns it; remove it with: git -C %s worktree remove %s\n", p, what, quote(top), quote(p)
+      }
+      p = ""
+    }
+    BEGIN { m = split(ENVIRON["OWNED"], o, "\n"); for (i = 1; i <= m; i++) if (o[i] != "") own[o[i]] = 1 }
+    /^worktree / { flush(); p = substr($0, 10); b = ""; prunable = 0 }
+    /^branch / { b = substr($0, 8) }
+    /^prunable/ { prunable = 1 }
+    END { flush() }'
 }
 
 doc_line() { printf '  %-4s  %s\n' "$1" "$2"; }

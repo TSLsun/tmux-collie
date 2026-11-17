@@ -1,0 +1,7 @@
+usage: collie history [-n] [pattern]
+
+Finished tasks, newest first: date, status, id, title, branches, PR. pattern
+searches TASK.md, REPORT.md and decisions.tsv. On a tty an fzf picker
+(enter: show); -n prints the rows. Read-only.
+
+  collie history -n oauth

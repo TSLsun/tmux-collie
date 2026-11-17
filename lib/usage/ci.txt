@@ -1,0 +1,20 @@
+usage: collie ci [<id>] [--lines N] [--send [--run N] [--wait]]
+
+For each open PR of the task's repos: the failing checks (name, URL) and, for
+GitHub Actions, the end of each failed job's log (`gh run view --log-failed`)
+without timestamps or ANSI escapes. Cancelled and timed-out checks are listed
+as "no result, rerun" with the `gh run rerun` command: they are not failures.
+
+  --lines N       log lines kept per job (default 80)
+  --send          when a check fails, write the report to .collie/CI.md and
+                  tell the agent run to read it, through `collie send`
+  --run N         with --send: run N, as in `collie send`
+  --wait          with --send: wait for the agent's turn to end
+
+Never starts a run; only cancelled checks send nothing.
+Exit 0 no failing checks; 2 pending and none failing; 3 at least one failing;
+1 errors (no gh, no open PR). With --send and a failing check, as `collie send`:
+0 sent; 2 the agent is working; 3 no live run; 1 other errors.
+
+  collie ci fix-retry
+  collie ci fix-retry --send --wait

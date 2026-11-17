@@ -389,9 +389,32 @@ two_repos() {
   [ "${#lines[@]}" -eq 2 ]
   [[ "${lines[0]}" == "x	todo	P2	*	-	A,B	start" ]]
   [[ "${lines[1]}" == "y	todo	P2	-	-	A	start" ]]
+  collie ls >"$TMP/ls-actual"
+  printf 'x\ttodo\tP2\t*\t-\tA,B\tstart\ny\ttodo\tP2\t-\t-\tA\tstart\n' >"$TMP/ls-expected"
+  cmp "$TMP/ls-expected" "$TMP/ls-actual"
   run collie ls -a
   [ "${#lines[@]}" -eq 3 ]
   [[ "${lines[2]}" == "z	archived	P2	-	-	B	-" ]]
+}
+
+@test "ls: terminal output has aligned headings and rows" {
+  make_bare_repo A
+  cd "$REPO/main"
+  collie new short --no-window
+  collie new longer-id --no-window
+  run python3 -c '
+import os, pty, subprocess, sys
+master, slave = pty.openpty()
+proc = subprocess.run([sys.argv[1], "ls"], stdout=slave, check=True)
+output = os.read(master, 65536).decode().replace("\r\n", "\n")
+os.close(slave)
+os.close(master)
+print(output, end="")
+' "$COLLIE_ROOT/bin/collie"
+  [ "$status" -eq 0 ]
+  [ "${lines[0]}" = "ID         STATUS  PRIORITY  SESSION  AGENT  REPOS  NEEDS" ] || { printf 'terminal output:\n%s\n' "$output" >&2; return 1; }
+  [ "${lines[1]}" = "longer-id  todo    P2        -        -      A      start" ]
+  [ "${lines[2]}" = "short      todo    P2        -        -      A      start" ]
 }
 
 # run 1 of a task, started in 2020 and exited (no session)
@@ -646,6 +669,14 @@ past_run() {
   done
 }
 
+@test "help: every lib/usage file belongs to a command or help itself" {
+  local f c
+  for f in "$COLLIE_ROOT"/lib/usage/*.txt; do
+    c=${f##*/} c=${c%.txt}
+    [ "$c" = help ] || grep -qE "^cmd_$c\\(\\)" "$COLLIE_ROOT"/lib/cmd/*.sh || { echo "orphan: $f"; false; }
+  done
+}
+
 @test "help: <command> -h prints its help without running it" {
   run collie new x -h
   [ "$status" -ne 0 ] # -h only counts right after the command
@@ -669,6 +700,8 @@ past_run() {
   run collie help bogus
   [ "$status" -ne 0 ]
   [[ "$output" == *"no command or topic 'bogus'"* ]]
+  run collie help ../usage # a name, never a path into lib/usage/
+  [ "$status" -ne 0 ]
   [ -z "$(collie help all | awk 'length > 80')" ]
 }
 

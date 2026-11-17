@@ -1,0 +1,19 @@
+usage: collie handoff [<id>] --from run --agent claude|codex|omp --note file
+                      [-r repo]
+
+Continue a claude, codex or omp run with a different one in a fresh
+conversation: a new run window like `collie run`, in the source run's repo
+(-r: another repo of the task). Run numbers come from `collie show`.
+
+  --from run      source run number (must be claude, codex or omp)
+  --agent name    destination agent, a different one of claude/codex/omp
+  --note file     nonempty note: done, decisions, verification, open issues,
+                  next action
+  -r repo         start in that repo's worktree instead
+
+Writes a read-only packet under the task record's handoffs/ (HANDOFF.md,
+NOTE.md, TASK.md and REPORT.md snapshots) and prints its path; logs the
+link between both runs. The source agent keeps running: stop it first if
+edits could conflict. No branches are merged.
+
+  collie handoff fix-retry --from 1 --agent omp --note handoff.md

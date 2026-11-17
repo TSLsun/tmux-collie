@@ -322,8 +322,13 @@ dash_panel() { # id
           return 0
           ;;
         r)
-          task_blocked "$TASKS_DIR/${ids%% *}"
-          printf 'blocked on: %s (not done or merged)\n\n' "$BLOCKED"
+          task_status "${ids%% *}" ""
+          if [ "$STATUS" = todo ]; then
+            task_blocked "$TASKS_DIR/${ids%% *}"
+            [ -z "$BLOCKED" ] || printf 'blocked on: %s (not done or merged)\n\n' "$BLOCKED"
+          fi
+          k=$(contract_empty "$TASKS_DIR/${ids%% *}/TASK.md")
+          [ -z "$k" ] || printf 'empty sections: %s\n\n' "$k"
           ;;
       esac
       return 1
@@ -468,6 +473,7 @@ cmd__preview() {
         s = s (s == "" ? "" : ", ") "#" $2 " " $3 ($4 != "" && $4 != "-" ? " (CI " $4 ")" : "")
       }
       END { print s }' "$d/pr.tsv" 2>/dev/null) || a=""
+    [ -z "$a" ] || a="$a (cache $(pr_cache_age "$d") ago)"
     [ -z "$a" ] || a="  $a"
     printf '  %s  %s%s  %s ahead, %s dirty  %s\n' "$name" "$b" "$a" \
       "$(git --git-dir="$c" rev-list --count "$base..refs/heads/$b" 2>/dev/null || echo '?')" \

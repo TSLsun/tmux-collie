@@ -1,0 +1,5 @@
+usage: collie show [<id>]
+
+Task fields, the TASK.md body, repos and branches, agent runs, the last
+logged decision and recent events; for finished tasks also when, their
+commits and REPORT.md. Read-only.

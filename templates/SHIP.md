@@ -9,9 +9,11 @@ Finish the delivery loop yourself, then stop for the human:
 2. When the Acceptance Criteria are met (checked on the real artifact: run
    it, don't infer from tests) and the Verify checks pass locally,
    push the task branch to origin and open a PR (`gh pr create`; with
-   several repos, one per repo that has commits): title and
-   body summarize the changes and how you verified them, plus the gist of
-   REPORT.md. Without `gh`, push and put the branch URL in REPORT.md.
+   several repos, one per repo that has commits). The body fills in the
+   sections of the repo's `.github/PULL_REQUEST_TEMPLATE.md` (e.g. Summary,
+   Verification, Unverified, Checklist) and adds the gist of REPORT.md;
+   without a template, it says what changed and how you verified it.
+   Without `gh`, push and put the branch URL in REPORT.md.
 3. Wait for CI (`gh pr checks --watch`, or poll). Green CI alone is not
    proof the task works; step 2's Acceptance Criteria check is.
 4. If CI fails and the cause is clear (lint, an obviously broken test, a

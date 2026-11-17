@@ -1,0 +1,7 @@
+usage: collie done [<id>] [--force]
+
+Accept a task: status done, worktrees and session removed, branches and the
+record kept. Fetches origin first; refuses dirty worktrees or commits not in
+the base branch. --force overrides both and discards uncommitted changes.
+Folders only lose their session. A client viewing the session moves to
+another one.

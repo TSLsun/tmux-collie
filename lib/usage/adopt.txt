@@ -1,0 +1,7 @@
+usage: collie adopt [<id>] [-y]
+
+Restart an agent you started by hand in the task's session (claude, codex,
+omp) under collie run, resuming its conversation, so it gets hooks and
+notifications. Asks first; -y does not. Codex requires an identifiable
+dedicated process (started with --no-daemon, lsof installed). If the
+conversation cannot be identified the process is left running.

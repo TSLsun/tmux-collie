@@ -52,10 +52,20 @@ submitted() { # id text [run]
   hook s working
   run --separate-stderr collie send s hello
   [ "$status" -eq 2 ]
-  [ "$stderr" = "collie: send: run 1 (cat) is working; not sent (--wait waits for its turn to end)" ]
+  [ "$stderr" = "collie: send: run 1 (cat) is working; not sent (--wait waits for its turn to end; --force sends anyway)" ]
   sleep 0.5
   ! pane_text s | grep -q hello
   ! grep -q "	sent	" "$(task_dir s)/events.log"
+}
+
+@test "send --force: submits to a working run and logs the override" {
+  collie new s
+  collie run s
+  hook s working
+  run --separate-stderr collie send s --force --wait hello
+  [ "$status" -eq 0 ]
+  wait_for "submitted s hello"
+  grep -q "	sent	run=1 force=1 text=hello$" "$(task_dir s)/events.log"
 }
 
 @test "send --wait: types once the agent's turn ends" {
@@ -82,6 +92,8 @@ submitted() { # id text [run]
   run --separate-stderr collie send s --run 1 hello
   [ "$status" -eq 3 ]
   [ "$stderr" = "collie: send: run 1 (cat) has exited; not sent" ]
+  run --separate-stderr collie send s --run 1 --force hello
+  [ "$status" -eq 3 ]
   ! pane_text s | grep -q hello
   run --separate-stderr collie send s --run 7 hello
   [ "$status" -eq 1 ]
@@ -96,6 +108,8 @@ submitted() { # id text [run]
   wait_for '[ "$(agent_of s)" = working ]'
   manual=$(tmux list-windows -t '=s' -F '#{window_id}' | tail -1)
   run --separate-stderr collie send s hello
+  [ "$status" -eq 3 ]
+  run --separate-stderr collie send s --force hello
   [ "$status" -eq 3 ]
   ! tmux capture-pane -p -t "$manual" | grep -q hello
 }

@@ -1,0 +1,7 @@
+usage: collie restore [<id>] [-n]
+
+After the tmux server died: restart every agent run that was live (all tasks
+if no id), using each run's logged session id when available. Otherwise, agents
+that support latest-session resume (including omp) resume the latest in their
+worktree; agents that require an id are skipped if none is known. -n lists
+them; read-only.

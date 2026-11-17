@@ -73,6 +73,18 @@ STUB
   [[ "$out" == *'https://github.com/o/r/pull/7; #7 merged, CI pass;'* && "$out" == *'#83 open, CI fail'* ]]
 }
 
+@test "cached PR age is shown by brief, show, review, and dashboard preview" {
+  collie new x --no-window
+  printf '2020-01-01T00:00:00Z\trun_started\trun=1 agent=sleep repo=A\n' >>"$(task_dir x)/events.log"
+  printf '# report\n\nReady.\n' >"$(task_dir x)/REPORT.md"
+  printf 'A\t7\topen\tfail\n' >"$(task_dir x)/pr.tsv"
+  touch -t 202001010000 "$(task_dir x)/pr.tsv"
+  [[ "$(collie brief)" == *'cache '*w' ago'* ]]
+  [[ "$(collie show x)" == *'A #7 open, CI fail'*'PR cache: '*w' ago'* ]]
+  [[ "$(collie review x)" == *'PR cache: '*w' ago'* ]]
+  [[ "$(collie _preview x)" == *'#7 open (CI fail) (cache '*w' ago)'* ]]
+}
+
 @test "brief: a ci row for open and draft PRs with cached CI fail, without calling gh" {
   printf '#!/bin/sh\necho "$*" >>"%s/gh.log"\nexit 1\n' "$TMP" >"$TMP/stub/gh"
   for t in a b c; do collie new "$t" --no-window; done
@@ -96,7 +108,7 @@ STUB
   out=$(COLUMNS=200 collie brief)
   [[ "$out" == *'PR: A#7 merged, CI pass; B#7 open, CI fail'* ]]
   [[ "$out" == *'PR B#7 has failing CI'* ]]
-  [[ "$(collie _preview x)" == *"  B  feat/x  #7 open (CI fail)  "* ]]
+  [[ "$(collie _preview x)" == *"  B  feat/x  #7 open (CI fail) (cache "* ]]
 }
 
 @test "brief: long review details wrap without obscuring the next action" {
@@ -107,4 +119,38 @@ STUB
   [ "$status" -eq 0 ]
   [[ "$output" == *$'review  x (P2)\n  Why: A long summary'*$'\n    '*$'\n  Next: collie review x'* ]]
   while IFS= read -r line; do [ "${#line}" -le 48 ]; done <<<"$output"
+}
+@test "brief --refresh refreshes cached PR and CI through gh" {
+  collie new x --no-window
+  printf '2020-01-01T00:00:00Z\trun_started\trun=1 agent=sleep repo=A\n' >>"$(task_dir x)/events.log"
+  printf '# report\n\nReady.\n' >"$(task_dir x)/REPORT.md"
+  cat >"$TMP/stub/gh" <<STUB
+#!/bin/sh
+printf '%s\n' "\$*" >>"$TMP/gh.log"
+case "\$*" in
+  *'pr list'*) printf '12\topen\tpass\n' ;;
+esac
+STUB
+  chmod +x "$TMP/stub/gh"
+  run collie brief --refresh
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'PR: #12 open, CI pass'* ]]
+  grep -q 'pr list' "$TMP/gh.log"
+  [ "$(cat "$(task_dir x)/pr.tsv")" = "A	12	open	pass" ]
+}
+
+@test "brief --refresh warns without gh and retains cached state" {
+  collie new x --no-window
+  printf '2020-01-01T00:00:00Z\trun_started\trun=1 agent=sleep repo=A\n' >>"$(task_dir x)/events.log"
+  printf '# report\n\nReady.\n' >"$(task_dir x)/REPORT.md"
+  printf 'A\t12\topen\tfail\n' >"$(task_dir x)/pr.tsv"
+  mkdir "$TMP/no-gh"
+  local t
+  for t in git awk sed grep cat date mkdir rm mv tr sort dirname tmux cut head tail wc stat basename find fold; do
+    ln -s "$(command -v "$t")" "$TMP/no-gh/$t"
+  done
+  run env PATH="$TMP/no-gh" "$(command -v "${COLLIE_BASH:-bash}")" "$COLLIE_ROOT/bin/collie" brief --refresh
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'PR: #12 open, CI fail'* ]]
+  [[ "$output" == *'gh is unavailable'* ]]
 }

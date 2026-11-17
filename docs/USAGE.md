@@ -117,6 +117,11 @@ flowchart TB
 Status is derived on every `ls` / `dash`; only `done` and `archived` are
 stored (in TASK.md's frontmatter).
 
+`collie ls` shows a header and aligned columns on a terminal. When stdout is
+not a terminal, it emits headerless tab-separated rows for scripts: id, status,
+priority, session, agent, repos, needs. `collie ls -a` also includes done and
+archived tasks.
+
 ```mermaid
 stateDiagram-v2
     state "open (derived on every ls / dash)" as open {
@@ -173,6 +178,10 @@ would reclaim 1.2M (wip/scratch are skipped)
 `--force` removes every bucket. The report changes nothing: `gc` removes
 exactly what `done` would.
 
+`collie doctor` also notes unowned and prunable worktrees in the current
+repository and repositories recorded by tasks. It prints Git cleanup commands
+for review; it never removes worktrees. Notes do not change its exit status.
+
 ### Task dependencies
 
 A task can name the tasks it builds on in TASK.md's `after:` field:
@@ -199,6 +208,11 @@ warn in `set` / `new` and never break `ls` or the dashboard; the preview flags
 a cycle. The preview (and `show`) lists each dep and `blocks:`, the open tasks
 waiting on this one. `collie run` on a blocked task asks `run anyway? (y/n)`
 on a terminal and warns otherwise; dashboard `r` asks y/n first.
+
+`collie run` also warns when TASK.md's Acceptance Criteria or Verify section
+is missing or empty. It asks `run anyway? (y/n)` on a terminal; otherwise it
+warns on stderr and continues. Dashboard run actions ask first as for blocked
+tasks, including for folder-only tasks.
 
 ## 4. Agent state (per run)
 
@@ -279,8 +293,10 @@ repository lookup keeps its previous cached PRs. The row abbreviates long PR
 lists with `+N`; the preview and `dash -n` show the complete cached list.
 
 `collie brief` is the short form: a block per task that needs you, in the
-same order, with separate reason, PR details and next command. It reads only
-local state and the dashboard's PR cache, so it never touches the network.
+same order, with separate reason, PR details and next command. By default it
+reads only local state and the dashboard's PR cache; `collie brief --refresh`
+refreshes that cache first when `gh` is available, otherwise warns and prints
+the cached state.
 `collie todo` (`prefix h i`, a popup) lists the same rows in fzf. `enter`
 acts on a row: an agent row goes to its agent window, review and findings
 show `collie review` in a pager (`q` returns to the list), stalled goes to
@@ -559,7 +575,7 @@ filter, in which every key types; `?` lists every action.
 | Remove a repo | `collie drop <id> -r infra` (refuses dirty/unmerged worktrees, active agents, cwd inside, or last repo; `--force` skips dirty/unmerged checks) |
 | A second agent on the same task | `collie run <id> --agent codex [-r repo]` (one window per run) |
 | Continue another agent's work with explicit context | `collie handoff <id> --from <run> --agent <claude\|codex\|omp> --note <file>` |
-| Send a follow-up, fix or pause request to a running agent | `collie send <id> [--run N] [--wait] <text>` or `-f <file>` (refuses while it works or at a startup trust dialog: exit 2) |
+| Send a follow-up, fix or pause request to a running agent | `collie send <id> [--run N] [--wait] [--force] <text>` or `-f <file>` (refuses while it works: exit 2; `--force` sends immediately, even if marked working, and takes precedence over `--wait`) |
 | Read a running agent's screen | `collie peek <id> [--run N \| -r repo] [-n lines]` |
 | Give an agent its failing CI | `collie ci <id> [--lines N]` prints failing checks and log tails (exit 0 none failing, 2 pending, 3 failing, 1 errors); `--send [--run N] [--wait]` writes `.collie/CI.md` and prompts the run through `collie send`. Cancelled or timed-out checks only print the `gh run rerun` command |
 | Pause an agent and pick up later | `collie pause <id> [--run N] [-p <request>]`: it writes `.collie/RESUME.md`, which `show` and the preview mention and the next `run`, `handoff` or `adopt` reads |

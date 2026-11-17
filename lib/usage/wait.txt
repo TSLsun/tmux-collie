@@ -1,0 +1,12 @@
+usage: collie wait [<id>] [--run n] [--done | --state state] [--timeout s]
+
+Block until a run (default: the latest) reaches a state: working, idle
+(the default), waiting or exited. --done waits until the run's current
+turn has signalled done (`collie signal done`) and the run is no longer
+working. A restored run is followed to the run that replaced it. Polls
+events.log and tmux every half second; read-only.
+
+Exit 0 when reached, 1 on timeout (or a usage error), 2 when it cannot
+happen any more (the run is gone; for --done, gone without the signal).
+
+  collie wait fix-x --run 2 --done --timeout 3600
