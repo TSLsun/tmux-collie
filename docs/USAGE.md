@@ -117,6 +117,11 @@ flowchart TB
 Status is derived on every `ls` / `dash`; only `done` and `archived` are
 stored (in TASK.md's frontmatter).
 
+`collie ls` shows a header and aligned columns on a terminal. When stdout is
+not a terminal, it emits headerless tab-separated rows for scripts: id, status,
+priority, session, agent, repos, needs. `collie ls -a` also includes done and
+archived tasks.
+
 ```mermaid
 stateDiagram-v2
     state "open (derived on every ls / dash)" as open {
@@ -200,6 +205,11 @@ a cycle. The preview (and `show`) lists each dep and `blocks:`, the open tasks
 waiting on this one. `collie run` on a blocked task asks `run anyway? (y/n)`
 on a terminal and warns otherwise; dashboard `r` asks y/n first.
 
+`collie run` also warns when TASK.md's Acceptance Criteria or Verify section
+is missing or empty. It asks `run anyway? (y/n)` on a terminal; otherwise it
+warns on stderr and continues. Dashboard run actions ask first as for blocked
+tasks, including for folder-only tasks.
+
 ## 4. Agent state (per run)
 
 ```mermaid
@@ -279,8 +289,10 @@ repository lookup keeps its previous cached PRs. The row abbreviates long PR
 lists with `+N`; the preview and `dash -n` show the complete cached list.
 
 `collie brief` is the short form: a block per task that needs you, in the
-same order, with separate reason, PR details and next command. It reads only
-local state and the dashboard's PR cache, so it never touches the network.
+same order, with separate reason, PR details and next command. By default it
+reads only local state and the dashboard's PR cache; `collie brief --refresh`
+refreshes that cache first when `gh` is available, otherwise warns and prints
+the cached state.
 `collie todo` (`prefix h i`, a popup) lists the same rows in fzf. `enter`
 acts on a row: an agent row goes to its agent window, review and findings
 show `collie review` in a pager (`q` returns to the list), stalled goes to

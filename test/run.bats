@@ -28,6 +28,42 @@ teardown() { teardown_env; }
   [ "$(agent_of x)" = working ]
 }
 
+@test "run: warns only for missing or empty contract sections off a terminal" {
+  collie new x --no-window
+  run --separate-stderr collie run x -- 300 </dev/null
+  [ "$status" -eq 0 ]
+  [[ "$stderr" == *"empty sections: Acceptance Criteria, Verify"* ]]
+  printf '## Acceptance Criteria\n- done\n## Verify\n \t\n' >"$(task_dir x)/TASK.md"
+  run --separate-stderr collie run x -- 300 </dev/null
+  [ "$status" -eq 0 ]
+  [[ "$stderr" == *"empty sections: Verify"* ]]
+  printf '## Acceptance Criteria\n \n## Verify\ncheck it\n' >"$(task_dir x)/TASK.md"
+  run --separate-stderr collie run x -- 300 </dev/null
+  [ "$status" -eq 0 ]
+  [[ "$stderr" == *"empty sections: Acceptance Criteria"* ]]
+  printf '## Acceptance Criteria\n- done\n## Verify\ncheck it\n' >"$(task_dir x)/TASK.md"
+  run --separate-stderr collie run x -- 300 </dev/null
+  [ "$status" -eq 0 ]
+  [[ "$stderr" != *"empty sections"* ]]
+}
+
+@test "run: terminal cancellation prevents launch and confirmation starts it" {
+  collie new x --no-window
+  tmux new-session -d -s pop -c "$REPO/main" \
+    "unset TMUX; ${COLLIE_BASH:-bash} '$COLLIE_ROOT/bin/collie' run x -- 300; echo END=\$?; sleep 300"
+  wait_for 'tmux capture-pane -p -t =pop: | grep -q "run anyway? (y/n)"'
+  tmux send-keys -t =pop: n Enter
+  wait_for 'tmux capture-pane -p -t =pop: | grep -q "END=1"'
+  [ -z "$(run_pane x)" ]
+  tmux kill-session -t =pop:
+  tmux new-session -d -s pop -c "$REPO/main" \
+    "unset TMUX; ${COLLIE_BASH:-bash} '$COLLIE_ROOT/bin/collie' run x -- 300; echo END=\$?; sleep 300"
+  wait_for 'tmux capture-pane -p -t =pop: | grep -q "run anyway? (y/n)"'
+  tmux send-keys -t =pop: y Enter
+  wait_for 'tmux capture-pane -p -t =pop: | grep -q "END=0"'
+  [ -n "$(run_pane x)" ]
+}
+
 @test "run: retries a window whose pty open hit the macOS ptmx race" {
   # fail the first new-session and the first new-window like xnu's ENXIO race
   mkdir -p "$TMP/stub"
@@ -125,7 +161,7 @@ new_popup() { # keys...
 }
 
 @test "new popup: with an objective, asks to start the agent (default yes)" {
-  new_popup x '' 'do it' '' ''
+  new_popup x '' 'do it' '' '' y
   tmux capture-pane -p -t =pop: | grep -q 'start sleep now'
   tmux capture-pane -p -t =pop: | grep -q 'END=0'
   [ -n "$(run_pane x)" ]

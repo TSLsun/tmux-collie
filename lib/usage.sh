@@ -15,7 +15,7 @@ tasks:
   add [<id>] -r repo  attach repos, or switch one's branch (-r repo:branch)
   drop [<id>] -r repo remove repos from a task, keeping their branches
   ls [-a]             list tasks: id, status, priority, session, agent, needs
-  brief               what waits on you and the command to act per task
+  brief [--refresh]     what waits on you; optionally refresh PR/CI cache
   todo                fzf to-do of what waits on you; enter acts on a row
   next [-c client]    switch to the next task that waits on you
   show [<id>]         fields, TASK.md, repos, agent runs, events, REPORT.md
