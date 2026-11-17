@@ -151,6 +151,23 @@ squash_upstream() {
   [ -z "$(fm n status)" ]
 }
 
+@test "gc: keeps a legacy merged task with no recorded start" {
+  collie new legacy --no-window
+  commit_in "$TMP/repos/A/feat-legacy" legacy
+  merge_upstream feat/legacy
+  collie new modern --no-window
+  commit_in "$TMP/repos/A/feat-modern" modern
+  merge_upstream feat/modern
+  events="$(task_dir legacy)/events.log"
+  awk '$2 == "worktree_created" { sub(/ start=[^ ]+/, "") } { print }' "$events" >"$events.tmp"
+  mv "$events.tmp" "$events"
+  run collie gc
+  [ "$status" -eq 0 ]
+  [ -z "$(fm legacy status)" ]
+  [ -d "$TMP/repos/A/feat-legacy" ]
+  [ "$(fm modern status)" = done ]
+}
+
 @test "_gc: previews merged tasks; n aborts, y runs gc" {
   for t in m u; do collie new "$t" --no-window; done
   commit_in "$TMP/repos/A/feat-m" m
