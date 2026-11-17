@@ -27,11 +27,12 @@ delete an item only when it is covered by a test.
       2026-11-12: an isolated repo without `origin/HEAD` selected `origin/main`.
 
 ## P2 — Agent runtime
-- [ ] Claude `waiting`: `Notification` matcher `permission_prompt|elicitation_dialog`
-      never fired in a manual run (auto mode on, no permission prompt).
-      Verified by hand on 2026-10-24: working → idle → exited with Claude Code 2.1.310.
-      2026-11-12: Claude 2.1.322 displayed a real permission modal under
-      collie, but remained idle with no waiting event. Fix `claude-wait-notification`.
+- [ ] Claude `waiting`: 2026-11-12: Claude 2.1.322 displayed a real
+      permission modal under collie, but remained idle with no waiting event;
+      the cause remains unknown. On 2026-11-17, private tmux runs in scratch
+      worktrees with Claude 2.1.322 and 2.1.326 both changed to `waiting` and
+      logged `agent_state` for a Bash permission prompt; the writes were declined.
+      No folder-trust dialog appeared, so trust was not retested.
 - [x] Claude folder-trust dialog (2.1.319 on macOS, checked 2026-11-10):
       `waiting`, `answer`, notification, `wait --state waiting` and `send` exit 2;
       after trusting a throwaway repo the run followed its hooks to `idle`.
