@@ -1,0 +1,7 @@
+usage: collie go [<id>]
+
+Switch the client to the task session, rebuilding it (a window per repo) if
+it is gone. No id: fzf picker ($COLLIE_TASK is not used). Outside tmux it
+attaches; not on a tty it prints the primary worktree path instead.
+
+  cd "$(collie go login)"
