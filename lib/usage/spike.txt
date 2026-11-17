@@ -1,7 +1,9 @@
 usage: collie spike <id> [-u] [--title text] [--no-window]
 
 From a dirty worktree: create task <id> on branch exp/<id> carrying its
-uncommitted tracked changes (-u: untracked files too). The source worktree
-is left untouched. hooks/pre-push refuses to push exp/* branches.
+uncommitted tracked changes, including unresolved index stages and working
+files (-u: untracked files too). The source worktree is left untouched.
+Merge/rebase operation metadata is not copied. hooks/pre-push refuses to push
+exp/* branches.
 
   collie spike try-cache -u
