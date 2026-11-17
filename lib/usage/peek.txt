@@ -1,0 +1,14 @@
+usage: collie peek [<id>] [--run N | -r repo] [-n lines]
+
+Print the last lines of a live run's pane without switching windows. Wrapped
+lines are joined and trailing blank lines dropped; default: 40 lines.
+The target is the task's only live run; with several, pick one.
+
+  -r repo         the only live run in that repo
+  --run N         run N (numbers from `collie show`)
+  -n lines        number of pane lines to capture (maximum 100000)
+
+Read-only: does not log or store the screen, which may contain secrets.
+Exit 0 printed; 3 no live pane; 1 other errors.
+
+  collie peek fix-retry --run 2 -n 15

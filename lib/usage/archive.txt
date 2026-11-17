@@ -1,0 +1,5 @@
+usage: collie archive [<id>] [--force]
+
+Abandon a task: like done, status archived, but unmerged commits are fine.
+Refuses dirty worktrees; --force discards uncommitted changes. Branches and
+the record are kept.

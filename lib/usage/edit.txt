@@ -1,0 +1,4 @@
+usage: collie edit [<id>]
+
+Open the task's TASK.md in $EDITOR (default vi). For humans; agents edit
+.collie/TASK.md directly only when asked.

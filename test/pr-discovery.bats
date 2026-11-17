@@ -38,9 +38,11 @@ teardown() { teardown_env; }
 
 @test "failed search preserves all previous rows only for the failed repository" {
   printf 'A\t70\tmerged\tpass\nA\t83\tdraft\tfail\nB\t99\tclosed\t-\n' >"$(task_dir x)/pr.tsv"
+  touch -t 202001010000 "$(task_dir x)/pr.tsv"
   touch "$FAIL_SEARCH"
   collie _pr x
   [ "$(cat "$(task_dir x)/pr.tsv")" = $'A\t70\tmerged\tpass\nA\t83\tdraft\tfail\nB\t70\topen\tpending' ]
+  [[ "$(collie review x)" == *'PR cache: '*w' ago'* ]]
 }
 
 @test "failed restoration details preserve repository state including CI" {

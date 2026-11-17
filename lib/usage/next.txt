@@ -1,0 +1,8 @@
+usage: collie next [-c client]
+
+Switch to the next task in brief's order after the current session's task,
+wrapping around; one stop per task. Agent rows go to the agent window,
+others to the task session. Nothing is stored: a row left unresolved comes
+round again. Says "nothing waits on you" when nothing does.
+
+  -c client       the tmux client to switch (prefix h n passes it)

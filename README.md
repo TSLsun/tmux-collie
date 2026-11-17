@@ -48,7 +48,7 @@ collie add deploy-v2 -r C              # pull another repo in mid-task
 collie add deploy-v2 -r C:release/v2   # switch C to another branch, keep feat/deploy-v2
 collie drop deploy-v2 -r C             # remove C's worktree; keep its branch
 collie ls                              # id  status  priority  session(*|-)  agent  repos  needs
-collie brief                           # what waits on you and the command to act, per task
+collie brief [--refresh]              # what waits on you; optionally refresh PR/CI cache
 collie todo                            # the same queue in fzf: enter goes there, reviews or sends CI logs
 collie next                            # switch to the next task that waits on you (prefix h n)
 collie show deploy-v2                  # fields, TASK.md contract, repos, runs, last decision, events
@@ -359,12 +359,15 @@ make check   # shellcheck + bats (uses an isolated tmux server per test)
 
 Test fixtures clear inherited `COLLIE_*` settings, except `COLLIE_BASH` and
 `COLLIE_TEST_DIAGNOSTICS_DIR`, which select the test shell and diagnostics path.
+`make test` also fails if the invoking tmux server gains a session during the
+suite; the guard observes that server but never modifies it.
 
 Scripts target bash 3.2 (macOS `/bin/bash`).
 
 `bin/collie` is the entry point; it sources shared helpers from `lib/*.sh`
 and the commands from `lib/cmd/*.sh`. A function `cmd_<name>` is the command
-`<name>` (no dispatch list to edit); its help line goes in `lib/usage.sh`.
+`<name>` (no dispatch list to edit); its overview line goes in `lib/usage.sh`
+and its `collie help <name>` text in `lib/usage/<name>.txt`.
 
 To try a checkout in your running tmux, `set -g @collie-dev on`: the menu gets
 `dev: load this checkout` (reloads the plugin from the current pane's

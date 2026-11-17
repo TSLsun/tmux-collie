@@ -1,0 +1,4 @@
+usage: collie repos
+
+Repos found under @collie-repo-roots / $COLLIE_REPO_ROOTS (':'-separated
+globs): name, path. These names work for -r. Read-only.

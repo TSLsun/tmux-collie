@@ -1,0 +1,5 @@
+usage: collie doctor
+
+Check dependencies, agent CLIs, and that task records, worktrees, branches
+and sessions agree. Notes orphan and prunable worktrees with cleanup commands.
+Read-only.

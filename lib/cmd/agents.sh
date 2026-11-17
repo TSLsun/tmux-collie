@@ -81,6 +81,16 @@ cmd_run() {
       fi
     fi
   fi
+  local empty
+  empty=$(contract_empty "$TASKS_DIR/$id/TASK.md")
+  if [ -n "$empty" ]; then
+    warn "run: $id has empty sections: $empty"
+    if [ -t 0 ]; then
+      local yn
+      read -r -p "run anyway? (y/n) " yn || yn=""
+      case $yn in [yY]*) ;; *) die "run: cancelled" ;; esac
+    fi
+  fi
   [ -n "$agent" ] || { run_agent; agent=$RUN_AGENT; }
   # passed into agent config (codex -c): no quotes or spaces
   [[ $RUN_MODEL =~ ^[A-Za-z0-9._:/-]*$ ]] || die "run: invalid model '$RUN_MODEL'"

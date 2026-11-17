@@ -1,0 +1,27 @@
+usage: collie run [<id>] [--agent name] [--model m] [--effort e] [-r repo]
+                  [-p prompt] [-s [-c client]] [--scratch] [-- args]
+
+Start an agent in a new window of the task session, in the first repo's
+worktree (-r: that repo's). The default prompt names the task and points the
+agent at .collie/TASK.md and .collie/REPORT.md, and at .collie/RESUME.md
+when a paused run left one. claude, codex, gemini and omp get state hooks
+per run; any other command runs without them.
+
+Warns if Acceptance Criteria or Verify is empty or missing; on a terminal,
+asks whether to run anyway. Off a terminal it warns and continues.
+
+  --agent name   agent command (default: $COLLIE_AGENT, @collie-agent, else
+                 claude)
+  --model m      model for this run (claude/omp --model, codex -m)
+  --effort e     reasoning effort (claude --effort, codex
+                 model_reasoning_effort, omp --thinking); agent-specific values
+  -r repo        which repo's worktree to start in
+  -p prompt      first prompt instead of the default; -p '' sends none
+  -s             switch the current client (or -c client) to the window
+  --scratch      start in a new scratch worktree: detached at the task
+                 branch's head, next to the task worktree, removed with
+                 its uncommitted changes by done/archive (gc lists it); for
+                 reviewers whose repros must not touch the task worktree
+  -- args        extra arguments for the agent
+
+  collie run deploy-v2 -r B --agent codex -p 'fix CI'

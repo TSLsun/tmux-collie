@@ -1,0 +1,4 @@
+usage: collie state <working|waiting|idle|exited>
+
+Called by agent hooks to record the run's state on its window; a no-op
+outside a collie window. Not for direct use.

@@ -1,0 +1,11 @@
+usage: collie log <phase> <decision> <why> <evidence> <result>
+
+Append a row to the task's decision trail, decisions.tsv in the task record
+(.collie/decisions.tsv): ts, run, phase, decision, why, evidence, result.
+The task is $COLLIE_TASK; ts (UTC) and run (the agent window's run, else -)
+are stamped. The first row brings the header. Tabs and newlines in a cell
+become spaces; a leading = + - or @ gets a ' prefix. Append-only: correct a
+row with a new one. show and the dash preview print the last row; history
+searches it. Never committed.
+
+  collie log build 'header via ln' 'atomic under races' test/log.bats ok
