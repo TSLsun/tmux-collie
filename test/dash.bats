@@ -346,6 +346,7 @@ branch_of() { awk -F'\t' -v r="$2" '$1 == r { print $3 }' "$(task_dir "$1")/repo
 
 @test "_key: r asks for the agent in the panel, default first; a digit or enter runs it" {
   collie new x --no-window
+  printf '## Acceptance Criteria\n- done\n## Verify\ncheck it\n' >"$(task_dir x)/TASK.md"
   export COLLIE_DASH="$TMP/dash"
   mkdir -p "$COLLIE_DASH"
   [ "$(FZF_PROMPT='collie> ' collie _key r x)" = "change-prompt(@ x )+refresh-preview" ]
@@ -370,6 +371,13 @@ branch_of() { awk -F'\t' -v r="$2" '$1 == r { print $3 }' "$(task_dir "$1")/repo
   collie new x --no-window --after a
   [ "$(FZF_PROMPT='@ x ' collie _key 2 x)" = "change-prompt(? r x claude )+refresh-preview" ]
   [[ "$(FZF_PROMPT='? r x claude ' COLLIE_DASH="$TMP" collie _preview x)" == *"run x claude? (y/n)"*"blocked on: a"* ]]
+  [[ "$(FZF_PROMPT='? r x claude ' collie _key y x)" == *"bg-transform("*"_bg r x claude)" ]]
+}
+
+@test "_key: incomplete contract asks y/n and names sections" {
+  collie new x --no-window
+  [ "$(FZF_PROMPT='@ x ' collie _key 2 x)" = "change-prompt(? r x claude )+refresh-preview" ]
+  [[ "$(FZF_PROMPT='? r x claude ' COLLIE_DASH="$TMP" collie _preview x)" == *"run x claude? (y/n)"*"empty sections: Acceptance Criteria, Verify"* ]]
   [[ "$(FZF_PROMPT='? r x claude ' collie _key y x)" == *"bg-transform("*"_bg r x claude)" ]]
 }
 

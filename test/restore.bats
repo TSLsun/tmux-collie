@@ -101,7 +101,7 @@ agent_windows() { tmux list-windows -t "=$1" -F '#{@collie_run}' | grep -c .; }
   [ "$output" = "x run 1: claude in A: --resume $id1"$'\n'"x run 2: claude in A: --resume $id2" ]
   ! tmux list-sessions >/dev/null 2>&1
 
-  run collie restore
+  run --separate-stderr collie restore
   [ "$status" -eq 0 ]
   [ "$output" = "x run 1: claude in A: restored (--resume $id1)"$'\n'"x run 2: claude in A: restored (--resume $id2)" ]
   [ "$(agent_windows x)" -eq 2 ]
@@ -215,7 +215,7 @@ EOF
   collie new y --no-window
   collie run y --agent omp -p ''
   server_dies
-  run collie restore x
+  run --separate-stderr collie restore x
   [ "$status" -eq 0 ]
   [ "${lines[0]}" = "x run 1: omp in A: restored (-c)" ]
   [ "${lines[1]}" = "x run 2: omp in A: skipped: run 1 already resumes the latest conversation" ]

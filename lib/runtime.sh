@@ -223,6 +223,23 @@ verify_results() { # id
     END { for (i = 1; i <= n; i++) print "  " order[i] "  " last[order[i]] }' "$TASKS_DIR/$1/events.log"
 }
 
+# Lists missing or whitespace-only contract sections for run confirmation.
+contract_empty() { # task.md
+  awk '
+    /^```/ { fence = !fence; if (sec) filled[sec] = 1; next }
+    !fence && /^## / {
+      sec = $0
+      sub(/^## /, "", sec); sub(/[ \t\r]*$/, "", sec)
+      if (sec != "Acceptance Criteria" && sec != "Verify") sec = ""
+      next
+    }
+    sec && /[^[:space:]]/ { filled[sec] = 1 }
+    END {
+      if (!filled["Acceptance Criteria"]) printf "Acceptance Criteria"
+      if (!filled["Verify"]) printf "%sVerify", filled["Acceptance Criteria"] ? "" : ", "
+    }' "$1"
+}
+
 # Writes the fenced ```sh blocks under TASK.md's "## Verify" heading to
 # <dir>/1.sh, 2.sh, ... and prints how many. A ```sh repo=<name> block is for
 # that repo only: its name goes to <dir>/<n>.repo. Fences elsewhere, other

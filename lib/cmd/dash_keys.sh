@@ -248,11 +248,12 @@ dash_action() { # id key [marked id...]
   esac
 }
 
-# fzf actions for run (R, or r and an agent): in the background, but a
-# blocked todo task asks first (see cmd_run; the prompt keeps the agent).
+# fzf actions for run (R, or r and an agent): ask before a blocked or
+# incomplete contract run; the prompt keeps the selected agent.
 dash_run() { # id [agent]
-  if [ -n "$1" ] && task_status "$1" "" && [ "$STATUS" = todo ] &&
-    task_blocked "$TASKS_DIR/$1" && [ -n "$BLOCKED" ]; then
+  if [ -n "$1" ] && { { task_status "$1" "" && [ "$STATUS" = todo ] &&
+    task_blocked "$TASKS_DIR/$1" && [ -n "$BLOCKED" ]; } ||
+    [ -n "$(contract_empty "$TASKS_DIR/$1/TASK.md")" ]; }; then
     echo "change-prompt(${ASK_MARK}r $1 ${2:+$2 })+refresh-preview"
   else
     dash_bg r "$1" ${2:+"$2"}

@@ -32,7 +32,7 @@ teardown() {
   printf 'before handoff\n' >"$(task_dir x)/REPORT.md"
   printf '2026-01-01T00:00:00Z\tagent_session\trun=1 id=claude-source\n' >>"$(task_dir x)/events.log"
   cp "$(task_dir x)/TASK.md" "$TMP/original-task"
-  run collie handoff x --from 1 --agent codex --note "$TMP/note file"
+  run --separate-stderr collie handoff x --from 1 --agent codex --note "$TMP/note file"
   [ "$status" -eq 0 ]
   packet=$output
   [ -d "$packet" ]
@@ -59,14 +59,14 @@ teardown() {
   make_normal_repo B
   collie add x -r B --no-window
   collie run x --agent codex -r B
-  run env COLLIE_TASK=x "$COLLIE_ROOT/bin/collie" handoff --from 1 --agent claude --note "$TMP/note file"
+  run --separate-stderr env COLLIE_TASK=x "$COLLIE_ROOT/bin/collie" handoff --from 1 --agent claude --note "$TMP/note file"
   [ "$status" -eq 0 ]
   first=$output
   [ ! -e "$first/REPORT.md" ]
   [ "$(tmux display -p -t "$(run_pane x 2)" '#{pane_current_path}')" = "$TMP/repos/B.worktrees/feat-x" ]
   wait_for '[ -s "$COLLIE_STATE_DIR/claude.args" ]'
   grep -qF "$first/HANDOFF.md" "$COLLIE_STATE_DIR/claude.args"
-  run collie handoff x --from 1 --agent claude -r A --note "$TMP/note file"
+  run --separate-stderr collie handoff x --from 1 --agent claude -r A --note "$TMP/note file"
   [ "$status" -eq 0 ]
   [ "$first" != "$output" ]
   [ -f "$first/HANDOFF.md" ]
@@ -76,7 +76,7 @@ teardown() {
 @test "handoff: omp and Claude can hand off in either direction" {
   collie run x --agent omp
   wait_for '[ -s "$COLLIE_STATE_DIR/omp.args" ]'
-  run collie handoff x --from 1 --agent claude --note "$TMP/note file"
+  run --separate-stderr collie handoff x --from 1 --agent claude --note "$TMP/note file"
   [ "$status" -eq 0 ]
   packet=$output
   wait_for '[ -s "$COLLIE_STATE_DIR/claude.args" ]'
@@ -84,7 +84,7 @@ teardown() {
   grep -q 'source_agent=omp destination_agent=claude' "$packet/HANDOFF.md"
   rm -f "$COLLIE_STATE_DIR/omp.args"
 
-  run collie handoff x --from 2 --agent omp --note "$TMP/note file"
+  run --separate-stderr collie handoff x --from 2 --agent omp --note "$TMP/note file"
   [ "$status" -eq 0 ]
   packet=$output
   wait_for '[ -s "$COLLIE_STATE_DIR/omp.args" ]'
