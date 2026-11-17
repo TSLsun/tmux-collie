@@ -362,7 +362,7 @@ folder_changes() { # task_dir path
 # uncommitted tracked changes (-u: and untracked, non-ignored files, copied
 # as-is); the source worktree is not modified.
 cmd_spike() {
-  local id="" args=() untracked=0 src head stash owner path
+  local id="" args=() untracked=0 src head stash owner path meta subpath oldmode newmode oldoid newoid status
   while [ $# -gt 0 ]; do
     case $1 in
       -u | --include-untracked) untracked=1 ;;
@@ -386,6 +386,14 @@ cmd_spike() {
   if [ -n "$stash" ]; then
     git -C "$path" stash apply -q --index "$stash" || warn "could not apply changes in $path (stash $stash)"
   fi
+  # stash create/apply can omit staged gitlink updates, even when it succeeds.
+  while IFS= read -r -d '' meta && IFS= read -r -d '' subpath; do
+    read -r oldmode newmode oldoid newoid status <<<"$meta"
+    if [ "$newmode" = 160000 ]; then
+      git -C "$path" update-index --add --cacheinfo "160000,$newoid,$subpath" ||
+        warn "could not carry staged submodule $subpath to $path"
+    fi
+  done < <(git -C "$src" diff --cached --raw -z --no-abbrev --no-renames)
   if [ "$untracked" = 1 ]; then
     git -C "$src" ls-files -z --others --exclude-standard |
       tar -C "$src" --null -T - -cf - | tar -C "$path" -xf - ||

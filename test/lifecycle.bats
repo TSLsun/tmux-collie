@@ -92,6 +92,29 @@ squash_upstream() {
   grep -q "spiked_from	task=src" "$(task_dir try-x)/events.log"
 }
 
+@test "spike: carries staged submodule gitlinks without changing the source" {
+  git init -q "$TMP/subrepo"
+  commit_in "$TMP/subrepo" first
+  collie new src --no-window
+  wt="$TMP/repos/A/feat-src"
+  git -C "$wt" -c protocol.file.allow=always submodule add -q "$TMP/subrepo" "sub space"
+  git -C "$wt" commit -qm "add submodule"
+  commit_in "$TMP/subrepo" second
+  git -C "$wt/sub space" fetch -q origin
+  git -C "$wt/sub space" checkout -q FETCH_HEAD
+  git -C "$wt" add "sub space"
+  expected=$(git -C "$wt" rev-parse ':sub space')
+  before=$(git -C "$wt" status --porcelain)
+  cd "$wt"
+  run collie spike try-submodule --no-window
+  [ "$status" -eq 0 ]
+  sp="$TMP/repos/A/exp-try-submodule"
+  [ "$(git -C "$sp" rev-parse ':sub space')" = "$expected" ]
+  [ "$(git -C "$sp" rev-parse 'HEAD:sub space')" != "$expected" ]
+  [ "$(git -C "$wt" status --porcelain)" = "$before" ]
+  [ "$(git -C "$wt" rev-parse ':sub space')" = "$expected" ]
+}
+
 @test "spike: untracked files are left behind with a warning, copied with -u" {
   collie new src --no-window
   wt="$TMP/repos/A/feat-src"
