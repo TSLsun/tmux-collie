@@ -92,6 +92,75 @@ squash_upstream() {
   grep -q "spiked_from	task=src" "$(task_dir try-x)/events.log"
 }
 
+@test "spike: preserves merge-conflict stages and tracked changes without merge metadata" {
+  collie new src --no-window
+  wt="$TMP/repos/A/feat-src"
+  commit_in "$wt" conflict
+  git -C "$wt" branch side
+  echo ours >"$wt/conflict"
+  git -C "$wt" commit -qam ours
+  git -C "$wt" checkout -q side
+  echo theirs >"$wt/conflict"
+  git -C "$wt" commit -qam theirs
+  git -C "$wt" checkout -q feat/src
+  # Create the unmerged index deterministically, then retain ordinary staged
+  # and unstaged tracked changes alongside it.
+  git -C "$wt" merge side >/dev/null 2>&1 || :
+  echo staged >"$wt/staged"
+  git -C "$wt" add staged
+  echo unstaged >"$wt/conflict"
+  before=$(git -C "$wt" status --porcelain)
+  stashes=$(git -C "$wt" stash list)
+  cd "$wt"
+  run collie spike merge-conflict --no-window
+  [ "$status" -eq 0 ]
+  [ "$(git -C "$wt" status --porcelain)" = "$before" ]
+  [ "$(git -C "$wt" stash list)" = "$stashes" ]
+  [ -f "$(git -C "$wt" rev-parse --absolute-git-dir)/MERGE_HEAD" ]
+  sp="$TMP/repos/A/exp-merge-conflict"
+  [ ! -f "$(git -C "$sp" rev-parse --absolute-git-dir)/MERGE_HEAD" ]
+  [ "$(git -C "$sp" ls-files -u conflict | wc -l | tr -d ' ')" = 3 ]
+  [ "$(git -C "$sp" show :1:conflict)" = conflict ]
+  [ "$(git -C "$sp" show :2:conflict)" = ours ]
+  [ "$(git -C "$sp" show :3:conflict)" = theirs ]
+  [ "$(cat "$sp/conflict")" = unstaged ]
+  [ "$(git -C "$sp" show :staged)" = staged ]
+}
+
+@test "spike: preserves rebase-conflict stages and tracked changes without rebase metadata" {
+  collie new src --no-window
+  wt="$TMP/repos/A/feat-src"
+  commit_in "$wt" conflict
+  git -C "$wt" checkout -qb side
+  echo theirs >"$wt/conflict"
+  git -C "$wt" commit -qam theirs
+  git -C "$wt" checkout -q feat/src
+  echo ours >"$wt/conflict"
+  git -C "$wt" commit -qam ours
+  git -C "$wt" rebase side >/dev/null 2>&1 || :
+  echo staged >"$wt/staged"
+  git -C "$wt" add staged
+  echo unstaged >"$wt/conflict"
+  before=$(git -C "$wt" status --porcelain)
+  stashes=$(git -C "$wt" stash list)
+  cd "$wt"
+  run collie spike rebase-conflict --no-window
+  [ "$status" -eq 0 ]
+  [ "$(git -C "$wt" status --porcelain)" = "$before" ]
+  [ "$(git -C "$wt" stash list)" = "$stashes" ]
+  [ -d "$(git -C "$wt" rev-parse --absolute-git-dir)/rebase-merge" ] ||
+    [ -d "$(git -C "$wt" rev-parse --absolute-git-dir)/rebase-apply" ]
+  sp="$TMP/repos/A/exp-rebase-conflict"
+  [ ! -d "$(git -C "$sp" rev-parse --absolute-git-dir)/rebase-merge" ]
+  [ ! -d "$(git -C "$sp" rev-parse --absolute-git-dir)/rebase-apply" ]
+  [ "$(git -C "$sp" ls-files -u conflict | wc -l | tr -d ' ')" = 3 ]
+  [ "$(git -C "$sp" show :1:conflict)" = conflict ]
+  [ "$(git -C "$sp" show :2:conflict)" = theirs ]
+  [ "$(git -C "$sp" show :3:conflict)" = ours ]
+  [ "$(cat "$sp/conflict")" = unstaged ]
+  [ "$(git -C "$sp" show :staged)" = staged ]
+}
+
 @test "spike: untracked files are left behind with a warning, copied with -u" {
   collie new src --no-window
   wt="$TMP/repos/A/feat-src"
