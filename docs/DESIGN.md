@@ -1,6 +1,6 @@
 # tmux-collie — Design
 
-> Status: draft v0.2 · Phase markers below track implementation progress.
+> Status: 0.x, experimental · Phase markers below track implementation progress.
 
 ---
 
@@ -39,12 +39,13 @@ parallel across several repositories.
    be determined, report `unknown` — never pretend.
 3. **Task ≠ agent run.** An agent exiting doesn't finish a task; switching or
    retrying agents stays within the same task.
-4. **Non-destructive.** Never touch the main checkout, never merge, never
-   delete branches; check for uncommitted and unmerged work before removing a
-   worktree.
-5. **Hands off user config.** Agent hook settings are printed as snippets
-   (`collie doctor`), never rewritten.
-6. **No runtime dependencies** beyond bash 3.2, git, tmux and fzf.
+4. **Non-destructive by default.** Never touch the main checkout or delete
+   branches; check for uncommitted and unmerged work before removing a
+   worktree. `sync` explicitly merges base into task branches.
+5. **Hands off user config.** Supported agents receive hooks or extensions per
+   run; collie does not rewrite the user's agent settings.
+6. **Minimal runtime dependencies.** bash 3.2, git and tmux are required; fzf
+   is optional for interactive pickers and the dashboard.
 
 ### Non-goals
 
@@ -79,7 +80,7 @@ Workspace              (optional named repo set; a shortcut when creating tasks)
 |---|---|---|
 | `todo` | Registered, no agent run yet | no `run_started` in events.log |
 | `active` | In progress | at least one run |
-| `review` | Waiting for you to check | no agent working or waiting, and REPORT.md modified at or after the last `run_started` |
+| `review` | Waiting for you to check | no agent working or waiting, and REPORT.md modified at or after the last non-scratch `run_started` |
 | `done` | Accepted; worktrees removed, record kept | stored by `collie done` / `gc` |
 | `archived` | Abandoned; worktrees removed, record kept | stored by `collie archive` |
 
@@ -112,11 +113,11 @@ A task's *needs* (last `ls` column, the dashboard's state) folds status and
 agent state into what it wants from you, first match: `answer` (an agent is
 `waiting`), `-` (an agent is `working`, or finished task), `findings`
 (REVIEW.md newer than REPORT.md has an unticked `- [ ]` line), `review` (task
-review), `reply` (an agent is `idle`), `start` (todo), else `stalled` (active,
-no live agent).
+review), `reply` (an agent is `idle`), `start` (todo), `blocked:<ids>`
+(todo with unsatisfied dependencies), else `stalled` (active, no live agent).
 
 Dashboard order: `answer` > `reply` > `findings` > `review` > `stalled` > `working` >
-`start`, then priority, then id (the more it needs you, the higher
+`start` > `blocked`, then priority, then id (the more it needs you, the higher
 it sorts). The dashboard shows them in groups (needs you, active, todo); tab
 switches to grouping by priority or repo, keeping this order inside a group.
 
@@ -182,12 +183,16 @@ created: 2026-01-01
 
 ## 4. Command interface
 
+This section highlights the core interface. Commands and options not listed
+here are deliberately left to [USAGE.md](USAGE.md) and `collie help all`,
+the complete command reference.
+
 ### Everyday
 
 | Command | Purpose |
 |---|---|
-| `collie new [<id>] [-r repo[:branch]]... [-w workspace] [-t type] [--title ..] [-m objective] [--from ref] [--edit] [--no-window] [--ship\|--no-ship]` | Create task, worktrees and session; defaults to the current repo (a non-git directory becomes a folder, used in place). No id on a tty prompts for id, type, objective and ship. `-m` fills the Objective; `--ship` adds commit/push/PR/CI rules to TASK.md (default `$COLLIE_SHIP`, `@collie-ship`, else off) |
-| `collie add [<id>] -r repo[:branch]...` | Pull another repo into an existing task |
+| `collie new [<id>] [-r repo[:branch]]... [-w workspace] [-t type] [--title ..] [-m objective] [--from ref] [--edit] [--no-window] [--ship\|--no-ship] [--run]` | Create task, worktrees and session; defaults to the current repo (a non-git directory becomes a folder, used in place). No id on a tty prompts for id, type, objective, ship and, given an objective, whether to start an agent. `-m` fills the Objective; `--ship` adds commit/push/PR/CI rules to TASK.md (default `$COLLIE_SHIP`, `@collie-ship`, else off) |
+| `collie add [<id>] -r repo[:branch]...` | Attach another repo or switch an attached repo's branch |
 | `collie ls [-a]` | Active tasks: id, derived status, priority, session, agent, repos, needs |
 | `collie brief` | What waits on you: a block per task that needs you, most urgent first, with what it waits on (REPORT.md headline, cached PR state and CI) and the command to act; `nothing waits on you` when empty. No network |
 | `collie go [<id>]` | Switch to the task session (fzf if no id); recreate it if missing |
@@ -200,7 +205,7 @@ created: 2026-01-01
 | `collie spike <id>` | New `exp/<id>` task from the current worktree, carrying its uncommitted tracked changes (`git stash create`); `-u` also copies untracked, non-ignored files; source untouched |
 | `collie done [<id>] [--force]` | Accept: safety checks, then remove worktrees and session |
 | `collie archive [<id>] [--force]` | Abandon: same cleanup; unmerged commits are fine (branch kept), only dirty worktrees refuse |
-| `collie history [-n] [pattern]` | Finished tasks, newest first: date, status, id, title, branches, PR (from REPORT.md); pattern greps TASK.md/REPORT.md; fzf picker with preview, enter pages `show` |
+| `collie history [-n] [pattern]` | Finished tasks, newest first: date, status, id, title, branches, PR (from REPORT.md); pattern searches TASK.md, REPORT.md and decisions.tsv; fzf picker with preview, enter pages `show` |
 | `collie reopen [<id>] [--no-window]` | Undo done/archive/gc: worktrees back on the kept branches, stored status cleared, session rebuilt; refuses a deleted or checked-out branch |
 | `collie gc [-n]` | Finish (`done`) tasks whose branches all moved past their start and are contained in base; tasks `done` refuses (dirty, unmerged) are skipped with the first reason |
 | `collie sync [<id>...] [-n]` | Merge base into active task branches (clean: commit + push if tracked; conflict: start the merge and hand it to the idle or exited agent); busy agents, dirty worktrees and untouched branches are skipped; `-n` also predicts conflicts between task pairs (cached for the dash `⚡N`) |
@@ -215,38 +220,15 @@ created: 2026-01-01
 | `collie doctor` | Dependencies, installed agents, task/git/tmux reconciliation; exits 1 on failures |
 | `collie repos` / `collie workspaces` | What collie can see |
 
-An omitted `<id>` falls back to `$COLLIE_TASK`.
+An omitted `<id>` normally falls back to `$COLLIE_TASK`; `go` uses an fzf
+picker instead, and `restore` without an id considers all tasks.
 
 ### tmux key binding
 
 collie claims **one** prefix key, `h` (**h**erd; unbound in stock tmux,
-override with `@collie-key`). It opens a `display-menu` that lists every action,
-so nothing has to be memorised:
-
-```
-prefix h →  ┌ collie ──────────────┐
-            │ h  dashboard         │   ← prefix h h: the most used action
-            │ g  lazygit           │
-            │ t  terminal          │
-            │ c  new task          │   ← `collie new` without id: prompts
-            │ e  edit task         │ ┐
-            │ v  review            │ │ task sessions only
-            │ ──────────────────── │ │
-            │ r  run agent         │ │
-            │ R  run default agent │ │
-            │ a  adopt agent       │ │
-            │ d  done              │ │
-            │ x  archive           │ ┘
-            │ ──────────────────── │
-            │ j  jump to alert     │   ← last agent that notified
-            │ G  gc merged tasks   │   ← lists them, runs gc on y
-            └──────────────────────┘
-```
-
-In a session that isn't a collie task, the task-only entries (`e v r a d x`) are
-replaced by a disabled "not a collie task — use collie new" line. With
-`@collie-dev on`, two dev entries (`D` load this checkout, `B` back to
-installed) are appended.
+override with `@collie-key`). It opens a `display-menu` of actions, with
+task-specific entries available in task sessions. See the
+[dashboard and menu guide](USAGE.md) for the current actions and shortcuts.
 
 Terminal-level shortcuts (e.g. a `Cmd+…` key sending `prefix h h`) belong in
 the user's own terminal config.
@@ -412,14 +394,18 @@ unless marked *manual*.
 - **Acceptance:** after `spike` the source worktree's `git status` is unchanged;
   `review` shows diffs from two repos.
 
-### P6 — Multi-agent collaboration (only once P1–P5 are in daily use)
-- A second run in the same task (e.g. one agent plans, another implements).
-- `review --agent X`: non-interactive review written to REVIEW.md.
-- `race`: N child candidate tasks (`<id>-<n>`) from the same task-branch base,
-  one run each; `review <id>` compares candidates and `pick <id> <n>`
-  fast-forwards the task branch to a chosen candidate. Candidate `exp/*`
-  branches are kept. Collie runs and shows candidates; judging belongs in a
-  skill.
+### P6 — Multi-agent collaboration ✅
+- Multiple runs can work in one task; `handoff` preserves context when
+  continuing with a different agent.
+- Independent reviews use `run --scratch` and `REVIEW.md`; open findings
+  surface in the dashboard.
+- `race` starts candidate tasks from the same task-branch base; `review <id>`
+  compares them and `pick <id> <n>` fast-forwards to the chosen candidate.
+  Candidate branches are kept; `--archive-rest` can archive the other tasks.
+  Judging belongs in a skill.
+
+**Planned:** a dedicated `review --agent X` command for non-interactive
+reviews written to REVIEW.md.
 
 ---
 
