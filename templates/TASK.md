@@ -4,6 +4,8 @@
 ## Context
 
 ## Constraints
+<!-- These go into every task in any repo, so they repeat rules a repo's own
+     AGENTS.md may already state. -->
 - Work only inside this task's worktrees; never touch the main checkout.
 - Do not merge, rebase onto main, or delete branches.
 - Keep edits to shared lists (README command list, usage, completions)

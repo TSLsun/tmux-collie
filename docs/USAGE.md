@@ -178,6 +178,10 @@ would reclaim 1.2M (wip/scratch are skipped)
 `--force` removes every bucket. The report changes nothing: `gc` removes
 exactly what `done` would.
 
+`collie doctor` also notes unowned and prunable worktrees in the current
+repository and repositories recorded by tasks. It prints Git cleanup commands
+for review; it never removes worktrees. Notes do not change its exit status.
+
 ### Task dependencies
 
 A task can name the tasks it builds on in TASK.md's `after:` field:
