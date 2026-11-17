@@ -1,0 +1,18 @@
+usage: collie pause <id> [-r repo | --run N] [-p request | -f file]
+
+Ask the agent of a `collie run` to pause, through `collie send`: by default
+to stop at a safe boundary, save its work and write a resume note to
+.collie/RESUME.md, without pushing or opening a PR. Only an idle agent is
+asked; a working or waiting one is left alone. The next `run`, `handoff` or
+`adopt` points the new agent at the note.
+
+  -r repo         the only live run in that repo
+  --run N         run N (numbers from `collie show`)
+  -p request      send this instead of the default request
+  -f file         send the file's contents instead (-: stdin)
+
+Exit 0 sent; 2 the agent is working or waiting (not sent); 3 no live run;
+1 other errors.
+
+  collie pause fix-retry
+  collie pause fix-retry --run 2 -p 'Pause after the current test passes.'

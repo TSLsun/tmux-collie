@@ -6,6 +6,18 @@
 # slow and needs the network, so the dashboard reads the cache and refreshes it
 # in the background once it is PR_TTL minutes old; sync and gc refresh inline.
 PR_TTL=5
+pr_cache_age() { # task directory -> "N ago" or "unknown"
+  local m now seconds
+  m=$(stat -f %m "$1/pr.tsv" 2>/dev/null) || m=$(stat -c %Y "$1/pr.tsv" 2>/dev/null) || { printf unknown; return; }
+  now=$(date +%s) || { printf unknown; return; }
+  seconds=$((now - m))
+  [ "$seconds" -ge 0 ] || seconds=0
+  if [ "$seconds" -lt 3600 ]; then printf '%dm' "$((seconds / 60))"
+  elif [ "$seconds" -lt 86400 ]; then printf '%dh' "$((seconds / 3600))"
+  elif [ "$seconds" -lt 604800 ]; then printf '%dd' "$((seconds / 86400))"
+  else printf '%dw' "$((seconds / 604800))"; fi
+}
+
 
 # The PRs of branch $2 in checkout $1 as number<TAB>state<TAB>CI lines, one per
 # PR; fails on any gh error. A cross-branch restoration is admitted only when
@@ -41,30 +53,40 @@ pr_lookup() { # path branch
 
 # Refreshes <task>/pr.tsv; a failed repository lookup keeps all its old rows.
 cmd__pr() { # id
-  local d="$TASKS_DIR/$1" name c b p line state out=""
+  local d="$TASKS_DIR/$1" name c b p line state out="" failed=0
   command -v gh >/dev/null || return 0
   [ -f "$d/repos.tsv" ] || return 0
   while IFS=$TAB read -r name c b p; do
     [ "$c" != - ] || continue
     if [ ! -d "$p" ] || ! line=$(pr_lookup "$p" "$b"); then
+      failed=1
       line=$(awk -F'\t' -v n="$name" '$1 == n { sub(/^[^\t]*\t/, ""); print }' "$d/pr.tsv" 2>/dev/null) || line=""
     fi
     if [ -n "$line" ]; then
       while IFS= read -r state; do out="$out$name$TAB$state"$'\n'; done <<<"$line"
     fi
   done <"$d/repos.tsv"
-  printf '%s' "$out" >"$d/pr.tsv.$$" && mv "$d/pr.tsv.$$" "$d/pr.tsv"
+  if printf '%s' "$out" >"$d/pr.tsv.$$"; then
+    if [ "$failed" -eq 0 ]; then
+      mv "$d/pr.tsv.$$" "$d/pr.tsv"
+    elif [ -f "$d/pr.tsv" ]; then
+      touch -r "$d/pr.tsv" "$d/pr.tsv.$$" && mv "$d/pr.tsv.$$" "$d/pr.tsv"
+    else
+      rm -f "$d/pr.tsv.$$"
+    fi
+  fi
 }
 
-# Starts a background cmd__pr for each task (rows in `ls` format) whose pr.tsv
-# is missing or stale, touching it first so the next reload does not start another.
+# Starts a background cmd__pr for each task whose PR cache is stale.
 pr_refresh_stale() { # rows
   local fresh id _
   command -v gh >/dev/null || return 0
-  fresh=$(find "$TASKS_DIR" -mindepth 2 -maxdepth 2 -name pr.tsv -mmin "-$PR_TTL" 2>/dev/null) || true
+  fresh=$(find "$TASKS_DIR" -mindepth 2 -maxdepth 2 \( -name pr.tsv -o -name pr-refresh \) -mmin "-$PR_TTL" 2>/dev/null) || true
   while IFS=$TAB read -r id _; do
+    [ -n "$id" ] || continue
     case $'\n'"$fresh"$'\n' in *"/$id/pr.tsv"$'\n'*) continue ;; esac
-    touch "$TASKS_DIR/$id/pr.tsv"
+    case $'\n'"$fresh"$'\n' in *"/$id/pr-refresh"$'\n'*) continue ;; esac
+    touch "$TASKS_DIR/$id/pr-refresh"
     "$BASH" "$PLUGIN_DIR/bin/collie" _pr "$id" </dev/null >/dev/null 2>&1 &
   done <<<"$1"
 }

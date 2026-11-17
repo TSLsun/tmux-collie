@@ -1,0 +1,7 @@
+usage: collie ls [-a]
+
+List live tasks: id, status, priority, session (* exists, - none), agent
+(most urgent run state), repos, needs (answer, findings, review, reply,
+stalled, start, blocked:<ids>, -). On a terminal, columns are aligned with
+a header; otherwise, rows are tab-separated without a header. -a includes
+done and archived. Read-only.

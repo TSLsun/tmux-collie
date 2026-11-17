@@ -92,7 +92,7 @@ _collie() {
     sync | restore) compadd -- -n; _collie_tasks ;;
     handoff) compadd -- --from --agent --note -r; _collie_tasks ;;
     send) compadd -- -r --run --wait -f; _collie_tasks ;;
-    peek) compadd -- -r --run -n; _collie_tasks ;;
+    brief) compadd -- --refresh ;;
     ci) compadd -- --lines --send --run --wait; _collie_tasks ;;
     pause) compadd -- -r --run -p -f; _collie_tasks ;;
     show | review) _collie_tasks -a ;;

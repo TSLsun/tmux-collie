@@ -1,0 +1,3 @@
+usage: collie help [<command> | concepts | workflows | all]
+
+The overview, or the details of a command or topic.

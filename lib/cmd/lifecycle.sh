@@ -247,6 +247,7 @@ cmd_review() {
     printf '== %s  %s  %s ahead of %s%s\n' "$name" "$b" "$n" "${base#refs/heads/}" "$note"
     # its PRs from the cache (see cmd__pr): number, state, CI
     awk -F'\t' -v n="$name" '$1 == n && NF >= 3 { print "PR #" $2 " " $3 ($4 != "" && $4 != "-" ? ", CI " $4 : "") }' "$d/pr.tsv" 2>/dev/null || true
+    if [ -s "$d/pr.tsv" ]; then printf 'PR cache: %s ago\n' "$(pr_cache_age "$d")"; fi
     git --git-dir="$c" log --oneline "$base..refs/heads/$b"
     if [ "$patch" -eq 1 ]; then
       git --git-dir="$c" diff "$base...refs/heads/$b"

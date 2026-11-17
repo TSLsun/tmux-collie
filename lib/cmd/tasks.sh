@@ -310,9 +310,8 @@ task_needs() { # status top_state [task_dir]
   esac
 }
 
-# shellcheck disable=SC2120  # -a comes from the CLI; internal callers pass none
 # Columns: id, status, priority, session (*|-), agent, repos, needs.
-cmd_ls() {
+ls_rows() {
   local all=0 d id st top mark repos name _
   [ "${1:-}" != -a ] || all=1
   load_tmux_state
@@ -338,6 +337,34 @@ cmd_ls() {
     printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$id" "$STATUS" "$FM" "$mark" \
       "$top" "$repos" "$NEEDS"
   done
+}
+
+# shellcheck disable=SC2120  # -a comes from the CLI; internal callers pass none
+cmd_ls() {
+  if [ ! -t 1 ]; then
+    ls_rows "$@"
+    return
+  fi
+  ls_rows "$@" | awk -F '\t' '
+    BEGIN {
+      split("ID STATUS PRIORITY SESSION AGENT REPOS NEEDS", header, " ")
+      for (i = 1; i <= 7; i++) width[i] = length(header[i])
+    }
+    {
+      for (i = 1; i <= 7; i++) {
+        row[NR, i] = $i
+        if (length($i) > width[i]) width[i] = length($i)
+      }
+    }
+    END {
+      for (r = 0; r <= NR; r++) {
+        for (i = 1; i <= 7; i++) {
+          value = r ? row[r, i] : header[i]
+          if (i < 7) printf "%-*s  ", width[i], value
+          else printf "%s\n", value
+        }
+      }
+    }'
 }
 
 brief_detail() { # label text width
@@ -384,6 +411,7 @@ brief_rows() {
               else if (s != "") print "PR " s
             }
           }' "$d/pr.tsv" "$d/pr.tsv" 2>/dev/null) || pr=""
+        [ -z "$pr" ] || pr="$pr (cache $(pr_cache_age "$d") ago)"
         what="${head:-REPORT.md written}" act=review
         ;;
       stalled)
@@ -403,12 +431,30 @@ brief_rows() {
       ($3 == "open" || $3 == "draft") && $4 == "fail" { s = s (s == "" ? "" : ", ") (nr > 1 ? $1 : "") "#" $2 }
       END { print s }' "$TASKS_DIR/$id/pr.tsv" "$TASKS_DIR/$id/pr.tsv" 2>/dev/null) || pr=""
     [ -n "$pr" ] || continue
-    printf 'ci\t%s\t%s\tci\tPR %s has failing CI\t\n' "$id" "$pri" "$pr"
+    printf 'ci\t%s\t%s\tci\tPR %s has failing CI (cache %s ago)\t\n' "$id" "$pri" "$pr" "$(pr_cache_age "$TASKS_DIR/$id")"
   done < <(printf '%s\n' "$all" | sort -t "$TAB" -k3,3 -k1,1)
 }
 
 cmd_brief() {
-  local rows needs id pri act what pr n=0 width=${COLUMNS:-}
+  local rows needs id pri act what pr n=0 width=${COLUMNS:-} arg
+  local refresh=0
+  for arg in "$@"; do
+    case $arg in
+      --refresh) refresh=1 ;;
+      *) die "brief: unexpected argument: $arg" ;;
+    esac
+  done
+  if [ "$refresh" -eq 1 ]; then
+    rows=$(cmd_ls)
+    if command -v gh >/dev/null; then
+      while IFS=$TAB read -r id _; do
+        [ -n "$id" ] || continue
+        cmd__pr "$id"
+      done <<<"$rows"
+    else
+      warn "brief: gh is unavailable; showing cached PR and CI state"
+    fi
+  fi
   [ -n "$width" ] || [ ! -t 0 ] || { width=$(stty size </dev/tty 2>/dev/null) && width=${width#* }; } || width=""
   case $width in '' | *[!0-9]*) width=80 ;; esac
   [ "$width" -ge 24 ] || width=24
@@ -605,6 +651,10 @@ cmd_show() {
     [ -d "$p" ] || mark=" ($gone)"
     printf '  %s\t%s\t%s%s\n' "$name" "$b" "$p" "$mark"
   done <"$d/repos.tsv"
+  if [ -s "$d/pr.tsv" ]; then
+    awk -F'\t' 'NF >= 3 { print "  " $1 " #" $2 " " $3 ($4 != "" && $4 != "-" ? ", CI " $4 : "") }' "$d/pr.tsv"
+    printf 'PR cache: %s ago\n' "$(pr_cache_age "$d")"
+  fi
   echo
   echo "runs:"
   task_runs "$id" | sed 's/^/  /'

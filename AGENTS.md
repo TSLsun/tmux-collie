@@ -17,6 +17,7 @@
 
 - Keep README command examples and introductions concise; put detailed workflows, diagrams, and action tables in `docs/USAGE.md` and link them from the README.
 - When adding or changing a command, update the relevant usage text, completions, README example, and `docs/USAGE.md` entries in place. Do not reorder shared lists.
+- Usage text lives in two places: a command's `collie help <command>` text is its own plain-text file `lib/usage/<command>.txt`; the overview line and the `HELP_COMMANDS` list stay in `lib/usage.sh`.
 
 ## Working in this repo
 
