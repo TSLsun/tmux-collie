@@ -359,6 +359,8 @@ make check   # shellcheck + bats (uses an isolated tmux server per test)
 
 Test fixtures clear inherited `COLLIE_*` settings, except `COLLIE_BASH` and
 `COLLIE_TEST_DIAGNOSTICS_DIR`, which select the test shell and diagnostics path.
+`make test` also fails if the invoking tmux server gains a session during the
+suite; the guard observes that server but never modifies it.
 
 Scripts target bash 3.2 (macOS `/bin/bash`).
 
