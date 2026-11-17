@@ -18,6 +18,8 @@ setup_env() {
     esac
   done
   unset TMUX TMUX_PANE COLUMNS FZF_COLUMNS
+  # Tests opt in explicitly to a notification command when needed.
+  export COLLIE_NOTIFY=off
   # the test tmux server must not load the user's ~/.tmux.conf (and plugins)
   export HOME="$TMP/home"
   # State assertions must not age into idle while a loaded runner schedules
@@ -34,6 +36,17 @@ setup_env() {
   mkdir -p "$TMP/stub"
   printf '#!/bin/sh\nexit 1\n' >"$TMP/stub/gh"
   chmod +x "$TMP/stub/gh"
+  # Record even background notifier calls, whose exit status may be ignored.
+  export COLLIE_TEST_NOTIFIER_LOG="$TMP/notifier-calls"
+  for name in terminal-notifier osascript notify-send; do
+    cat >"$TMP/stub/$name" <<'EOF'
+#!/bin/sh
+printf '%s\n' "${0##*/}" >>"$COLLIE_TEST_NOTIFIER_LOG"
+echo "Unexpected desktop notifier: ${0##*/}" >&2
+exit 1
+EOF
+    chmod +x "$TMP/stub/$name"
+  done
   export PATH="$TMP/stub:$PATH"
   cat >"$GIT_CONFIG_GLOBAL" <<'EOF'
 [user]
@@ -55,6 +68,11 @@ teardown_env() {
   [ -z "${CLIENT_PIDS:-}" ] || kill $CLIENT_PIDS 2>/dev/null || true
   # name the test socket: a bare kill-server could reach the user's server
   tmux -S "$TMUX_TMPDIR/tmux-$(id -u)/default" kill-server 2>/dev/null || true
+  if [ -s "$COLLIE_TEST_NOTIFIER_LOG" ]; then
+    echo "Unexpected desktop notifier calls:" >&2
+    cat "$COLLIE_TEST_NOTIFIER_LOG" >&2
+    return 1
+  fi
 }
 
 collie() {
