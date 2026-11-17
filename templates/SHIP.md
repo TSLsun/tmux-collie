@@ -14,6 +14,9 @@ Finish the delivery loop yourself, then stop for the human:
    Verification, Unverified, Checklist) and adds the gist of REPORT.md;
    without a template, it says what changed and how you verified it.
    Without `gh`, push and put the branch URL in REPORT.md.
+   Do not review your own changes: state in the PR whether independent review
+   is required under AGENTS.md. If required and not yet done, mark it pending
+   rather than claiming the PR is ready to merge.
 3. Wait for CI (`gh pr checks --watch`, or poll). Green CI alone is not
    proof the task works; step 2's Acceptance Criteria check is.
 4. If CI fails and the cause is clear (lint, an obviously broken test, a
