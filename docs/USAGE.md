@@ -117,6 +117,11 @@ flowchart TB
 Status is derived on every `ls` / `dash`; only `done` and `archived` are
 stored (in TASK.md's frontmatter).
 
+`collie ls` shows a header and aligned columns on a terminal. When stdout is
+not a terminal, it emits headerless tab-separated rows for scripts: id, status,
+priority, session, agent, repos, needs. `collie ls -a` also includes done and
+archived tasks.
+
 ```mermaid
 stateDiagram-v2
     state "open (derived on every ls / dash)" as open {
