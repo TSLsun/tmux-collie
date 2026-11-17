@@ -315,3 +315,32 @@ EOF
   COLLIE_AGENT=no-such-agent run collie doctor
   [[ "$output" == *"FAIL  default agent 'no-such-agent' not found"* ]]
 }
+
+@test "doctor: notes orphan and prunable worktrees without changing status" {
+  export COLLIE_AGENT=sleep
+  local repo="$TMP/repos/B" orphan="$TMP/orphan's tree" gone="$TMP/gone" scratch="$TMP/repos/B.worktrees/feat-x.scratch-1"
+  git -C "$repo" worktree add -qb orphan "$orphan"
+  git -C "$repo" worktree add -q --detach "$scratch"
+  git -C "$repo" worktree add -qb lost "$gone"
+  rm -rf "$gone"
+  run collie doctor
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"note  orphan worktree $orphan (branch orphan)"* ]]
+  [[ "$output" == *"worktree remove '$TMP/orphan'\\''s tree'"* ]]
+  [[ "$output" == *"note  prunable worktree entry $gone:"*"worktree prune"* ]]
+  [[ "$output" != *"orphan worktree $scratch "* ]]
+  [[ "$output" != *"orphan worktree $repo "* ]]
+  [[ "$output" != *"orphan worktree $TMP/repos/B.worktrees/feat-x "* ]]
+  [ "$(printf '%s\n' "$output" | grep -c 'note  orphan worktree')" -eq 1 ]
+  [ "$(printf '%s\n' "$output" | grep -c 'note  prunable worktree')" -eq 1 ]
+}
+
+@test "doctor: scans the current repository without a task" {
+  export COLLIE_AGENT=sleep
+  make_normal_repo C
+  git -C "$TMP/repos/C" worktree add -qb stray "$TMP/stray"
+  cd "$TMP/repos/C"
+  run collie doctor
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"note  orphan worktree $TMP/stray (branch stray)"* ]]
+}
