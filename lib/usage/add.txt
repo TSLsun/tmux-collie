@@ -1,0 +1,13 @@
+usage: collie add [<id>] -r repo[:branch]... [--from ref] [--no-window]
+                  [--force]
+
+Attach repos to an existing task, or switch an attached repo to another (new
+or existing) branch with -r repo:branch; several -r, attaching and switching
+mixed, apply all-or-nothing. A switch replaces the repo's worktree (and its
+scratch worktrees) but keeps the old branch; it refuses a working or waiting
+agent or the current directory there, and, unless --force, a dirty worktree
+or a branch not merged into the default branch. --from is the base of new
+branches. Fetches origin first.
+
+  collie add deploy-v2 -r infra
+  collie add deploy-v2 -r infra:release/v2 -r web

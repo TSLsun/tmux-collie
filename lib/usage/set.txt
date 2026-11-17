@@ -1,0 +1,13 @@
+usage: collie set [<id>] field=value...
+
+Set fields in TASK.md's frontmatter: priority (P0..P3), title, after (the
+task ids it builds on, space- or comma-separated; empty clears). A bare field
+name reads its value from stdin. Values are single lines.
+
+A todo task is blocked until each after: task is done or has a merged PR in
+every repo (cached by the dashboard; gc marks merged branches done). Unknown and
+archived deps keep it blocked; a cycle only warns. `collie run` on a blocked
+task asks on a terminal, else warns and runs.
+
+  collie set login priority=P0 title='OAuth login'
+  collie set lead after='run-primitives collie-send'

@@ -366,7 +366,8 @@ Scripts target bash 3.2 (macOS `/bin/bash`).
 
 `bin/collie` is the entry point; it sources shared helpers from `lib/*.sh`
 and the commands from `lib/cmd/*.sh`. A function `cmd_<name>` is the command
-`<name>` (no dispatch list to edit); its help line goes in `lib/usage.sh`.
+`<name>` (no dispatch list to edit); its overview line goes in `lib/usage.sh`
+and its `collie help <name>` text in `lib/usage/<name>.txt`.
 
 To try a checkout in your running tmux, `set -g @collie-dev on`: the menu gets
 `dev: load this checkout` (reloads the plugin from the current pane's

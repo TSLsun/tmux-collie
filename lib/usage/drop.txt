@@ -1,0 +1,9 @@
+usage: collie drop [<id>] -r repo... [--force]
+
+Remove repos from a task, all-or-nothing: the worktree and its scratch
+worktrees, links and repos.tsv row; the branch is kept. A folder only loses
+its row and link. Refuses a working or waiting agent or the current
+directory in it, and the task's last repo (use done or archive); unless
+--force, also a dirty worktree or a branch not merged into the default branch.
+
+  collie drop deploy-v2 -r infra

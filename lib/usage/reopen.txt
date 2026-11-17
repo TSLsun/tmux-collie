@@ -1,0 +1,4 @@
+usage: collie reopen [<id>] [--no-window]
+
+Undo done/archive: worktrees back on the kept branches, session rebuilt,
+status live again (todo/active/review is derived as before).
