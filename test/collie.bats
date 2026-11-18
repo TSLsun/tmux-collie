@@ -652,6 +652,22 @@ past_run() {
   [[ "$output" == "usage: collie <command>"* && "$output" == *COLLIE_TASK* ]]
 }
 
+@test "unknown commands: concise diagnostics and unique suggestions on stderr" {
+  run bash -c '"$1" "$2" list >"$3" 2>"$4"' _ "${COLLIE_BASH:-bash}" "$COLLIE_ROOT/bin/collie" "$TMP/stdout" "$TMP/stderr"
+  [ "$status" -eq 1 ]
+  [ ! -s "$TMP/stdout" ]
+  [ "$(cat "$TMP/stderr")" = $'collie: unknown command: list\nDid you mean: collie ls?\nRun collie help for usage.' ]
+
+  run bash -c '"$1" "$2" xyzzy >"$3" 2>"$4"' _ "${COLLIE_BASH:-bash}" "$COLLIE_ROOT/bin/collie" "$TMP/stdout" "$TMP/stderr"
+  [ "$status" -eq 1 ]
+  [ ! -s "$TMP/stdout" ]
+  [ "$(cat "$TMP/stderr")" = $'collie: unknown command: xyzzy\nRun collie help for usage.' ]
+
+  run collie do
+  [ "$status" -eq 1 ]
+  [[ "$output" != *"Did you mean"* ]]
+}
+
 @test "help: every command has details, in the overview and completions" {
   local c cmds
   cmds=$(sed -n 's/^cmd_\([a-z][a-z-]*\)().*/\1/p' "$COLLIE_ROOT"/lib/cmd/*.sh)
