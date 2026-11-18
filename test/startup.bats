@@ -107,11 +107,14 @@ watching() { [ -n "$(tmux show-options -wqv -t "$(run_pane x)" @collie_startup)"
   start
   # above the bottom rows, on the visible screen
   draw "$CLAUDE_DIALOG"$'\n'"$(printf 'output %s\n' 1 2 3 4 5 6 7 8)"
+  # Do not replace the pending screen before the fake agent has rendered it.
+  wait_for '[ ! -e "$SCREEN" ] && tmux capture-pane -p -t "$(run_pane x)" | grep -q "output 8"'
   sleep 1.5
   [ "$(state)" = working ]
   # scrolled off the screen entirely
   : >"$SCREEN.append"
   draw "$(printf 'line %s\n' $(seq 1 80))"
+  wait_for 'tmux capture-pane -p -S - -t "$(run_pane x)" | grep -q "line 80"'
   sleep 1.5
   [ "$(state)" = working ]
   [ "$(tmux capture-pane -p -S - -t "$(run_pane x)" | grep -c 'I trust this folder')" -ge 1 ]
