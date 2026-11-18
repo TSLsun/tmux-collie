@@ -144,6 +144,27 @@ EOF
   [[ "$output" == *$'status: review\n'* ]]
 }
 
+
+@test "dashboard shows quiet age without changing working state or needs" {
+  collie new x --no-window
+  collie run x -- 300
+  local p
+  p=$(run_pane x)
+  tmux set-option -w -t "$p" @collie_hooks 1
+  hook x working
+  sleep 2
+  tmux set-option -g @collie-quiet 1
+  run collie _rows
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"working (quiet "* ]]
+  [[ "$output" != *"needs you"* ]]
+  run collie _preview x
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"working (quiet "* ]]
+  tmux set-option -g @collie-quiet 86400
+  run collie _rows
+  [[ "$output" != *"quiet"* ]]
+}
 @test "dash actions: no next/notes keys" {
   run collie _actions x N
   [ -z "$output" ]

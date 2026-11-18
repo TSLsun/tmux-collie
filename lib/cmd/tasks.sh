@@ -312,7 +312,7 @@ task_needs() { # status top_state [task_dir]
 
 # Columns: id, status, priority, session (*|-), agent, repos, needs.
 ls_rows() {
-  local all=0 d id st top mark repos name _
+  local all=0 d id st top mark repos name _ window label
   [ "${1:-}" != -a ] || all=1
   load_tmux_state
   for d in "$TASKS_DIR"/*; do
@@ -324,6 +324,7 @@ ls_rows() {
     mark=-
     if has_session "$id"; then mark='*'; fi
     top=$(task_top "$id")
+    window=${top#*"$TAB"}; window=${window%%"$TAB"*}
     top=${top%%"$TAB"*}
     repos=""
     while IFS=$TAB read -r name _ || [ -n "$name" ]; do repos="$repos${repos:+,}$name"; done <"$d/repos.tsv"
@@ -332,6 +333,10 @@ ls_rows() {
     if [ "$NEEDS" = start ]; then
       task_blocked "$d"
       [ -z "$BLOCKED" ] || NEEDS="blocked:${BLOCKED// /,}"
+    fi
+    if [ "${COLLIE_LS_DISPLAY:-0}" = 1 ] && [ "$top" = working ]; then
+      label=$(quiet_label "$window")
+      [ -z "$label" ] || top=$label
     fi
     fm_get "$d/TASK.md" priority
     printf '%s\t%s\t%s\t%s\t%s\t%s\t%s\n' "$id" "$STATUS" "$FM" "$mark" \
@@ -345,7 +350,7 @@ cmd_ls() {
     ls_rows "$@"
     return
   fi
-  ls_rows "$@" | awk -F '\t' '
+  COLLIE_LS_DISPLAY=1 ls_rows "$@" | awk -F '\t' '
     BEGIN {
       split("ID STATUS PRIORITY SESSION AGENT REPOS NEEDS", header, " ")
       for (i = 1; i <= 7; i++) width[i] = length(header[i])
@@ -470,6 +475,11 @@ cmd_brief() {
     n=$((n + 1))
   done <<<"$rows"
   [ "$n" -gt 0 ] || echo "nothing waits on you"
+  while IFS=$TAB read -r id _ _ _ top _ _; do
+    case $top in
+      'working (quiet '*) printf '\n%s  %s\n' "$top" "$id" ;;
+    esac
+  done < <(COLLIE_LS_DISPLAY=1 ls_rows)
 }
 
 # Goes to a queue item: an agent row (action go) to the task's most urgent
@@ -657,7 +667,7 @@ cmd_show() {
   fi
   echo
   echo "runs:"
-  task_runs "$id" | sed 's/^/  /'
+  task_runs "$id" | quiet_run_rows 3 4 | sed 's/^/  /'
   show_latest_note "$id"
   echo
   a=$(verify_results "$id")

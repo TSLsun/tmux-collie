@@ -7,7 +7,7 @@
 # number of predicted conflicts (see conflicts_cached, or -).
 dash_rows() {
   local rows ids="" id _
-  rows=$(cmd_ls)
+  rows=$(COLLIE_LS_DISPLAY=1 ls_rows)
   [ -n "$rows" ] || return 0
   pr_refresh_stale "$rows"
   while IFS=$TAB read -r id _; do ids="$ids$id"$'\n'; done <<<"$rows"
@@ -132,7 +132,7 @@ cmd__rows() { # [group]
       printf "" >cache; printf "" >width
     }
     {
-      n++; id[n] = $1; st[n] = $7 == "-" ? "working" : $7 ~ /^blocked/ ? "blocked" : $7; pr[n] = $3
+      n++; id[n] = $1; st[n] = $7 == "-" ? ($5 ~ /^working \(quiet / ? $5 : "working") : $7 ~ /^blocked/ ? "blocked" : $7; pr[n] = $3
       you = $7 != "-" && $7 != "start" && st[n] != "blocked"
       gl[n] = you ? e "31m●" : $7 == "-" ? e "33m◐" : e "2m○"
       k = $8 == "-" ? 0 : split($8, a, " "); b = ""; ql[n] = 0; shown = 0
@@ -201,14 +201,14 @@ cmd__runrows() { # [id]
   [ -n "$id" ] || { dash_runs || return 0; id=$RUNS_OF; }
   mkdir -p "$STATE_DIR"
   stamp %s
-  run_history "$id" | awk -F'\t' -v now="$NOW" -v cache="$STATE_DIR/dash-rows" -v width="$STATE_DIR/dash-width" "$DASH_AWK_TIME"'
+  run_history "$id" | quiet_run_rows 4 5 | awk -F'\t' -v now="$NOW" -v cache="$STATE_DIR/dash-rows" -v width="$STATE_DIR/dash-width" "$DASH_AWK_TIME"'
     function pad(s, w) { return s sprintf("%" (w - length(s) > 0 ? w - length(s) : 0) "s", "") }
     function max(a, b) { return a > b ? a : b }
     {
       n++; key[n] = $1 == "-" ? $5 : $1; run[n] = $1 == "-" ? "-" : "#" $1
       ag[n] = $2; rp[n] = $3; st[n] = $4; nt[n] = $7 == "-" ? "" : $7
       a[n] = $6 == "-" ? "" : age(now - epoch($6))
-      c[n] = $4 ~ /^(working|waiting|idle)$/ ? "33" : $4 == "lost" ? "31" : "2"
+      c[n] = $4 ~ /^(working|waiting|idle)( |$)/ ? "33" : $4 == "lost" ? "31" : "2"
       wr = max(wr, length(run[n])); wa = max(wa, length($2)); wp = max(wp, length($3)); ws = max(ws, length($4)); wt = max(wt, length(a[n]))
     }
     END {
@@ -362,7 +362,7 @@ cmd__target() {
 # handoff packet it came from.
 run_preview() { # id run|window
   local d="$TASKS_DIR/$1" r pane
-  r=$(run_history "$1" | awk -F'\t' -v k="$2" '$1 == k || ($1 == "-" && $5 == k) { print; exit }')
+  r=$(run_history "$1" | quiet_run_rows 4 5 | awk -F'\t' -v k="$2" '($1 == k || ($1 == "-" && $5 == k)) && !found { print; found = 1 }')
   [ -n "$r" ] || return 0
   awk -F'\t' -v ev="$d/events.log" "$AWK_KV"'
     {
@@ -382,7 +382,7 @@ run_preview() { # id run|window
       if (end != "") print "ended:   " end
       if (sid != "") print "session: " sid
       if (pk != "") print "packet:  handoffs/" pk
-      if ($4 ~ /^(working|waiting|idle)$/) print "\nenter: go to its window"
+      if ($4 ~ /^(working|waiting|idle)( |$)/) print "\nenter: go to its window"
       else if ($4 == "lost") print "\nno exit logged and no window: collie restore may bring it back"
     }' <<<"$r"
   case $(cut -f2 <<<"$r") in claude | codex) [ "${2#@}" != "$2" ] || echo "h: hand off to $([ "$(cut -f2 <<<"$r")" = claude ] && echo codex || echo claude)" ;; esac
@@ -433,7 +433,7 @@ cmd__preview() {
   [ -z "$a" ] || printf '%s\n\n' "$a"
   last_decision "$d"
   # the newest runs; ▸ marks the one enter goes to (see _target)
-  a=$(run_history "$id")
+  a=$(run_history "$id" | quiet_run_rows 4 5)
   printf 'runs:%s\n' "$([ "$(grep -c . <<<"$a")" -le 5 ] || printf '  (newest 5 of %s; u: all)' "$(grep -c . <<<"$a")")"
   [ -n "$a" ] || echo "  (none)"
   [ -z "$a" ] || awk -F'\t' -v w="$(cut -f2 <<<"$top")" '
