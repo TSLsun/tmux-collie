@@ -417,6 +417,64 @@ print(output, end="")
   [ "${lines[2]}" = "short      todo    P2        -        -      A      start" ]
 }
 
+@test "quiet working hook runs are display-only in terminal ls, show and brief" {
+  make_bare_repo A
+  cd "$REPO/main"
+  export SHELL=/bin/sh COLLIE_AGENT=sleep
+  collie new x --no-window
+  collie run x -- 300
+  local p
+  p=$(run_pane x)
+  tmux set-option -w -t "$p" @collie_hooks 1
+  hook x working
+  sleep 2
+  tmux set-option -g @collie-quiet 1
+  run python3 -c '
+import os, pty, subprocess, sys
+master, slave = pty.openpty()
+proc = subprocess.run([sys.argv[1], "ls"], stdout=slave, check=True)
+output = os.read(master, 65536).decode().replace("\r\n", "\n")
+os.close(slave)
+os.close(master)
+print(output, end="")
+' "$COLLIE_ROOT/bin/collie"
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"working (quiet "* ]]
+  run collie show x
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"working (quiet "* ]]
+  run collie brief
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"nothing waits on you"* ]]
+  [[ "$output" == *$'nothing waits on you\n\nworking (quiet '* ]]
+  [ "$(collie ls | cut -f2,7)" = $'active\t-' ]
+  [ "$(collie ls)" = $'x\tactive\tP2\t*\tworking\tA\t-' ]
+  run collie wait x --state idle --timeout 1
+  [ "$status" -eq 1 ]
+  [[ "$output" == *"timeout"* ]]
+  [ "$(tmux display-message -p -t "$p" '#{@collie_state}')" = working ]
+  [ ! -s "$COLLIE_TEST_NOTIFIER_LOG" ]
+}
+
+@test "quiet hint is absent below threshold and from piped ls" {
+  make_bare_repo A
+  cd "$REPO/main"
+  export SHELL=/bin/sh COLLIE_AGENT=sleep
+  collie new x --no-window
+  collie run x -- 300
+  local p
+  p=$(run_pane x)
+  tmux set-option -w -t "$p" @collie_hooks 1
+  hook x working
+  tmux set-option -g @collie-quiet 1800
+  run collie ls
+  [ "$status" -eq 0 ]
+  [ "$output" = $'x\tactive\tP2\t*\tworking\tA\t-' ]
+  output=$(collie ls | cat)
+  [ "$?" -eq 0 ]
+  [ "$output" = $'x\tactive\tP2\t*\tworking\tA\t-' ]
+}
+
 # run 1 of a task, started in 2020 and exited (no session)
 past_run() {
   printf '2020-01-01T00:00:00Z\trun_started\trun=1 agent=sleep repo=A\n2020-01-01T00:00:01Z\trun_exited\trun=1 code=0\n' >>"$(task_dir "$1")/events.log"
