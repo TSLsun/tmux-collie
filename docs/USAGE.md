@@ -444,7 +444,7 @@ if the command fails, they should continue their work.
 The [`collie-lead`](https://github.com/TSLsun/tmux-collie/blob/main/skills/collie-lead/SKILL.md) skill makes the agent that
 runs it the lead of one task: it does not write the code itself, it drives
 other runs with collie commands and checks their work.
-Repository [merge and independent-review rules](../AGENTS.md#merge-and-review) apply.
+Repository [merge and independent-review rules](https://github.com/TSLsun/tmux-collie/blob/main/AGENTS.md#merge-and-review) apply.
 
 ```sh
 npx skills add TSLsun/tmux-collie     # installs skills/collie-lead and skills/collie-dispatch
