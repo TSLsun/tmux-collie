@@ -377,7 +377,7 @@ folder_changes() { # task_dir path
 # uncommitted tracked changes (-u: and untracked, non-ignored files, copied
 # as-is); the source worktree is not modified.
 cmd_spike() {
-  local id="" args=() untracked=0 src head stash owner path meta subpath oldmode newmode oldoid newoid status
+  local id="" args=() untracked=0 src head stash owner path index snapshot changes file meta subpath oldmode newmode oldoid newoid status
   while [ $# -gt 0 ]; do
     case $1 in
       -u | --include-untracked) untracked=1 ;;
@@ -391,14 +391,41 @@ cmd_spike() {
   [ -n "$id" ] || die "usage: collie spike <id> [-u] [--title text] [--no-window]"
   src=$(git rev-parse --show-toplevel 2>/dev/null) || die "spike: run it inside a worktree"
   head=$(git -C "$src" rev-parse HEAD)
-  stash=$(git -C "$src" stash create)
+  if [ -n "$(git -C "$src" ls-files -u)" ]; then
+    index=$(git -C "$src" rev-parse --git-path index)
+    case $index in /*) ;; *) index="$src/$index" ;; esac
+    snapshot=$(mktemp "${TMPDIR:-/tmp}/collie-index.XXXXXX") || die "spike: cannot create index snapshot"
+    cp "$index" "$snapshot" || die "spike: cannot copy index"
+    GIT_INDEX_FILE="$snapshot" git -C "$src" update-index --no-split-index ||
+      die "spike: cannot snapshot index"
+    changes=$(mktemp "${TMPDIR:-/tmp}/collie-changes.XXXXXX") || die "spike: cannot create changes list"
+    GIT_OPTIONAL_LOCKS=0 git -C "$src" diff --no-renames --name-only -z HEAD >"$changes" ||
+      die "spike: cannot list tracked changes"
+  else
+    stash=$(git -C "$src" stash create)
+  fi
   if [ "$untracked" = 0 ] && git -C "$src" status --porcelain | grep -q '^??'; then
     warn "untracked files are not carried over (use -u)"
   fi
   owner=$(task_owning "$src")
   cmd_new "$id" -t exp -r "$src" --from "$head" ${args[@]+"${args[@]}"}
   path=${NEW_PATHS%%$'\n'*}
-  if [ -n "$stash" ]; then
+  if [ -n "${snapshot:-}" ]; then
+    while IFS= read -r -d '' file; do
+      rm -rf "${path:?}/${file:?}"
+    done <"$changes"
+    while IFS= read -r -d '' file; do
+      if git -C "$src" ls-files --error-unmatch -- "$file" >/dev/null 2>&1 &&
+        { [ -e "$src/$file" ] || [ -L "$src/$file" ]; }; then
+        mkdir -p "$path/$(dirname "$file")"
+        cp -pR "$src/$file" "$path/$file" || die "spike: cannot copy $file"
+      fi
+    done <"$changes"
+    index=$(git -C "$path" rev-parse --git-path index)
+    case $index in /*) ;; *) index="$path/$index" ;; esac
+    cp "$snapshot" "$index" || die "spike: cannot restore index"
+    rm -f "$snapshot" "$changes"
+  elif [ -n "$stash" ]; then
     git -C "$path" stash apply -q --index "$stash" || warn "could not apply changes in $path (stash $stash)"
   fi
   # stash create/apply can omit staged gitlink updates, even when it succeeds.

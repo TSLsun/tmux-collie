@@ -167,9 +167,11 @@ delete an item only when it is covered by a test.
 - [ ] `gc` against a real remote: PR merge commits (non-ff) detected after
       `git fetch`; squash merges are known not to be detected. Checked
       2026-11-11 with a local bare remote and non-ff merge; hosted PR not checked.
-- [ ] `spike` with a merge/rebase in progress. Checked 2026-11-11 in isolated
-      repos: staged rename passed, conflicts failed (task `spike-conflicts`).
-      Staged submodule updates passed 2026-11-17 in an isolated collie worktree.
+- [ ] `spike` with a merge/rebase in progress or staged submodule updates.
+      Checked 2026-11-11 in isolated repos: staged rename passed. Merge and
+      rebase conflicts were checked 2026-11-17 in isolated worktrees, including
+      index stages and unchanged source state. Staged submodule updates passed
+      2026-11-17 in an isolated collie worktree.
 - [x] `review` popup from the menu (`| less -R`), long outputs and colours.
       Checked 2026-11-12 in an attached private pty: an 81-line report
       retained red and green ANSI colors, scrolled to its end, and closed with q.
