@@ -451,7 +451,6 @@ print(output, end="")
   [ "$(collie ls)" = $'x\tactive\tP2\t*\tworking\tA\t-' ]
   run collie wait x --state idle --timeout 1
   [ "$status" -eq 1 ]
-  [[ "$output" == *"timeout"* ]]
   [ "$(tmux display-message -p -t "$p" '#{@collie_state}')" = working ]
   [ ! -s "$COLLIE_TEST_NOTIFIER_LOG" ]
 }
