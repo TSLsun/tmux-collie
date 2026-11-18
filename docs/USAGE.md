@@ -264,6 +264,13 @@ for idle, green for working, and nothing for other windows. It preserves the
 surrounding window style and adds no shell calls on redraw. Without the
 placeholder, window formats are unchanged.
 
+For hook-based agents, a quiet hint can distinguish a long-running `working`
+run from one that is actively producing output. Set `@collie-quiet` to the
+number of seconds (default `1800`); after that much time without output, the
+hint is displayed for the run. This is display-only: it does not change agent
+state, `needs`, queue ordering, `collie wait`, or notifications. It does not
+change `collie ls` output when piped.
+
 A task's `agent` column shows its most urgent run (`waiting` > `idle` >
 `working` > `exited` > `unknown`). Status and agent fold into one *needs*
 value (`ls`'s last column, the dashboard's STATE), first match:

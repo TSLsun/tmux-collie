@@ -6,6 +6,7 @@ to act. review shows REPORT.md's first line and the PR with its state and CI
 from the cache the dashboard keeps; PRs of a task spanning repos read repo#N.
 A task whose open PR has failing CI in that cache also gets a ci block at the
 end, pointing at `collie ci <id> --send`. Prints "nothing waits on you" when
-nothing does. By default it reads only local state and never calls gh.
+nothing does. Quiet working hook runs appear separately, not in the queue
+(@collie-quiet, default 1800 seconds). By default it reads only local state and never calls gh.
 `--refresh` refreshes the dashboard's cached PR and CI state first; without gh
 it warns and prints the existing cache.
