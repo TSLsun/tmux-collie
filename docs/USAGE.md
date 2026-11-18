@@ -597,6 +597,9 @@ filter, in which every key types; `?` lists every action.
 | Move uncommitted experiments out of the way | `collie spike <id>` inside the worktree (new `exp/<id>` task, tracked changes only) |
 | Keep `exp/*` off the remote | link `hooks/pre-push` (see README) |
 
+`spike` carries staged submodule gitlinks into the new index; it does not
+initialize submodules or copy changes inside their worktrees.
+
 ### Several repos in one task
 
 A task holds one worktree and branch per repo (one `repos.tsv` row each) and
