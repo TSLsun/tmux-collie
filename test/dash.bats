@@ -10,6 +10,16 @@ setup() {
 }
 teardown() { teardown_env; }
 
+@test "preview: identifies a missing task branch even when its worktree is missing" {
+  collie new x --no-window
+  git -C "$REPO" worktree remove "$REPO/feat-x"
+  git -C "$REPO" branch -D feat/x
+  run collie _preview x
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"A  missing branch feat/x in "*"$REPO"* ]]
+  [[ "$output" == *"restore the branch"* ]]
+}
+
 # --- set --------------------------------------------------------------------
 
 @test "set: updates priority and title; logs each change" {

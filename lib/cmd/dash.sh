@@ -458,6 +458,10 @@ cmd__preview() {
     ;;
   esac
   while IFS=$TAB read -r name c b p; do
+    if [ "$c" != - ] && ! git --git-dir="$c" show-ref -q --verify "refs/heads/$b"; then
+      printf '  %s  missing branch %s in %s; check the task repository and restore the branch if needed\n' "$name" "$b" "$c"
+      continue
+    fi
     if [ ! -d "$p" ]; then
       printf '  %s  %s  (missing)\n' "$name" "$b"
       continue
