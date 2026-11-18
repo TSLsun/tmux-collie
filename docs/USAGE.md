@@ -61,6 +61,9 @@ individually with `collie wait <id>-<n> --done`.
 `collie review <id>` shows the parent's usual review followed by a candidate
 comparison table and each candidate's diff stat and REPORT.md. Review a
 candidate directly with `collie review <id>-<n>`.
+If a recorded branch is missing, review identifies the repository and branch
+and continues with the other repositories. Check the task's repository and
+restore the branch from the correct ref before reviewing its changes.
 
 `collie pick <id> <n>` keeps candidate N's work on the original task branch.
 It only fast-forwards when the task worktree is clean and its branch is still

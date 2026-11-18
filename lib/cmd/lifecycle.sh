@@ -190,9 +190,13 @@ race_review() { # parent task_dir
     top=$(task_top "$candidate")
     task_status "$candidate" "${top%%"$TAB"*}"
     state=$STATUS
-    commits=$(git --git-dir="$cg" rev-list --count "$base..refs/heads/$cb" 2>/dev/null || echo 0)
-    read -r files plus minus <<<"$(git --git-dir="$cg" diff --numstat "$base...refs/heads/$cb" 2>/dev/null |
-      awk '{ f++; if ($1 ~ /^[0-9]+$/) a += $1; if ($2 ~ /^[0-9]+$/) d += $2 } END { printf "%d %d %d", f, a, d }')"
+    if ! git --git-dir="$cg" show-ref -q --verify "refs/heads/$cb"; then
+      commits='?' files='?' plus='?' minus='?'
+    else
+      commits=$(git --git-dir="$cg" rev-list --count "$base..refs/heads/$cb" 2>/dev/null || echo 0)
+      read -r files plus minus <<<"$(git --git-dir="$cg" diff --numstat "$base...refs/heads/$cb" 2>/dev/null |
+        awk '{ f++; if ($1 ~ /^[0-9]+$/) a += $1; if ($2 ~ /^[0-9]+$/) d += $2 } END { printf "%d %d %d", f, a, d }')"
+    fi
     verify=$(awk -F'\t' "$AWK_KV"'$2 == "verify" { v = kv("result") } END { print v }' "$cd/events.log")
     [ -n "$verify" ] || verify=-
     report='(no REPORT.md)'
@@ -210,7 +214,11 @@ race_review() { # parent task_dir
     [ -f "$cd/TASK.md" ] && [ -f "$cd/repos.tsv" ] || continue
     IFS=$TAB read -r name cg cb cp <"$cd/repos.tsv"
     printf '\n== %s  %s (%s)\n' "$candidate" "$branch" "$agent"
-    git --git-dir="$cg" diff --stat "$base...refs/heads/$cb" 2>/dev/null || true
+    if git --git-dir="$cg" show-ref -q --verify "refs/heads/$cb"; then
+      git --git-dir="$cg" diff --stat "$base...refs/heads/$cb" 2>/dev/null || true
+    else
+      printf 'branch %s missing from repo %s (%s); check the task repository and restore the branch from the correct ref\n' "$cb" "$name" "$cg"
+    fi
     if [ -f "$cd/REPORT.md" ]; then cat "$cd/REPORT.md"; else echo '(no REPORT.md)'; fi
   done <<<"$cands"
 }
@@ -226,12 +234,18 @@ cmd_review() {
     shift
   done
   task_id "$id"
+  local missing=0
   d="$TASKS_DIR/$id"
   while IFS=$TAB read -r name c b p; do
     if [ "$c" = - ]; then
       printf '== %s  folder  %s\n' "$name" "$p"
       folder_changes "$d" "$p"
       echo
+      continue
+    fi
+    if ! git --git-dir="$c" show-ref -q --verify "refs/heads/$b"; then
+      printf 'branch %s missing from repo %s (%s); check the task repository and restore the branch from the correct ref\n' "$b" "$name" "$c" >&2
+      missing=1
       continue
     fi
     default_base "$c"
@@ -265,6 +279,7 @@ cmd_review() {
     cat "$d/REPORT.md"
   fi
   race_review "$id" "$d"
+  [ "$missing" -eq 0 ]
 }
 
 # Run TASK.md's ## Verify sh blocks in each repo's worktree (-r: one repo),

@@ -69,6 +69,20 @@ squash_upstream() {
   [[ "$output" == *"== C  feat/x  0 ahead of origin/HEAD, no commits"* ]]
 }
 
+@test "review: missing branch is identified and does not hide other repos" {
+  make_bare_repo B
+  cd "$TMP"
+  collie new x -r A -r B --no-window
+  git --git-dir="$TMP/repos/A/.bare" worktree remove "$TMP/repos/A/feat-x"
+  git --git-dir="$TMP/repos/A/.bare" branch -D feat/x
+  run collie review x
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"branch feat/x missing from repo A"* ]]
+  [[ "$output" == *"restore the branch from the correct ref"* ]]
+  [[ "$output" == *"== B  feat/x  0 ahead"* ]]
+  [[ "$output" != *"fatal: ambiguous argument"* ]]
+}
+
 # --- spike ------------------------------------------------------------------
 
 @test "spike: copies uncommitted changes to an exp/ task; source untouched" {
