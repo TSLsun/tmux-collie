@@ -6,6 +6,13 @@
 - Start the PR body with the reason it must remain unmerged and the condition for making it mergeable. If that condition is undecided, say that explicit human authorization is required.
 - Preserve the prefix and draft status across updates. Remove them only after the stated condition is satisfied and the user authorizes making the PR mergeable. Passing CI alone is not authorization.
 
+## Merge and review
+
+- Green PRs may merge back to back without updating each branch when `collie sync -n` reports no conflicts between them or with base; this relies on the `main` ruleset's "require branches to be up to date" setting being off.
+- Check main's CI after the batch; fix or revert a red main before merging anything else.
+- PRs changing `lib/**` or `agents/**` require an independent reviewer run, `collie run <id> --agent <another agent> --scratch`, before merge; docs- and test-only PRs are exempt.
+- Record the gist of `.collie/REVIEW.md` and the disposition of every finding in the PR body.
+
 ## Plans and task artifacts
 
 - Do not commit agent implementation plans, progress ledgers, reports, or scratch files.

@@ -5,6 +5,9 @@ Diagrams and tables for how a task moves from `collie new` to `done`. The
 
 The dashboard requires fzf 0.73 or newer: earlier releases can drop background action reloads and leave completed tasks in the list.
 
+An unknown command prints a short error and, when there is one unambiguous
+close match, a suggestion. Run `collie help` for the command overview.
+
 ## 1. The everyday loop
 
 ```mermaid
@@ -61,6 +64,9 @@ individually with `collie wait <id>-<n> --done`.
 `collie review <id>` shows the parent's usual review followed by a candidate
 comparison table and each candidate's diff stat and REPORT.md. Review a
 candidate directly with `collie review <id>-<n>`.
+If a recorded branch is missing, review identifies the repository and branch
+and continues with the other repositories. Check the task's repository and
+restore the branch from the correct ref before reviewing its changes.
 
 `collie pick <id> <n>` keeps candidate N's work on the original task branch.
 It only fast-forwards when the task worktree is clean and its branch is still
@@ -264,6 +270,13 @@ for idle, green for working, and nothing for other windows. It preserves the
 surrounding window style and adds no shell calls on redraw. Without the
 placeholder, window formats are unchanged.
 
+For hook-based agents, a quiet hint can distinguish a long-running `working`
+run from one that is actively producing output. Set `@collie-quiet` to the
+number of seconds (default `1800`); after that much time without output, the
+hint is displayed for the run. This is display-only: it does not change agent
+state, `needs`, queue ordering, `collie wait`, or notifications. It does not
+change `collie ls` output when piped.
+
 A task's `agent` column shows its most urgent run (`waiting` > `idle` >
 `working` > `exited` > `unknown`). Status and agent fold into one *needs*
 value (`ls`'s last column, the dashboard's STATE), first match:
@@ -444,6 +457,7 @@ if the command fails, they should continue their work.
 The [`collie-lead`](https://github.com/TSLsun/tmux-collie/blob/main/skills/collie-lead/SKILL.md) skill makes the agent that
 runs it the lead of one task: it does not write the code itself, it drives
 other runs with collie commands and checks their work.
+Repository [merge and independent-review rules](https://github.com/TSLsun/tmux-collie/blob/main/AGENTS.md#merge-and-review) apply.
 
 ```sh
 npx skills add TSLsun/tmux-collie     # installs skills/collie-lead and skills/collie-dispatch
@@ -582,6 +596,9 @@ filter, in which every key types; `?` lists every action.
 | The agent to push, open a PR and watch CI | `collie new --ship` or `set -g @collie-ship on` |
 | Move uncommitted experiments out of the way | `collie spike <id>` inside the worktree (new `exp/<id>` task, tracked changes and conflict stages; merge/rebase operation metadata is not copied) |
 | Keep `exp/*` off the remote | link `hooks/pre-push` (see README) |
+
+`spike` carries staged submodule gitlinks into the new index; it does not
+initialize submodules or copy changes inside their worktrees.
 
 ### Several repos in one task
 

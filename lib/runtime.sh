@@ -22,6 +22,43 @@ win_states() { # list-windows target args
       { print $1 "\t" $2 "\t" ($3 == "" ? "-" : $3) "\t" ($4 == "" ? "-" : $4) "\t" st }'
 }
 
+# Display-only label for a working hook run's window. Never use this as state.
+quiet_label() { # window
+  local data state hooks activity threshold age
+  [ -n "$1" ] && [ "$1" != - ] || return 0
+  data=$(tmux display-message -p -t "$1" '#{@collie_state}|#{@collie_hooks}|#{window_activity}' 2>/dev/null) || return 0
+  IFS='|' read -r state hooks activity <<<"$data"
+  [ "$state" = working ] && [ "$hooks" = 1 ] || return 0
+  threshold=$(tmux_opt @collie-quiet)
+  case $threshold in '' | *[!0-9]*) threshold=1800 ;; esac
+  case $activity in '' | *[!0-9]* | 0) return 0 ;; esac
+  stamp %s
+  age=$((NOW - activity))
+  [ "$age" -ge "$threshold" ] || return 0
+  if [ "$age" -lt 60 ]; then age="${age}s"
+  elif [ "$age" -lt 3600 ]; then age="$((age / 60))m"
+  elif [ "$age" -lt 86400 ]; then age="$((age / 3600))h"
+  elif [ "$age" -lt 604800 ]; then age="$((age / 86400))d"
+  else age="$((age / 604800))w"; fi
+  printf 'working (quiet %s)' "$age"
+}
+
+# Annotate the state field of task_runs or run_history rows without changing
+# their underlying state or window fields.
+quiet_run_rows() { # state field, window field
+  local state_field=$1 window_field=$2 row window label
+  while IFS= read -r row; do
+    [ -n "$row" ] || continue
+    window=$(printf '%s\n' "$row" | cut -f"$window_field")
+    label=$(quiet_label "$window")
+    if [ -n "$label" ]; then
+      printf '%s\n' "$row" | awk -F'\t' -v OFS='\t' -v f="$state_field" -v label="$label" '{ if ($f == "working") $f = label; print }'
+    else
+      printf '%s\n' "$row"
+    fi
+  done
+}
+
 # Agents started by hand in a session (not via `collie run`) as
 # "-<TAB>agent<TAB>state<TAB>window<TAB>pane<TAB>pid<TAB>path": panes with a
 # known agent among their process or its descendants (up to 6 levels; agents

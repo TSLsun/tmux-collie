@@ -34,12 +34,15 @@ teardown() { teardown_env; }
   collie new p
   collie run p
   pane=$(run_pane p)
+  # Wait for cat, then keep its output from interleaving with the next tty echo.
+  tmux send-keys -t "$pane" ready-marker Enter
+  wait_for "[ \"\$(tmux capture-pane -p -J -S - -t '$pane' | grep -c '^ready-marker$')\" -ge 2 ]"
   long=$(printf '%0400d' 0)
   for i in $(seq 1 12); do
     tmux send-keys -t "$pane" -l "$long"
     tmux send-keys -t "$pane" Enter
+    wait_for "[ \"\$(tmux capture-pane -p -J -S - -t '$pane' | grep -c '^$long$')\" -ge $((i * 2)) ]"
   done
-  wait_for "[ \"\$(tmux capture-pane -p -J -S - -t '$pane' | grep -c '^$long$')\" -ge 12 ]"
   run --separate-stderr collie peek p -n 12
   [ "$status" -eq 0 ]
   [ "${#lines[@]}" -eq 12 ]

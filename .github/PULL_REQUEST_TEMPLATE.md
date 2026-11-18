@@ -16,6 +16,12 @@ reason and the condition for making it mergeable. See AGENTS.md.
 
 <!-- docs/UNVERIFIED.md items this PR adds or ticks off, or "none". -->
 
+## Review
+
+<!-- Required for changes to lib/** or agents/**; docs- and test-only PRs are exempt.
+     Give the independent .collie/REVIEW.md gist and the disposition of each finding,
+     or mark the required review as pending. -->
+
 ## Checklist
 
 <!-- For a new or changed command. Tick each one, or write "n/a" and why. -->

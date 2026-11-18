@@ -47,6 +47,31 @@ need_value() { [ -n "$3" ] || die "$1: $2"; }
 . "$PLUGIN_DIR/lib/cmd/ci.sh"
 . "$PLUGIN_DIR/lib/cmd/admin.sh"
 
+# Suggest only an unambiguous near subsequence, including omitted or extra letters.
+suggest_command() {
+  local input=$1 candidate short long char match='' diff
+  [ "${#input}" -ge 2 ] || return 0
+  for candidate in $HELP_COMMANDS help; do
+    diff=$((${#input} - ${#candidate}))
+    [ "$diff" -ge -2 ] && [ "$diff" -le 2 ] || continue
+    if [ "$diff" -ge 0 ]; then short=$candidate long=$input
+    else short=$input long=$candidate
+    fi
+    while [ -n "$short" ]; do
+      char=${short:0:1}
+      short=${short:1}
+      case $long in
+        *"$char"*) long=${long#*"$char"} ;;
+        *) short=$char$short; break ;;
+      esac
+    done
+    [ -z "$short" ] && [ "$diff" -ne 0 ] || continue
+    [ -z "$match" ] || return 0
+    match=$candidate
+  done
+  [ -z "$match" ] || printf 'Did you mean: collie %s?\n' "$match" >&2
+}
+
 # every cmd_<name> function is the command <name>: adding one needs no list here
 [ $# -gt 0 ] || set -- help
 case $1 in
@@ -54,7 +79,9 @@ case $1 in
   -v | --version) echo "collie $VERSION" ;;
   *)
     if ! declare -F "cmd_$1" >/dev/null; then
-      usage >&2
+      printf 'collie: unknown command: %s\n' "$1" >&2
+      suggest_command "$1"
+      printf 'Run collie help for usage.\n' >&2
       exit 1
     fi
     cmd=$1
