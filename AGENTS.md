@@ -22,8 +22,8 @@
 
 ## Documentation
 
-- Keep README command examples and introductions concise; put detailed workflows, diagrams, and action tables in `docs/USAGE.md` and link them from the README.
-- When adding or changing a command, update the relevant usage text, completions, README example, and `docs/USAGE.md` entries in place. Do not reorder shared lists.
+- Keep README to the pitch, installation, core quickstart, configuration pointers and links. Put detailed workflows, diagrams and action tables in numbered sections of `docs/USAGE.md`; document command options in `collie help <command>`.
+- When adding or changing a command, update its help and completions, relevant README quickstart examples, and `docs/USAGE.md` entries in place. Do not reorder shared lists.
 - Usage text lives in two places: a command's `collie help <command>` text is its own plain-text file `lib/usage/<command>.txt`; the overview line and the `HELP_COMMANDS` list stay in `lib/usage.sh`.
 
 ## Working in this repo
@@ -32,6 +32,6 @@
 - collie: a command without a task id falls back to `$COLLIE_TASK`, the live task you run in. Pass explicit ids, or point `COLLIE_STATE_DIR` at a scratch directory. On live tasks run read-only commands only.
 - bats: never kill bats recursively. Kill the one hung pid, or ask.
 - bash 3.2 (macOS `/bin/bash`) is the target: no associative arrays, no `mapfile`. Brace a variable that sits before a UTF-8 glyph (`${n}●`, not `$n●`).
-- A function `cmd_<name>` in `lib/cmd/*.sh` is the command `<name>`; there is no dispatch list to edit. README `Development` says where its help text goes.
+- A function `cmd_<name>` in `lib/cmd/*.sh` is the command `<name>`; there is no dispatch list to edit. The usage guide's Development section says where its help text goes.
 - Clean up what a probe creates (tmux sessions, worktrees, agent trust records) and list any leftovers in `.collie/REPORT.md`.
 - Fill in every section of `.github/PULL_REQUEST_TEMPLATE.md` in a PR body; `gh pr create --body` does not load it for you.

@@ -1,12 +1,14 @@
 # tmux-collie — Usage at a glance
 
-Diagrams and tables for how a task moves from `collie new` to `done`. The
-[README](https://github.com/TSLsun/tmux-collie#readme) has every flag; [DESIGN.md](DESIGN.md) has the reasons.
+Diagrams and tables for how a task moves from `collie new` to `done`. Run
+`collie help <command>` for flags and command details; these docs describe the
+current `main` branch. [DESIGN.md](DESIGN.md) has the reasons.
 
 The dashboard requires fzf 0.73 or newer: earlier releases can drop background action reloads and leave completed tasks in the list.
 
 An unknown command prints a short error and, when there is one unambiguous
-close match, a suggestion. Run `collie help` for the command overview.
+close match, a suggestion. Run `collie help <command>` for command options and
+usage.
 
 ## 1. The everyday loop
 
@@ -51,7 +53,7 @@ adds a short note on stderr: the task belongs to its own agent, the session
 that created it fills `.collie/TASK.md` if needed, starts the agent with
 `collie run <id>` (or, after `--run`, finds it already running) and stops.
 
-## Comparing independent candidates
+### Comparing independent candidates
 
 `collie race <id> -n N` creates N child tasks (`<id>-1` through `<id>-N`)
 with `exp/<id>-<n>` branches from the task branch's same starting commit,
@@ -78,6 +80,7 @@ pick, reporting each as archived, skipped (already done or archived) or
 refused (dirty worktree; it stays open and pick exits non-zero). Add
 `--force` to discard their uncommitted changes. Their exp/* branches are
 kept either way.
+
 ## 2. What a task is made of
 
 ```mermaid
@@ -151,16 +154,21 @@ stateDiagram-v2
 | `done` | Accepted: worktrees and session gone, branches and record kept | nothing; `ls -a` still shows it |
 | `archived` | Abandoned: same cleanup as `done` | nothing |
 
-`done` / `archive` refuse while a worktree is dirty or a branch has commits
-not in its base branch; `--force` overrides both (and discards uncommitted
-changes). `gc` runs `done` for every task whose branches all moved past their
-start and are merged into base (squash merges count with git >= 2.38), and
+`done` refuses dirty worktrees or branches with commits not in their base;
+`archive` refuses dirty worktrees but allows unmerged commits. `--force`
+overrides these checks and discards uncommitted changes. `gc` runs `done` for
+every task whose branches all moved past their start and are merged into base
+(squash merges count with git >= 2.38), and
 skips the rest. A branch must also have commits of its own: one only
 fast-forwarded to base, or with base merged into it, is reported as
 `skipped <id>: no own commits on <repo>`. A fast-forward merge is recognised
 from the branch's reflog or a merged PR. Merged tasks whose agent is working
 or waiting are skipped too (`skipped <id>: agent waiting`); finish those with
 `collie done`.
+
+`done` and `gc` fetch `origin` first. A client viewing a finished task's
+session switches to its last session (or the most recently used one), and
+detaches only when no other session exists.
 
 Each worktree they remove or skip is listed with a bucket and its size
 (`du -sk`), then the total reclaimed:
@@ -340,11 +348,13 @@ stalled  cache (P2)
 Agents get hooks per run, nothing installed: claude, codex, gemini, omp.
 Any other command (`--agent aider`) runs without hooks. Agents you start by
 hand in a task's session are detected by process (working/idle only, no
-notifications); `collie adopt` restarts a hand-started claude, codex or omp under
-`collie run` with its conversation resumed. `collie restore` restarts the
-runs lost with a dead tmux server (claude, codex and omp by logged session ID;
-omp falls back to the worktree's latest conversation when no ID was logged).
-Agents started by hand are not recorded, so they are not restored.
+notifications); `collie adopt` restarts a hand-started claude, codex or omp
+with its conversation resumed. For Codex adoption, start with `--no-daemon`
+and install `lsof`; if the conversation cannot be identified, the process is
+left running. `collie restore` restarts runs lost with a dead tmux server:
+claude, codex and omp by logged session ID; omp falls back to the worktree's
+latest conversation when no ID was logged. Codex without a captured ID is
+skipped. Agents started by hand are not recorded, so they are not restored.
 
 `--model` and `--effort` pick a run's model and reasoning effort (claude
 `--model`/`--effort`, codex `-m`/`-c model_reasoning_effort`, omp
@@ -381,7 +391,15 @@ working. A signal counts until `collie send` prompts the run again (its
 by `--run` under its old number. Exit codes: `0` reached, `1` timeout, `2`
 cannot happen any more (the run is gone; for `--done`, without signalling).
 
-For Codex setup and limitations, see [Agent details](https://github.com/TSLsun/tmux-collie#agent-details).
+For Codex, Collie uses `--no-daemon` and `--approve-for-me` (workspace-write)
+for automatic approval review within the workspace sandbox, tested with Codex
+0.165.0. This requires a CLI supporting that flag; managed requirements may
+restrict automatic review. It preserves filesystem and network boundaries and
+does not grant unrestricted execution. See the [official auto-review docs](https://learn.chatgpt.com/docs/sandboxing/auto-review).
+Review and trust Collie's hooks in `/hooks`, including after changes; until
+trusted, state is estimated from output silence and the tmux guard is inactive.
+Waiting alerts require standard English approval/question prompts; custom
+prompts and startup trust dialogs may not notify.
 
 ### Cross-agent handoff
 
@@ -595,10 +613,16 @@ filter, in which every key types; `?` lists every action.
 | Pause an agent and pick up later | `collie pause <id> [--run N] [-p <request>]`: it writes `.collie/RESUME.md`, which `show` and the preview mention and the next `run`, `handoff` or `adopt` reads |
 | The agent to push, open a PR and watch CI | `collie new --ship` or `set -g @collie-ship on` |
 | Move uncommitted experiments out of the way | `collie spike <id>` inside the worktree (new `exp/<id>` task, tracked changes and conflict stages; merge/rebase operation metadata is not copied) |
-| Keep `exp/*` off the remote | link `hooks/pre-push` (see README) |
+| Keep `exp/*` off the remote | install `hooks/pre-push` as described below |
 
 `spike` carries staged submodule gitlinks into the new index; it does not
 initialize submodules or copy changes inside their worktrees.
+
+To prevent pushing experiment branches, install the pre-push hook:
+
+```sh
+ln -s ~/.tmux/plugins/tmux-collie/hooks/pre-push "$(git rev-parse --git-common-dir)/hooks/pre-push"
+```
 
 ### Several repos in one task
 
@@ -632,6 +656,118 @@ Limits that stay:
   agent; read its lines.
 - `race` races one repo (the first, or `-r`).
 - PR state and CI come from the cache the dashboard refreshes (every 5
-  minutes, inline in `sync` and `gc`); `brief`, `review` and the preview
-  never call `gh`.
+  minutes, inline in `sync` and `gc`); `review` and the preview never call
+  `gh`. `brief` only calls it with `--refresh`.
+
+## 7. Configuration
+
+### Configuration
+
+The README's install section lists required and optional dependencies. The
+following options configure tmux integration and task discovery:
+
+```tmux
+set -g status-right '#{collie_status} %H:%M'   # waiting, idle and working counts
+set -g @collie-status-scope 'all'              # all | tasks
+set -g @collie-status-manual 'off'             # on: count hand-started agents
+set -g @collie-agent 'claude'                  # default agent ($COLLIE_AGENT wins)
+set -g @collie-notify 'on'                     # on | off | command "title" "body"
+set -g @collie-idle-grace '3'                  # idle seconds before notification
+set -g @collie-restore 'off'                   # restore agents when plugin loads
+set -g @collie-ship 'off'                      # ship instructions for new tasks
+set -g @collie-repo-roots '~/Repos/*/*'         # ':'-separated globs ($COLLIE_REPO_ROOTS wins)
+```
+
+For per-window state, see [Agent state (per run)](#4-agent-state-per-run).
+With terminal-notifier installed, clicking a notification focuses the
+terminal and jumps to the agent pane; set `@collie-terminal` to the terminal's
+bundle id if detection fails. With mouse enabled, clicking a status count
+opens the agents behind it; tmux 3.4+ is required.
+
+For zsh completion, add `fpath+=(~/.tmux/plugins/tmux-collie/completions)`
+before `compinit`. To reach the dashboard with one terminal key, bind it to
+send `prefix h h`; for Alacritty with prefix `C-b`:
+
+```toml
+[[keyboard.bindings]]
+key = "J"
+mods = "Command"
+chars = "\u0002hh"
+```
+
+Workspaces are listed in `~/.config/collie/workspaces`, one workspace per line:
+
+```text
+shop: api web infra
+```
+
+Task data lives in `~/.local/state/collie/tasks/<id>/` and survives worktree
+removal. Each worktree gets a `.collie` symlink to that task directory,
+excluded via the repo's `info/exclude`.
+
+### Ship workflow
+
+Off by default. When on, `collie new` appends a `## Ship` section to TASK.md
+telling the agent (any agent) to finish the delivery loop: logical
+Conventional Commits with fixups squashed, push and `gh pr create` once the
+Acceptance Criteria (checked on the real artifact, not just green CI) and
+Verify checks pass (no `gh`: push and report the branch URL), wait for CI,
+fix a clearly-caused failure at most once, re-verify after any rebase or
+merge, and otherwise stop and write the failure analysis to REPORT.md. It
+never merges.
+
+```tmux
+set -g @collie-ship 'on'
+```
+
+`collie new --ship` / `--no-ship` overrides the setting per task. The new-task
+popup asks as well. Rules are stored in TASK.md; replace the defaults for all
+tasks with `~/.config/collie/SHIP.md`.
+
+### Folder tasks
+
+A directory that is not a git repository (given with `-r <path>`, or the
+current one when `new` runs outside a repo) joins a task as a **folder**: the
+agent works in it in place, with no branch and no copy. collie never writes
+into it (no `.collie` link: the run prompt names the task dir instead), and
+`done` / `archive` only close the session, without checks or removal. `gc`
+never finishes a folder-only task; `review` lists the folder's files
+modified since the task's first run. A folder another unfinished task already
+uses (or a parent or child of it) is allowed with a warning. Folders and repos
+can be mixed in one task. See [Folder tasks](FOLDER-TASKS.md).
+
+### Repository layouts
+
+| Layout | Detected by | Worktrees go to |
+|---|---|---|
+| bare | `<root>/.bare` + `<root>/.git` (`gitdir: ./.bare`) | `<root>/<slug>` |
+| normal clone | `<repo>/.git` directory | `<repo>.worktrees/<slug>` |
+
+`<slug>` is the branch name with `/` replaced by `-`. `collie new` and
+`collie add` fetch `origin` before creating worktrees; offline, they warn and
+start from local refs.
+
+Windows are tagged with `@collie_path` and `@collie_task`; task sessions
+export `COLLIE_TASK` and `COLLIE_TASK_DIR`.
+
+### Development
+
+```sh
+make check   # shellcheck + bats (uses an isolated tmux server per test)
+```
+
+Test fixtures clear inherited `COLLIE_*` settings, except `COLLIE_BASH` and
+`COLLIE_TEST_DIAGNOSTICS_DIR`, which select the test shell and diagnostics path.
+`make test` also fails if the invoking tmux server gains a session during the
+suite; the guard observes that server but never modifies it. Scripts target
+bash 3.2 (macOS `/bin/bash`).
+
+`bin/collie` is the entry point; it sources helpers from `lib/*.sh` and
+commands from `lib/cmd/*.sh`. A `cmd_<name>` function implements each command,
+its overview belongs in `lib/usage.sh`, and its `collie help <name>` text in
+`lib/usage/<name>.txt`.
+
+To try a checkout in a running tmux, set `@collie-dev on`: the menu offers
+`dev: load this checkout` and `dev: back to installed`. From a shell use
+`collie _dev load <dir>` / `collie _dev reset`.
 
