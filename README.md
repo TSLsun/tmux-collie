@@ -18,7 +18,7 @@ agent CLI (Claude, Codex, Gemini or omp). `collie doctor` checks dependencies.
 With [tpm](https://github.com/tmux-plugins/tpm):
 
 ```tmux
-set -g @plugin 'TSLsun/tmux-collie'  # or 'TSLsun/tmux-collie#v0.2.0' to pin
+set -g @plugin 'TSLsun/tmux-collie'  # or 'TSLsun/tmux-collie#v0.3.0' to pin
 ```
 
 Then press `prefix + I`. The plugin prepends its `bin/` to tmux's global
