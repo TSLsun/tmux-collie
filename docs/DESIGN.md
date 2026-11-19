@@ -202,7 +202,7 @@ the complete command reference.
 | `collie set [<id>] priority=P1 title="..."` | Update priority or title; a bare field reads stdin |
 | `collie edit [<id>]` | Open TASK.md in `$EDITOR` (also `new --edit`, dash `e` or `? e`, menu `e`) |
 | `collie review [<id>] [-p]` | Per-repo commits, diff stat (`-p` patch), dirty files (folders: files modified since the first run), then REPORT.md |
-| `collie spike <id>` | New `exp/<id>` task from the current worktree, carrying its uncommitted tracked changes (`git stash create`); `-u` also copies untracked, non-ignored files; source untouched |
+| `collie spike <id>` | New `exp/<id>` task from the current worktree, carrying its uncommitted tracked changes and unresolved index stages; `-u` also copies untracked, non-ignored files; source untouched |
 | `collie done [<id>] [--force]` | Accept: safety checks, then remove worktrees and session |
 | `collie archive [<id>] [--force]` | Abandon: same cleanup; unmerged commits are fine (branch kept), only dirty worktrees refuse |
 | `collie history [-n] [pattern]` | Finished tasks, newest first: date, status, id, title, branches, PR (from REPORT.md); pattern searches TASK.md, REPORT.md and decisions.tsv; fzf picker with preview, enter pages `show` |
@@ -389,7 +389,8 @@ unless marked *manual*.
 ### P5 — Review & lifecycle ✅
 - `review` (multi-repo diff + REPORT), `gc`.
 - `spike`: branch off with uncommitted changes into `exp/*` without touching
-  the source worktree (`git stash create`).
+  the source worktree. Unresolved index stages and working files are copied, but
+  merge/rebase operation metadata is not.
 - Optional pre-push hook snippet blocking `exp/*`.
 - **Acceptance:** after `spike` the source worktree's `git status` is unchanged;
   `review` shows diffs from two repos.
