@@ -84,6 +84,8 @@ collie() {
 # `ln -sn` lets exactly one win. Unused candidates go with the suite tempdir.
 repo_template() {
   local cache=${BATS_SUITE_TMPDIR:-$BATS_FILE_TMPDIR}
+  # Bats and worktree fixtures can resolve the same macOS temp path differently.
+  cache="$(cd "$cache" && pwd -P)"
   TPL="$cache/tpl"
   [ -e "$TPL" ] && return
   local t

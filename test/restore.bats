@@ -46,13 +46,17 @@ teardown() {
 
 # kills the test's private server, the way a crash would
 server_dies() {
-  local pid
+  local pid socket
   pid=$(tmux display -p '#{pid}')
+  socket="$TMUX_TMPDIR/tmux-$(id -u)/default"
   TMUX_DIAGNOSTICS_PIDS="${TMUX_DIAGNOSTICS_PIDS:-} $pid"
   tmux_diagnostic_event "sending SIGTERM to pid=$pid"
   kill "$pid"
+  # SIGTERM may leave a stale socket, so remove it only after the server exits.
   wait_for '! tmux list-sessions >/dev/null 2>&1' || return
-  tmux_diagnostic_event "list-sessions stopped succeeding for pid=$pid"
+  wait_for "! kill -0 '$pid' 2>/dev/null" || return
+  rm -f "$socket"
+  tmux_diagnostic_event "server pid=$pid exited; removed its stale socket"
 }
 
 sessions_logged() { [ "$(grep -c "agent_session	" "$(task_dir x)/events.log")" -eq "$1" ]; }
