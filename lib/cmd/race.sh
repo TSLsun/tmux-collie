@@ -16,8 +16,7 @@ cmd_race() {
     esac
     shift
   done
-  [ -n "$id" ] || id=${COLLIE_TASK:-}
-  [ -n "$id" ] || die "usage: collie race <id> -n N [--agent a,b,c] [--model m] [--effort e] [-r repo] [-p prompt]"
+  [ -n "$id" ] || [ -n "${COLLIE_TASK:-}" ] || die "usage: collie race <id> -n N [--agent a,b,c] [--model m] [--effort e] [-r repo] [-p prompt]"
   task_id "$id"
   [[ $count =~ ^[2-9]$ ]] || die "race: -n must be 2..9"
   command -v tmux >/dev/null || die "race: tmux required"

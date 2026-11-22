@@ -33,6 +33,14 @@ release_candidates() {
   collie wait race-2 --run 1 --done --timeout 30
 }
 
+@test "race: uses COLLIE_TASK when no id is supplied" {
+  COLLIE_TASK=race run collie race -n 2 --agent race-fake,race-fake
+  [ "$status" -eq 0 ]
+  [[ "$output" == *'race-1 1 '* && "$output" == *'race-2 1 '* ]]
+  grep -q "race_started.*base=.* repo=A n=2" "$(task_dir race)/events.log"
+  release_candidates
+}
+
 @test "race: candidates start from one base, finish, review and pick while preserving branches" {
   local base parent picked
   base=$(git -C "$REPO/main" rev-parse HEAD)
