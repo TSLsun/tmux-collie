@@ -452,9 +452,23 @@ cmd_spike() {
 # not is reported per repo. Merged tasks whose agent is working or waiting
 # are skipped.
 cmd_gc() {
-  local dry=0 d id name c b p start tip landed unmerged own stop pr err total=0 found=0
+  local dry=0 d id name c b p start tip landed unmerged own stop pr err stale path pid total=0 found=0
   [ "${1:-}" != -n ] || dry=1
   load_tmux_state
+  if [ "$dry" -eq 0 ]; then
+    stale=$(collie_stale_temps "$STATE_DIR")
+    while IFS=$TAB read -r path pid; do
+      [ -n "$path" ] || continue
+      if [ -d "$path" ]; then
+        if rm -rf "$path"; then echo "removed stale temp $path (writer pid $pid is dead)"
+        else warn "could not remove stale temp $path"; fi
+      elif rm -f "$path"; then
+        echo "removed stale temp $path (writer pid $pid is dead)"
+      else
+        warn "could not remove stale temp $path"
+      fi
+    done <<<"$stale"
+  fi
   for d in "$TASKS_DIR"/*; do
     [ -f "$d/TASK.md" ] || continue
     fm_get "$d/TASK.md" status
@@ -646,16 +660,7 @@ cmd_sync() {
     conflicts_predict >/dev/null
     return
   fi
-  # pairs that touch a listed id; when none were listed, all of them
-  out=$(conflicts_predict | IDS=$ids awk -F'\t' -v all="$all" '
-    BEGIN { split(ENVIRON["IDS"], a, "\n"); for (i in a) want[a[i]] = 1 }
-    all || $1 in want || $2 in want { print $1 " × " $2 " " $3 ": conflict in " $4 }')
-  if [ -n "$out" ]; then
-    echo "between tasks (whichever lands first, the other conflicts):"
-    printf '%s\n' "$out" | sed 's/^/  /'
-  else
-    echo "between tasks: no conflicts"
-  fi
+  conflicts_predict "$ids" "$all"
 }
 
 # Hands a task's sync conflicts to its agent in one message, so repos that
@@ -705,22 +710,68 @@ sync_handoff() { # id window agent conflicts (repo, path, base, branch, files li
 # merged with the first into a dangling commit). The relation is symmetric
 # in practice, so each pair is merged once. Branches merged into base or
 # without commits of their own take no part; one that conflicts with base
-# takes no part in pairs. Rewrites <task>/conflicts.tsv for every active task
-# (see conflicts_cached) and prints the pairs: id, other id, repo, files.
-# conflicts.tsv: git dir, base ref and sha, branch ref and sha, then "-" (the
-# line that keys the task), "base", or the other task with its branch ref
-# and sha; then the files ("-" on the key line).
+# takes no part in pairs. Rewrites <task>/conflicts.tsv. Entries contain the
+# git dir, base ref/sha, branch ref/sha, then "-", "base", or another task and
+# its ref/sha, followed by files. Without arguments it prints pair rows (id,
+# other id, repo, files); with ids and all it prints the filtered `sync -n`
+# summary.
+conflicts_predict_cleanup() { # pid
+  rm -f "$TASKS_DIR"/*/conflicts.tsv."$1" 2>/dev/null || true
+}
+
+conflicts_predict_run_saved_trap() { # output of `trap -p EXIT`
+  local saved=$1
+  [ -n "$saved" ] || return 0
+  eval "set -- $saved"
+  eval "${3:-}"
+}
+
+conflicts_predict_exit() {
+  conflicts_predict_cleanup "${CONFLICTS_PREDICT_PID:-$$}"
+  conflicts_predict_run_saved_trap "${CONFLICTS_PREDICT_OLD_EXIT:-}"
+}
+
+conflicts_predict_append() { # task_dir line
+  [ -d "$1" ] || return 0
+  if { printf '%s\n' "$2" >>"$1/conflicts.tsv.$$"; } 2>/dev/null; then
+    return 0
+  fi
+  [ -d "$1" ] || return 0
+  return 1
+}
+
 conflicts_predict() {
   local d id name c b p ref tip base bsha files head key rc i j n=0 tmps=""
+  local old_exit pretty=0 pretty_ids="" pretty_all=0 selected printed=0
   local -a C ID NAME REF TIP HEAD KEY
+  if [ $# -gt 0 ]; then
+    pretty=1
+    pretty_ids=$1
+    pretty_all=${2:-0}
+  fi
+  old_exit=$(trap -p EXIT)
+  CONFLICTS_PREDICT_PID=$$
+  CONFLICTS_PREDICT_OLD_EXIT=$old_exit
+  trap 'conflicts_predict_exit' EXIT
   for d in "$TASKS_DIR"/*; do
     [ -f "$d/TASK.md" ] || continue
-    fm_get "$d/TASK.md" status
+    if ! fm_get "$d/TASK.md" status 2>/dev/null; then
+      [ -f "$d/TASK.md" ] || continue
+      return 1
+    fi
     case $FM in done | archived) continue ;; esac
     id=${d##*/}
-    : >"$d/conflicts.tsv.$$"
+    if ! { : >"$d/conflicts.tsv.$$"; } 2>/dev/null; then
+      [ -d "$d" ] || continue
+      return 1
+    fi
     tmps="$tmps$d"$'\n'
-    while IFS=$TAB read -r name c b p; do
+    if ! { exec 9<"$d/repos.tsv"; } 2>/dev/null; then
+      [ -d "$d" ] || continue
+      [ -f "$d/repos.tsv" ] || continue
+      return 1
+    fi
+    while IFS=$TAB read -r name c b p <&9; do
       [ "$c" != - ] || continue
       ref=refs/heads/$b
       tip=$(git --git-dir="$c" rev-parse -q --verify "$ref") || continue
@@ -731,14 +782,14 @@ conflicts_predict() {
       ! git --git-dir="$c" merge-base --is-ancestor "$tip" "$bsha" || continue
       ! merged_into "$c" "$b" "$bsha" || continue
       key="$c$TAB$base$TAB$bsha$TAB$ref$TAB$tip"
-      printf '%s\t-\t-\t-\t-\n' "$key" >>"$d/conflicts.tsv.$$"
+      conflicts_predict_append "$d" "$key"$'\t-\t-\t-\t-'
       if git --git-dir="$c" merge-base --is-ancestor "$bsha" "$tip"; then
         head=$tip
       else
         files=$(git --git-dir="$c" merge-tree --write-tree --name-only --no-messages "$bsha" "$tip") && rc=0 || rc=$?
         if [ "$rc" -eq 1 ]; then
           files=${files#*$'\n'}
-          printf '%s\tbase\t-\t-\t%s\n' "$key" "${files//$'\n'/ }" >>"$d/conflicts.tsv.$$"
+          conflicts_predict_append "$d" "$key"$'\tbase\t-\t-\t'"${files//$'\n'/ }"
           continue
         fi
         [ "$rc" -eq 0 ] || continue
@@ -748,21 +799,53 @@ conflicts_predict() {
       fi
       C[n]=$c ID[n]=$id NAME[n]=$name REF[n]=$ref TIP[n]=$tip HEAD[n]=$head KEY[n]=$key
       n=$((n + 1))
-    done <"$d/repos.tsv"
+    done
+    exec 9<&-
   done
   for ((i = 0; i < n; i++)); do
     for ((j = i + 1; j < n; j++)); do
       [ "${C[i]}" = "${C[j]}" ] || continue
+      [ -d "$TASKS_DIR/${ID[i]}" ] && [ -d "$TASKS_DIR/${ID[j]}" ] || continue
       files=$(git --git-dir="${C[i]}" merge-tree --write-tree --name-only --no-messages "${HEAD[i]}" "${TIP[j]}") && rc=0 || rc=$?
       [ "$rc" -eq 1 ] || continue
       files=${files#*$'\n'}
       files=${files//$'\n'/ }
-      printf '%s\t%s\t%s\t%s\t%s\n' "${KEY[i]}" "${ID[j]}" "${REF[j]}" "${TIP[j]}" "$files" >>"$TASKS_DIR/${ID[i]}/conflicts.tsv.$$"
-      printf '%s\t%s\t%s\t%s\t%s\n' "${KEY[j]}" "${ID[i]}" "${REF[i]}" "${TIP[i]}" "$files" >>"$TASKS_DIR/${ID[j]}/conflicts.tsv.$$"
-      printf '%s\t%s\t%s\t%s\n' "${ID[i]}" "${ID[j]}" "${NAME[i]}" "$files"
+      [ -d "$TASKS_DIR/${ID[i]}" ] && [ -d "$TASKS_DIR/${ID[j]}" ] || continue
+      conflicts_predict_append "$TASKS_DIR/${ID[i]}" "${KEY[i]}$TAB${ID[j]}$TAB${REF[j]}$TAB${TIP[j]}$TAB$files"
+      conflicts_predict_append "$TASKS_DIR/${ID[j]}" "${KEY[j]}$TAB${ID[i]}$TAB${REF[i]}$TAB${TIP[i]}$TAB$files"
+      if [ "$pretty" -eq 1 ]; then
+        selected=0
+        if [ "$pretty_all" -eq 1 ]; then
+          selected=1
+        else
+          case $'\n'"$pretty_ids"$'\n' in
+            *$'\n'"${ID[i]}"$'\n'* | *$'\n'"${ID[j]}"$'\n'*) selected=1 ;;
+          esac
+        fi
+        if [ "$selected" -eq 1 ]; then
+          [ "$printed" -eq 1 ] || echo "between tasks (whichever lands first, the other conflicts):"
+          echo "  ${ID[i]} × ${ID[j]} ${NAME[i]}: conflict in $files"
+          printed=1
+        fi
+      else
+        printf '%s\t%s\t%s\t%s\n' "${ID[i]}" "${ID[j]}" "${NAME[i]}" "$files"
+      fi
     done
   done
+  if [ "$pretty" -eq 1 ] && [ "$printed" -eq 0 ]; then
+    echo "between tasks: no conflicts"
+  fi
   while IFS= read -r d; do
-    if [ -n "$d" ]; then mv "$d/conflicts.tsv.$$" "$d/conflicts.tsv"; fi
+    [ -n "$d" ] || continue
+    [ -d "$d" ] || continue
+    [ -f "$d/conflicts.tsv.$$" ] || continue
+    if ! mv "$d/conflicts.tsv.$$" "$d/conflicts.tsv"; then
+      [ -d "$d" ] || continue
+      return 1
+    fi
   done <<<"$tmps"
+  conflicts_predict_cleanup "$$"
+  trap - EXIT
+  [ -z "$old_exit" ] || eval "$old_exit"
+  unset CONFLICTS_PREDICT_PID CONFLICTS_PREDICT_OLD_EXIT
 }

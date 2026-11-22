@@ -2,7 +2,7 @@
 # Sourced by bin/collie: doctor, repos, workspaces.
 
 cmd_doctor() {
-  local fail=0 v a d id name c b p live commons="" owned=""
+  local fail=0 v a d id name c b p live commons="" owned="" path pid
   echo "dependencies:"
   doc_line ok "bash $BASH_VERSION"
   if v=$(git --version 2>/dev/null); then doc_line ok "$v"; else doc_line FAIL "git not found"; fail=1; fi
@@ -72,6 +72,11 @@ cmd_doctor() {
     [ -d "$c" ] || continue
     doc_orphans "$c" "$owned"
   done < <(printf '%s' "$commons" | sort -u)
+  while IFS=$TAB read -r path pid; do
+    [ -n "$path" ] || continue
+    doc_line note "stale Collie temp path $path (writer pid $pid is not running; remove with: collie gc)"
+  done < <(collie_stale_temps "$STATE_DIR")
+
   return "$fail"
 }
 

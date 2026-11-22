@@ -335,6 +335,40 @@ EOF
   [ "$(printf '%s\n' "$output" | grep -c 'note  prunable worktree')" -eq 1 ]
 }
 
+@test "doctor reports dead Collie temps and gc removes them without touching live writers" {
+  export COLLIE_AGENT=sleep
+  local dead=999999999 dir conflicts ci decisions live dash msg out
+  dir=$(task_dir x)
+  conflicts="$dir/conflicts.tsv.$dead"
+  ci="$dir/CI.md.$dead"
+  decisions="$dir/decisions.tsv.$dead"
+  live="$dir/pr.tsv.$$"
+  dash="$COLLIE_STATE_DIR/dash.$dead"
+  msg="$dash/msg.$dead"
+  out="$dash/out.$dead"
+  mkdir -p "$dash"
+  printf dead >"$conflicts"
+  printf dead >"$ci"
+  printf dead >"$decisions"
+  printf live >"$live"
+  printf dead >"$msg"
+  printf dead >"$out"
+
+  run collie doctor
+  [ "$status" -eq 0 ]
+  for path in "$conflicts" "$ci" "$decisions" "$dash" "$msg" "$out"; do
+    [[ "$output" == *"stale Collie temp path $path (writer pid $dead is not running; remove with: collie gc)"* ]]
+  done
+  [[ "$output" != *"$live"* ]]
+
+  run collie gc
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"removed stale temp $conflicts"* ]]
+  [ ! -e "$conflicts" ] && [ ! -e "$ci" ] && [ ! -e "$decisions" ]
+  [ ! -e "$dash" ]
+  [ -f "$live" ]
+}
+
 @test "doctor: scans the current repository without a task" {
   export COLLIE_AGENT=sleep
   make_normal_repo C

@@ -26,6 +26,66 @@ land() { # file [content]
 
 wt() { echo "$TMP/repos/A/feat-$1"; }
 
+install_blocking_git() { # merge-tree invocation to block
+  export REAL_GIT="$(command -v git)" GIT_CALLS="$TMP/git-calls" GIT_MARKER="$TMP/git-marker"
+  export GIT_RELEASE="$TMP/git-release" GIT_BLOCK_CALL=$1
+  mkdir -p "$TMP/block"
+  : >"$GIT_CALLS"
+  cat >"$TMP/block/git" <<'SH'
+#!/bin/bash
+for arg do
+  [ "$arg" = merge-tree ] || continue
+  count=$(cat "$GIT_CALLS" 2>/dev/null) || count=0
+  count=$((count + 1))
+  printf '%s\n' "$count" >"$GIT_CALLS"
+  if [ "$count" -eq "$GIT_BLOCK_CALL" ]; then
+    : >"$GIT_MARKER"
+    while [ ! -e "$GIT_RELEASE" ]; do sleep 0.01; done
+  fi
+  break
+done
+exec "$REAL_GIT" "$@"
+SH
+  chmod +x "$TMP/block/git"
+  export PATH="$TMP/block:$PATH"
+}
+
+@test "sync -n: interruption during conflict prediction removes temporary files" {
+  collie new x --no-window
+  collie new y --no-window
+  commit_in "$(wt x)" f from-x
+  commit_in "$(wt y)" f from-y
+  install_blocking_git 3
+  "${COLLIE_BASH:-bash}" "$COLLIE_ROOT/bin/collie" sync -n >"$TMP/sync-output" 2>&1 &
+  local pid=$!
+  wait_for "[ -e '$GIT_MARKER' ]"
+  [ -f "$(task_dir x)/conflicts.tsv.$pid" ]
+  [ -f "$(task_dir y)/conflicts.tsv.$pid" ]
+  kill -TERM "$pid"
+  : >"$GIT_RELEASE"
+  wait "$pid" || true
+  [ ! -e "$(task_dir x)/conflicts.tsv.$pid" ]
+  [ ! -e "$(task_dir y)/conflicts.tsv.$pid" ]
+}
+
+@test "sync -n: a task directory removed during prediction does not fail or leak" {
+  collie new x --no-window
+  collie new y --no-window
+  commit_in "$(wt x)" f from-x
+  commit_in "$(wt y)" f from-y
+  install_blocking_git 3
+  "${COLLIE_BASH:-bash}" "$COLLIE_ROOT/bin/collie" sync -n >"$TMP/sync-output" 2>&1 &
+  local pid=$!
+  wait_for "[ -e '$GIT_MARKER' ]"
+  rm -rf "$(task_dir x)"
+  : >"$GIT_RELEASE"
+  wait "$pid"
+  [ ! -e "$(task_dir x)/conflicts.tsv.$pid" ]
+  [ ! -e "$(task_dir y)/conflicts.tsv.$pid" ]
+  [ -f "$(task_dir y)/conflicts.tsv" ]
+  [[ "$(cat "$TMP/sync-output")" == *"between tasks: no conflicts"* ]]
+}
+
 @test "sync: merges base into a clean branch; up-to-date, merged and untouched tasks are left alone" {
   for t in s u m; do collie new "$t" --no-window; done
   commit_in "$(wt s)" s

@@ -107,6 +107,36 @@ log_event() {
   printf '%s\t%s\t%s\n' "$NOW" "$2" "${3:-}" >>"$TASKS_DIR/$1/events.log"
 }
 
+# PID-suffixed Collie temporary paths. Keep this list explicit:
+# an arbitrary user file ending in a number is not disposable.
+collie_temp_pid() { # path; sets COLLIE_TEMP_PID
+  local name=${1##*/} pid
+  [[ $name =~ \.([0-9]+)$ ]] || return 1
+  pid=${BASH_REMATCH[1]}
+  case ${name%.*} in
+    conflicts.tsv | CI.md | pr.tsv | decisions.tsv | msg | out) [ -f "$1" ] || return 1 ;;
+    dash) [ -d "$1" ] || return 1 ;;
+    *) return 1 ;;
+  esac
+  COLLIE_TEMP_PID=$pid
+}
+
+collie_pid_alive() { # pid
+  kill -0 "$1" 2>/dev/null && return 0
+  ps -p "$1" -o pid= 2>/dev/null | grep -q '[0-9]'
+}
+
+# Prints path and writer pid for known Collie temps whose pid is gone.
+collie_stale_temps() { # state_dir
+  local path
+  [ -d "$1" ] || return 0
+  while IFS= read -r -d '' path; do
+    collie_temp_pid "$path" || continue
+    collie_pid_alive "$COLLIE_TEMP_PID" && continue
+    printf '%s\t%s\n' "$path" "$COLLIE_TEMP_PID"
+  done < <(find "$1" -depth -mindepth 1 \( -type f -o -type d \) -print0 2>/dev/null)
+}
+
 # awk functions for an event's "k=v k=v ..." fields (events.log field 3),
 # prepended to a program: awk -F'\t' "$AWK_KV"'$2 == "x" { print kv("run") }'.
 # kv(k): key k of the current line's $3; kvs(s, k): of string s. The first
