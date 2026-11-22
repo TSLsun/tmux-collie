@@ -2,7 +2,7 @@
 
 # Exercise the allocator's lock boundary without starting a tmux server.
 @test "run allocation: false-success mkdir cannot enter or remove another writer's lock" {
-  source "$BATS_TEST_DIRNAME/../lib/cmd/agents.sh"
+  source "$BATS_TEST_DIRNAME/../lib/cmd/run.sh"
   TASKS_DIR="$BATS_TEST_TMPDIR/tasks"
   mkdir -p "$TASKS_DIR/x/run.lock"
   printf 'existing events\n' >"$TASKS_DIR/x/events.log"
