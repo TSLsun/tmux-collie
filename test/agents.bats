@@ -335,9 +335,9 @@ EOF
   [ "$(printf '%s\n' "$output" | grep -c 'note  prunable worktree')" -eq 1 ]
 }
 
-@test "doctor reports dead Collie temps and gc removes them without touching live writers" {
+@test "doctor reports dead Collie temps and gc removes them without touching live writers or look-alikes" {
   export COLLIE_AGENT=sleep
-  local dead=999999999 dir conflicts ci decisions live dash msg out
+  local dead=999999999 dir conflicts ci decisions live dash msg out notes lookalike_file lookalike_dir
   dir=$(task_dir x)
   conflicts="$dir/conflicts.tsv.$dead"
   ci="$dir/CI.md.$dead"
@@ -346,19 +346,26 @@ EOF
   dash="$COLLIE_STATE_DIR/dash.$dead"
   msg="$dash/msg.$dead"
   out="$dash/out.$dead"
-  mkdir -p "$dash"
+  notes="$COLLIE_STATE_DIR/notes"
+  lookalike_file="$notes/msg.$dead"
+  lookalike_dir="$notes/dash.$dead"
+  mkdir -p "$dash" "$lookalike_dir"
   printf dead >"$conflicts"
   printf dead >"$ci"
   printf dead >"$decisions"
   printf live >"$live"
   printf dead >"$msg"
   printf dead >"$out"
+  printf user >"$lookalike_file"
+  printf user >"$lookalike_dir/keep"
 
   run collie doctor
   [ "$status" -eq 0 ]
   for path in "$conflicts" "$ci" "$decisions" "$dash" "$msg" "$out"; do
     [[ "$output" == *"stale Collie temp path $path (writer pid $dead is not running; remove with: collie gc)"* ]]
   done
+  [[ "$output" != *"stale Collie temp path $lookalike_file"* ]]
+  [[ "$output" != *"stale Collie temp path $lookalike_dir"* ]]
   [[ "$output" != *"$live"* ]]
 
   run collie gc
@@ -367,6 +374,20 @@ EOF
   [ ! -e "$conflicts" ] && [ ! -e "$ci" ] && [ ! -e "$decisions" ]
   [ ! -e "$dash" ]
   [ -f "$live" ]
+  [ -f "$lookalike_file" ] && [ -f "$lookalike_dir/keep" ]
+}
+
+@test "gc removes a stale temp safely when the state path has tabs and newlines" {
+  local state="$TMP/state"$'\t'"with tab"$'\n'"and newline" sibling="$TMP/state" stale
+  stale="$state/tasks/x/conflicts.tsv.999999999"
+  mkdir -p "$sibling" "$state/tasks/x"
+  printf keep >"$sibling/keep"
+  printf stale >"$stale"
+
+  run env COLLIE_STATE_DIR="$state" "${COLLIE_BASH:-bash}" "$COLLIE_ROOT/bin/collie" gc
+  [ "$status" -eq 0 ]
+  [ ! -e "$stale" ]
+  [ "$(cat "$sibling/keep")" = keep ]
 }
 
 @test "doctor: scans the current repository without a task" {

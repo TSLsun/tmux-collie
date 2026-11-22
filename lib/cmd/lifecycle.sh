@@ -452,12 +452,11 @@ cmd_spike() {
 # not is reported per repo. Merged tasks whose agent is working or waiting
 # are skipped.
 cmd_gc() {
-  local dry=0 d id name c b p start tip landed unmerged own stop pr err stale path pid total=0 found=0
+  local dry=0 d id name c b p start tip landed unmerged own stop pr err path pid total=0 found=0
   [ "${1:-}" != -n ] || dry=1
   load_tmux_state
   if [ "$dry" -eq 0 ]; then
-    stale=$(collie_stale_temps "$STATE_DIR")
-    while IFS=$TAB read -r path pid; do
+    while IFS= read -r -d '' path && IFS= read -r -d '' pid; do
       [ -n "$path" ] || continue
       if [ -d "$path" ]; then
         if rm -rf "$path"; then echo "removed stale temp $path (writer pid $pid is dead)"
@@ -467,7 +466,7 @@ cmd_gc() {
       else
         warn "could not remove stale temp $path"
       fi
-    done <<<"$stale"
+    done < <(collie_stale_temps "$STATE_DIR")
   fi
   for d in "$TASKS_DIR"/*; do
     [ -f "$d/TASK.md" ] || continue

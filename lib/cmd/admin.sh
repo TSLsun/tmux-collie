@@ -72,7 +72,7 @@ cmd_doctor() {
     [ -d "$c" ] || continue
     doc_orphans "$c" "$owned"
   done < <(printf '%s' "$commons" | sort -u)
-  while IFS=$TAB read -r path pid; do
+  while IFS= read -r -d '' path && IFS= read -r -d '' pid; do
     [ -n "$path" ] || continue
     doc_line note "stale Collie temp path $path (writer pid $pid is not running; remove with: collie gc)"
   done < <(collie_stale_temps "$STATE_DIR")

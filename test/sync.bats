@@ -50,6 +50,55 @@ SH
   export PATH="$TMP/block:$PATH"
 }
 
+run_conflicts_predict_abort() { # int|die, abort after both task temps exist
+  local action=$1 rc=0 logfile="$TMP/predict-output-$1"
+  perl -e '$SIG{INT} = "DEFAULT"; exec @ARGV or die $!' -- "${COLLIE_BASH:-bash}" -c '
+    root=$1 action=$2 marker=$3
+    source "$root/bin/collie" --version
+    base_calls=0
+    default_base() {
+      base_calls=$((base_calls + 1))
+      BASE=origin/main
+      [ "$base_calls" -eq 2 ] || return 0
+      [ -f "$TASKS_DIR/x/conflicts.tsv.$$" ] &&
+        [ -f "$TASKS_DIR/y/conflicts.tsv.$$" ] || exit 97
+      printf "%s\n" "$action" >"$marker"
+      case $action in
+        int) kill -INT "$$" ;;
+        die) die "injected mid-loop failure" ;;
+      esac
+    }
+    conflicts_predict
+  ' _ "$COLLIE_ROOT" "$action" "$TMP/predict-$action" >"$logfile" 2>&1 || rc=$?
+  status=$rc
+  output=$(cat "$logfile")
+}
+
+@test "conflicts_predict: SIGINT after creating both temps cleans them" {
+  collie new x --no-window
+  collie new y --no-window
+  commit_in "$(wt x)" f from-x
+  commit_in "$(wt y)" f from-y
+
+  run_conflicts_predict_abort int
+  [ "$status" -ne 0 ]
+  [ "$(cat "$TMP/predict-int")" = int ]
+  [ -z "$(find "$COLLIE_STATE_DIR/tasks" -type f -name 'conflicts.tsv.*' -print)" ]
+}
+
+@test "conflicts_predict: die after creating both temps cleans them" {
+  collie new x --no-window
+  collie new y --no-window
+  commit_in "$(wt x)" f from-x
+  commit_in "$(wt y)" f from-y
+
+  run_conflicts_predict_abort die
+  [ "$status" -ne 0 ]
+  [[ "$output" == *"collie: injected mid-loop failure"* ]]
+  [ "$(cat "$TMP/predict-die")" = die ]
+  [ -z "$(find "$COLLIE_STATE_DIR/tasks" -type f -name 'conflicts.tsv.*' -print)" ]
+}
+
 @test "sync -n: interruption during conflict prediction removes temporary files" {
   collie new x --no-window
   collie new y --no-window
