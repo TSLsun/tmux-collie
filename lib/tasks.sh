@@ -143,6 +143,7 @@ collie_temp_pid() { # path state_dir; sets COLLIE_TEMP_PID
         rel=${rel#*/}
         [ "$rel" = "$name" ] || return 1
         [[ $parent =~ ^dash\.([0-9]+)$ ]] || return 1
+        # out.N can still be written by a child after the parent shell exits.
         case ${name%.*} in
           msg | out) [ -f "$1" ] || return 1 ;;
           *) return 1 ;;
@@ -167,7 +168,7 @@ collie_stale_temps() { # state_dir
     collie_temp_pid "$path" "$state_dir" || continue
     collie_pid_alive "$COLLIE_TEMP_PID" && continue
     printf '%s\0%s\0' "$path" "$COLLIE_TEMP_PID"
-  done < <(find "$state_dir" -depth -mindepth 1 \( -type f -o -type d \) -print0 2>/dev/null)
+  done < <(find -H "$state_dir" -depth -mindepth 1 \( -type f -o -type d \) -print0 2>/dev/null)
 }
 
 # awk functions for an event's "k=v k=v ..." fields (events.log field 3),

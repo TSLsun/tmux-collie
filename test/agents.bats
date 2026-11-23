@@ -390,6 +390,22 @@ EOF
   [ "$(cat "$sibling/keep")" = keep ]
 }
 
+@test "gc scans stale temps through a symlinked state directory" {
+  local target="$TMP/state-target" state="$TMP/state-link" dead=999999999 stale
+  mkdir -p "$target/tasks/x"
+  ln -s "$target" "$state"
+  stale="$state/tasks/x/conflicts.tsv.$dead"
+  printf stale >"$stale"
+
+  run env COLLIE_STATE_DIR="$state" "${COLLIE_BASH:-bash}" "$COLLIE_ROOT/bin/collie" doctor
+  [ "$status" -eq 0 ]
+  [[ "$output" == *"stale Collie temp path $stale (writer pid $dead is not running; remove with: collie gc)"* ]]
+
+  run env COLLIE_STATE_DIR="$state" "${COLLIE_BASH:-bash}" "$COLLIE_ROOT/bin/collie" gc
+  [ "$status" -eq 0 ]
+  [ ! -e "$stale" ]
+}
+
 @test "doctor: scans the current repository without a task" {
   export COLLIE_AGENT=sleep
   make_normal_repo C
