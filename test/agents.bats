@@ -391,6 +391,7 @@ EOF
 }
 
 @test "gc scans stale temps through a symlinked state directory" {
+  export COLLIE_AGENT=sleep
   local target="$TMP/state-target" state="$TMP/state-link" dead=999999999 stale
   mkdir -p "$target/tasks/x"
   ln -s "$target" "$state"
