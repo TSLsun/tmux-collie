@@ -7,7 +7,7 @@ cmd__exec() { # id run argv...
   shift 2
   # wait until `collie run` has tagged the window, so early hooks land
   for ((i = 1; i <= 40; i++)); do
-    [ -z "$(tmux display-message -p -t "${TMUX_PANE:-}" '#{@collie_run}' 2>/dev/null)" ] || break
+    [ -z "$(tmux_display_message -p -t "${TMUX_PANE:-}" '#{@collie_run}' 2>/dev/null)" ] || break
     sleep 0.05
   done
   trap : INT
@@ -60,7 +60,7 @@ cmd_signal() {
   [ $# -eq 1 ] && [ "$1" = "done" ] || die "usage: collie signal done"
   task_id ""
   [ -n "$run" ] || [ -z "${TMUX_PANE:-}" ] ||
-    run=$(tmux display-message -p -t "$TMUX_PANE" '#{@collie_run}' 2>/dev/null || true)
+    run=$(tmux_display_message -p -t "$TMUX_PANE" '#{@collie_run}' 2>/dev/null || true)
   [[ $run =~ ^[1-9][0-9]*$ ]] || die "signal: not inside a collie run"
   log_event "$id" run_signal "run=$run signal=done"
 }
@@ -73,7 +73,7 @@ cmd_state() {
   local pane=${TMUX_PANE:-$(ancestor_pane)}
   [ -n "$pane" ] || return 0
   # a hook proves the agent is past its startup dialogs: ends _startup-watch
-  tmux set-option -wu -t "$pane" @collie_startup 2>/dev/null || true
+  tmux_unset_window_opt "$pane" @collie_startup 2>/dev/null || true
   set_state "$pane" "$1"
 }
 
@@ -82,8 +82,8 @@ cmd_state() {
 cmd__codex-hook() {
   local pane=${TMUX_PANE:-$(ancestor_pane)}
   [ -n "$pane" ] || return 0
-  tmux set-option -w -t "$pane" @collie_hooks 1 2>/dev/null || return 0
-  tmux set-option -wu -t "$pane" @collie_startup 2>/dev/null || true
+  tmux_set_window_opt "$pane" @collie_hooks 1 2>/dev/null || return 0
+  tmux_unset_window_opt "$pane" @collie_startup 2>/dev/null || true
   # All Codex lifecycle payloads carry session_id, including hooks first
   # trusted after SessionStart was skipped.
   cmd__session
@@ -93,15 +93,15 @@ cmd__codex-hook() {
       if [ "${2:-}" = working ]; then
         # A different tool may finish while a human prompt is still open.
         # Leave the observer authoritative until the dialog closes.
-        [ -z "$(tmux show-options -wqv -t "$pane" @collie_codex_pending 2>/dev/null)" ] || return 0
+        [ -z "$(tmux_window_opt "$pane" @collie_codex_pending)" ] || return 0
       else
-        tmux set-option -wu -t "$pane" @collie_codex_pending 2>/dev/null || true
+        tmux_unset_window_opt "$pane" @collie_codex_pending 2>/dev/null || true
       fi
       cmd_state "${2:-}" ;;
     wait)
       # PermissionRequest precedes hook/automatic review too: it does not
       # prove the user must answer. Observe the TUI before sending an alert.
-      tmux set-option -w -t "$pane" @collie_codex_pending "$$" 2>/dev/null || return 0
+      tmux_set_window_opt "$pane" @collie_codex_pending "$$" 2>/dev/null || return 0
       "$BASH" "$PLUGIN_DIR/bin/collie" _codex-wait "$pane" "$$" >/dev/null 2>&1 &
       ;;
   esac
@@ -117,7 +117,7 @@ cmd__codex-wait() { # pane pending-token
   local info pending st screen visible=0 missing=0 seen=0
   while :; do
     sleep 0.2
-    info=$(tmux display-message -p -t "$1" '#{@collie_codex_pending}|#{@collie_state}' 2>/dev/null) || return 0
+    info=$(tmux_display_message -p -t "$1" '#{@collie_codex_pending}|#{@collie_state}' 2>/dev/null) || return 0
     IFS='|' read -r pending st <<<"$info"
     [ "$pending" = "$2" ] && [ "$st" != exited ] || return 0
     screen=$(pane_bottom "$1" 4) || return 0
@@ -126,7 +126,7 @@ cmd__codex-wait() { # pane pending-token
         visible=$((visible + 1)) missing=0 ;;
       *) missing=$((missing + 1)) visible=0 ;;
     esac
-    [ "$(tmux show-options -wqv -t "$1" @collie_codex_pending 2>/dev/null)" = "$2" ] || return 0
+    [ "$(tmux_window_opt "$1" @collie_codex_pending)" = "$2" ] || return 0
     if [ "$visible" -ge 2 ] && [ "$seen" = 0 ]; then
       set_state "$1" waiting "$2"
       seen=1
@@ -147,7 +147,7 @@ cmd__startup-watch() { # pane token state-after-dialog
   local info tok st visible=0 missing=0 seen=0 start=$SECONDS last=$SECONDS limit=${COLLIE_STARTUP_WATCH:-60}
   while [ $((SECONDS - start)) -lt 86400 ]; do
     sleep 0.5
-    info=$(tmux display-message -p -t "$1" '#{@collie_startup}|#{@collie_state}' 2>/dev/null) || return 0
+    info=$(tmux_display_message -p -t "$1" '#{@collie_startup}|#{@collie_state}' 2>/dev/null) || return 0
     IFS='|' read -r tok st <<<"$info"
     [ "$tok" = "$2" ] && [ "$st" != exited ] || return 0
     if startup_dialog "$1"; then
@@ -164,7 +164,7 @@ cmd__startup-watch() { # pane token state-after-dialog
     fi
     [ "$seen" = 1 ] || [ $((SECONDS - last)) -lt "$limit" ] || break
   done
-  tmux set-option -wu -t "$1" @collie_startup 2>/dev/null || true
+  tmux_unset_window_opt "$1" @collie_startup 2>/dev/null || true
 }
 
 # SessionStart hook: logs the run's conversation id (session_id in the hook's
@@ -175,7 +175,7 @@ cmd__session() {
   json=$(cat)
   [[ $json =~ $re ]] || return 0
   sid=${BASH_REMATCH[1]}
-  info=$(tmux display-message -p -t "$pane" '#{@collie_task}|#{@collie_run}' 2>/dev/null) || return 0
+  info=$(tmux_display_message -p -t "$pane" '#{@collie_task}|#{@collie_run}' 2>/dev/null) || return 0
   IFS='|' read -r id run <<<"$info"
   [ -n "$id" ] && [ -n "$run" ] && [ -f "$TASKS_DIR/$id/TASK.md" ] || return 0
   log_agent_session "$id" "$run" "$sid"
@@ -285,7 +285,7 @@ cmd__status-menu() { # range client [x]
       }' <(tmux list-windows -a -F '#{window_id}|#{window_index}|#{@collie_state}|#{@collie_state_at}|#{window_activity}|#{@collie_hooks}' 2>/dev/null || true) -
   )
   if [ "${#ts[@]}" = 0 ]; then
-    tmux display-message ${2:+-c "$2"} "collie: no $st agents"
+    tmux_display_message ${2:+-c "$2"} "collie: no $st agents"
     return 0
   fi
   # a menu wider than the client does not open: the description gets the rest

@@ -47,7 +47,7 @@ finish_task() { # final_status args...
     die "refusing to $final '$id':"$'\n'"$problems"'(branches are kept; --force discards uncommitted changes)'
   fi
 
-  if [ -n "${TMUX:-}" ] && [ "$(tmux display-message -p '#S')" = "$id" ]; then own=1; fi
+  if [ -n "${TMUX:-}" ] && [ "$(tmux_display_message -p '#S')" = "$id" ]; then own=1; fi
   here=$(pwd -P)
   if [ "$own" -eq 0 ]; then
     while IFS=$TAB read -r name c b p; do
@@ -100,7 +100,7 @@ leave_session() { # id
   [ -n "$other" ] || return 0
   tmux list-clients -t "=$1" -F '#{client_name}' | while IFS= read -r client; do
     tmux switch-client -c "$client" -l 2>/dev/null || true
-    [ "$(tmux display-message -c "$client" -p '#{client_session}')" != "$1" ] ||
+    [ "$(tmux_display_message -c "$client" -p '#{client_session}')" != "$1" ] ||
       tmux switch-client -c "$client" -t "=$other"
   done
 }
@@ -170,7 +170,7 @@ cmd_reopen() {
   fi
   rm -rf "$setup_backup" || warn "could not remove setup backup $setup_backup"
   printf '%s\n' "$first"
-  if [ "$window" -eq 1 ] && command -v tmux >/dev/null; then ensure_session "$id"; fi
+  if [ "$window" -eq 1 ] && tmux_available; then ensure_session "$id"; fi
 }
 
 race_review() { # parent task_dir

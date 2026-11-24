@@ -55,6 +55,24 @@ ensure_session() {
 }
 
 tmux_opt() { tmux show-options -gqv "$1" 2>/dev/null || true; }
+tmux_available() { command -v tmux >/dev/null 2>&1; }
+
+tmux_display_message() { tmux display-message "$@"; }
+
+tmux_window_opt() { tmux show-options -wqv -t "$1" "$2" 2>/dev/null; }
+
+tmux_set_window_opt() {
+  local target=$1
+  shift
+  tmux set-option -w -t "$target" "$@"
+}
+
+tmux_unset_window_opt() {
+  local target=$1
+  shift
+  tmux set-option -wu -t "$target" "$@"
+}
+
 
 # Print the last N joined lines, dropping trailing whitespace-only rows.
 pane_tail() { # pane lines

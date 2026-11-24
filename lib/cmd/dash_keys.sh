@@ -432,7 +432,7 @@ cmd__dev() {
     *) die "usage: collie _dev load <dir> | reset" ;;
   esac
   tmux run-shell "'$root/collie.tmux'"
-  tmux display-message "collie: loaded $root @ $(git -C "$root" rev-parse --short HEAD 2>/dev/null || echo '?')"
+  tmux_display_message "collie: loaded $root @ $(git -C "$root" rev-parse --short HEAD 2>/dev/null || echo '?')"
 }
 
 # Run a command line in a popup; on failure keep the popup open until a key.
