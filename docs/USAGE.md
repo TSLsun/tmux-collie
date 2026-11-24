@@ -195,6 +195,9 @@ exactly what `done` would.
 `collie doctor` also notes unowned and prunable worktrees in the current
 repository and repositories recorded by tasks. It prints Git cleanup commands
 for review; it never removes worktrees. Notes do not change its exit status.
+It also notes known Collie temporary paths whose writer PID is dead; `collie gc`
+removes those paths (including when no task is ready to finish). `gc -n` leaves
+them untouched.
 
 ### Task dependencies
 

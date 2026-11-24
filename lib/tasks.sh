@@ -107,6 +107,70 @@ log_event() {
   printf '%s\t%s\t%s\n' "$NOW" "$2" "${3:-}" >>"$TASKS_DIR/$1/events.log"
 }
 
+# PID-suffixed Collie temporary paths, only where their writers create them.
+collie_temp_pid() { # path state_dir; sets COLLIE_TEMP_PID
+  local root=$2 rel name=${1##*/} pid parent
+  [ -n "$root" ] || return 1
+  case $root in
+    /) rel=${1#/} ;;
+    */)
+      root=${root%/}
+      case $1 in "$root"/*) rel=${1#"$root"/} ;; *) return 1 ;; esac
+      ;;
+    *)
+      case $1 in "$root"/*) rel=${1#"$root"/} ;; *) return 1 ;; esac
+      ;;
+  esac
+  [[ $name =~ \.([0-9]+)$ ]] || return 1
+  pid=${BASH_REMATCH[1]}
+  case $rel in
+    tasks/*)
+      rel=${rel#tasks/}
+      parent=${rel%%/*}
+      [ "$parent" != "$rel" ] || return 1
+      rel=${rel#*/}
+      [ "$rel" = "$name" ] || return 1
+      case ${name%.*} in
+        conflicts.tsv | CI.md | pr.tsv | decisions.tsv) [ -f "$1" ] || return 1 ;;
+        *) return 1 ;;
+      esac
+      ;;
+    dash.*)
+      if [ "$rel" = "$name" ]; then
+        [ "$name" = "dash.$pid" ] && [ -d "$1" ] || return 1
+      else
+        parent=${rel%%/*}
+        rel=${rel#*/}
+        [ "$rel" = "$name" ] || return 1
+        [[ $parent =~ ^dash\.([0-9]+)$ ]] || return 1
+        # out.N can still be written by a child after the parent shell exits.
+        case ${name%.*} in
+          msg | out) [ -f "$1" ] || return 1 ;;
+          *) return 1 ;;
+        esac
+      fi
+      ;;
+    *) return 1 ;;
+  esac
+  COLLIE_TEMP_PID=$pid
+}
+
+collie_pid_alive() { # pid
+  kill -0 "$1" 2>/dev/null && return 0
+  ps -p "$1" -o pid= 2>/dev/null | grep -q '[0-9]'
+}
+
+# Prints NUL-delimited path/pid pairs for known Collie temps whose pid is gone.
+collie_stale_temps() { # state_dir
+  local path state_dir=$1
+  [ -d "$state_dir" ] || return 0
+  while IFS= read -r -d '' path; do
+    collie_temp_pid "$path" "$state_dir" || continue
+    collie_pid_alive "$COLLIE_TEMP_PID" && continue
+    printf '%s\0%s\0' "$path" "$COLLIE_TEMP_PID"
+  done < <(find -H "$state_dir" -depth -mindepth 1 \( -type f -o -type d \) -print0 2>/dev/null)
+}
+
 # awk functions for an event's "k=v k=v ..." fields (events.log field 3),
 # prepended to a program: awk -F'\t' "$AWK_KV"'$2 == "x" { print kv("run") }'.
 # kv(k): key k of the current line's $3; kvs(s, k): of string s. The first

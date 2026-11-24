@@ -1,5 +1,6 @@
 usage: collie doctor
 
-Check dependencies, agent CLIs, and that task records, worktrees, branches
-and sessions agree. Notes orphan and prunable worktrees with cleanup commands.
+Check dependencies, agent CLIs, task records, worktrees, branches and sessions.
+Notes orphan worktrees and stale Collie temp paths whose writer pid is dead;
+prints cleanup commands for worktrees and points to `collie gc` for temp paths.
 Read-only.
