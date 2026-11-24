@@ -55,6 +55,7 @@ ensure_session() {
 }
 
 tmux_opt() { tmux show-options -gqv "$1" 2>/dev/null || true; }
+
 tmux_available() { command -v tmux >/dev/null 2>&1; }
 
 tmux_display_message() { tmux display-message "$@"; }
@@ -72,7 +73,6 @@ tmux_unset_window_opt() {
   shift
   tmux set-option -wu -t "$target" "$@"
 }
-
 
 # Print the last N joined lines, dropping trailing whitespace-only rows.
 pane_tail() { # pane lines
@@ -98,7 +98,7 @@ pane_bottom() { # pane rows
 # agent_startup_dialog. A subshell keeps the adapter's globals out of callers.
 startup_dialog() { # pane
   local agent screen
-  agent=$(tmux display-message -p -t "$1" '#{@collie_agent}' 2>/dev/null) || return 1
+  agent=$(tmux_display_message -p -t "$1" '#{@collie_agent}' 2>/dev/null) || return 1
   [[ $agent != */* ]] && [ -f "$PLUGIN_DIR/agents/$agent.sh" ] || return 1
   screen=$(pane_bottom "$1" 6) || return 1
   (
