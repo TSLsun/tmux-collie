@@ -40,6 +40,8 @@ need_value() { [ -n "$3" ] || die "$1: $2"; }
 . "$PLUGIN_DIR/lib/cmd/tasks.sh"
 . "$PLUGIN_DIR/lib/cmd/lifecycle.sh"
 . "$PLUGIN_DIR/lib/cmd/agents.sh"
+. "$PLUGIN_DIR/lib/cmd/run.sh"
+. "$PLUGIN_DIR/lib/cmd/state.sh"
 . "$PLUGIN_DIR/lib/cmd/race.sh"
 . "$PLUGIN_DIR/lib/cmd/dash.sh"
 . "$PLUGIN_DIR/lib/cmd/dash_keys.sh"
