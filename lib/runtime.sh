@@ -26,7 +26,7 @@ win_states() { # list-windows target args
 quiet_label() { # window
   local data state hooks activity threshold age
   [ -n "$1" ] && [ "$1" != - ] || return 0
-  data=$(tmux display-message -p -t "$1" '#{@collie_state}|#{@collie_hooks}|#{window_activity}' 2>/dev/null) || return 0
+  data=$(tmux_display_message -p -t "$1" '#{@collie_state}|#{@collie_hooks}|#{window_activity}' 2>/dev/null) || return 0
   IFS='|' read -r state hooks activity <<<"$data"
   [ "$state" = working ] && [ "$hooks" = 1 ] || return 0
   threshold=$(tmux_opt @collie-quiet)
@@ -178,9 +178,9 @@ agent_pane() { # id window
   local panes pane
   [ -n "$2" ] && [ "$2" != - ] || return 0
   panes=$(tmux list-panes -t "$2" -F '#{pane_id}' 2>/dev/null) || return 0
-  pane=$(tmux show-options -wqv -t "$2" @collie_pane 2>/dev/null || true)
+  pane=$(tmux_window_opt "$2" @collie_pane || true)
   if [ -z "$pane" ]; then
-    if [ -z "$(tmux show-options -wqv -t "$2" @collie_run 2>/dev/null || true)" ]; then
+    if [ -z "$(tmux_window_opt "$2" @collie_run || true)" ]; then
       pane=$(manual_runs "=$1" | awk -F'\t' -v w="$2" '$4 == w { print $5; exit }')
     elif [ "$(wc -l <<<"$panes")" -eq 1 ]; then
       pane=$panes
@@ -374,7 +374,7 @@ notify() { # title body [pane]
 # Records a state change for the window of a pane; ignores non-collie windows.
 set_state() { # pane state [expected-token [token-option]]
   local info id run old wid agent active attached msg applied grace=0 tok opt=${4:-@collie_codex_pending}
-  info=$(tmux display-message -p -t "$1" '#{@collie_task}|#{@collie_run}|#{@collie_state}|#{window_id}|#{@collie_agent}|#{window_active}|#{session_attached}' 2>/dev/null) || return 0
+  info=$(tmux_display_message -p -t "$1" '#{@collie_task}|#{@collie_run}|#{@collie_state}|#{window_id}|#{@collie_agent}|#{window_active}|#{session_attached}' 2>/dev/null) || return 0
   IFS='|' read -r id run old wid agent active attached <<<"$info"
   [ -n "$id" ] && [ -f "$TASKS_DIR/$id/TASK.md" ] || return 0
   [ "$2" != "$old" ] || return 0
@@ -409,8 +409,8 @@ set_state() { # pane state [expected-token [token-option]]
   (
     [ "$grace" = 0 ] || sleep "$grace"
     # A hook may have resolved this state before notification delivery.
-    [ "$(tmux show-options -wqv -t "$wid" @collie_state_tok 2>/dev/null)" = "$tok" ] || exit 0
-    [ -z "${3:-}" ] || [ "$(tmux show-options -wqv -t "$wid" "$opt" 2>/dev/null)" = "$3" ] || exit 0
+    [ "$(tmux_window_opt "$wid" @collie_state_tok)" = "$tok" ] || exit 0
+    [ -z "${3:-}" ] || [ "$(tmux_window_opt "$wid" "$opt")" = "$3" ] || exit 0
     # target of `collie _jump` (menu: jump to alert)
     tmux set-option -g @collie-last-pane "$1" 2>/dev/null || true
     notify "collie: $id" "${agent:-agent} $msg" "$1"
@@ -421,8 +421,8 @@ set_state() { # pane state [expected-token [token-option]]
 cmd__jump() { # [pane|-] [client]
   local pane=${1:--}
   [ "$pane" != - ] || pane=$(tmux_opt @collie-last-pane)
-  if [ -z "$pane" ] || ! tmux display-message -p -t "$pane" '' >/dev/null 2>&1; then
-    tmux display-message "collie: no agent pane to jump to" 2>/dev/null || true
+  if [ -z "$pane" ] || ! tmux_display_message -p -t "$pane" '' >/dev/null 2>&1; then
+    tmux_display_message "collie: no agent pane to jump to" 2>/dev/null || true
     die "no agent pane to jump to"
   fi
   tmux switch-client ${2:+-c "$2"} -t "$pane" \; select-window -t "$pane" \; select-pane -t "$pane"

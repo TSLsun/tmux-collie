@@ -19,7 +19,7 @@ cmd_race() {
   [ -n "$id" ] || [ -n "${COLLIE_TASK:-}" ] || die "usage: collie race <id> -n N [--agent a,b,c] [--model m] [--effort e] [-r repo] [-p prompt]"
   task_id "$id"
   [[ $count =~ ^[2-9]$ ]] || die "race: -n must be 2..9"
-  command -v tmux >/dev/null || die "race: tmux required"
+  tmux_available || die "race: tmux required"
   local d="$TASKS_DIR/$id" firstc="" firstb="" firstp="" firstn="" default_agent wtroot
   if [ -f "$d/events.log" ] && awk -F'\t' '$2 == "race_started" { found=1 } END { exit !found }' "$d/events.log"; then
     die "race: task '$id' already has a race; previous races cannot be reused"

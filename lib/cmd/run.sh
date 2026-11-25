@@ -67,7 +67,7 @@ cmd_run() {
     shift
   done
   task_id "$id"
-  command -v tmux >/dev/null || die "run: tmux required"
+  tmux_available || die "run: tmux required"
   # a todo task whose after: deps are unsatisfied: ask on a terminal, else warn
   task_status "$id" ""
   if [ "$STATUS" = todo ]; then
@@ -159,7 +159,7 @@ cmd_run() {
   local watch=""
   if declare -F agent_startup_dialog >/dev/null; then
     watch=$NOW.$$
-    tmux set-option -w -t "$wid" @collie_startup "$watch" || return
+    tmux_set_window_opt "$wid" @collie_startup "$watch" || return
   fi
   tmux set-option -w -t "$wid" @collie_task "$id" \; set-option -w -t "$wid" @collie_path "$path" \; \
     set-option -w -t "$wid" @collie_agent "$agent" \; set-option -w -t "$wid" @collie_hooks "$AGENT_HOOKS" \; \
@@ -352,7 +352,7 @@ cmd_restore() {
       ids="$ids${d##*/}"$'\n'
     done
   fi
-  server=$(tmux display-message -p '#{pid}' 2>/dev/null || true)
+  server=$(tmux_display_message -p '#{pid}' 2>/dev/null || true)
   while IFS= read -r id; do
     [ -n "$id" ] || continue
     used=" " used_sids=" "

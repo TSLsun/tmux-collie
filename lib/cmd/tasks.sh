@@ -115,7 +115,7 @@ cmd_new() {
     trap new_draft_note EXIT
     read -r -e -p "ship [$([ "$ship" = 1 ] && echo Y/n || echo y/N)]: " t || t=""
     case $t in [yY]*) ship=1 ;; [nN]*) ship=0 ;; esac
-    if { [ -n "$goal" ] || [ "$edit" = 1 ]; } && [ "$run" = 0 ] && [ "$window" = 1 ] && command -v tmux >/dev/null; then
+    if { [ -n "$goal" ] || [ "$edit" = 1 ]; } && [ "$run" = 0 ] && [ "$window" = 1 ] && tmux_available; then
       read -r -e -p "start $agent now [Y/n]: " t
       case $t in [nN]*) ;; *) run=1 ;; esac
     fi
@@ -124,7 +124,7 @@ cmd_new() {
   [ -n "$id" ] || die "usage: collie new <id> [-r repo[:branch]]... [-w workspace] ..."
   if [ "$run" = 1 ]; then
     [ "$window" = 1 ] || die "new: --run needs a session; drop --no-window"
-    command -v tmux >/dev/null || die "new: --run needs tmux"
+    tmux_available || die "new: --run needs tmux"
   fi
   valid_id "$id" || die "invalid id '$id' (use [a-z0-9-], max 40, no leading '-')"
   local tdir r
@@ -153,7 +153,7 @@ cmd_new() {
   fi
   [ "$edit" -eq 0 ] || cmd_edit "$id"
   printf '%s\n' "${NEW_PATHS%%$'\n'*}"
-  if [ "$window" -eq 1 ] && command -v tmux >/dev/null; then
+  if [ "$window" -eq 1 ] && tmux_available; then
     ensure_session "$id"
     # the task exists either way: a failed run is reported, not rolled back
     local rc=0
@@ -500,7 +500,7 @@ nav_go() { # id action [client]
 # In tmux the status line, else stdout.
 nav_msg() { # client text
   if [ -n "$1${TMUX:-}" ]; then
-    tmux display-message ${1:+-c "$1"} "$2" 2>/dev/null || true
+    tmux_display_message ${1:+-c "$1"} "$2" 2>/dev/null || true
   else
     printf '%s\n' "$2"
   fi
@@ -518,7 +518,7 @@ cmd_next() {
     shift
   done
   if [ -n "$client${TMUX:-}" ]; then
-    cur=$(tmux display-message -p ${client:+-c "$client"} '#{client_session}' 2>/dev/null) || cur=""
+    cur=$(tmux_display_message -p ${client:+-c "$client"} '#{client_session}' 2>/dev/null) || cur=""
   fi
   pick=$(brief_rows | awk -F'\t' -v cur="$cur" '
     NF && !seen[$2]++ { n++; id[n] = $2; a[n] = $4; nd[n] = $1; if ($2 == cur) at = n }
@@ -778,7 +778,7 @@ cmd_log() {
   f="$TASKS_DIR/$id/decisions.tsv"
   # the run: the agent window's own, if this pane is one of the task's
   if [ -n "${TMUX_PANE:-}" ]; then
-    info=$(tmux display-message -p -t "$TMUX_PANE" '#{@collie_task}|#{@collie_run}' 2>/dev/null) || info=""
+    info=$(tmux_display_message -p -t "$TMUX_PANE" '#{@collie_task}|#{@collie_run}' 2>/dev/null) || info=""
     [ "${info%%|*}" != "$id" ] || [ -z "${info#*|}" ] || run=${info#*|}
   fi
   for cell in "$@"; do
